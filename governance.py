@@ -13,6 +13,10 @@ SKILLS = {
     "list_files":      {"risk":"LOW","gate":"auto","kind":"read"},
     "read_file":       {"risk":"LOW","gate":"auto","kind":"read"},
     "write_file":      {"risk":"HIGH","gate":"approval","kind":"write"},
+    "list_source":     {"risk":"LOW","gate":"auto","kind":"read"},
+    "read_source":     {"risk":"LOW","gate":"auto","kind":"read"},
+    "run_selfcheck":   {"risk":"LOW","gate":"auto","kind":"read"},
+    "propose_patch":   {"risk":"HIGH","gate":"approval","kind":"write"},
 }
 
 READ_HINTS  = ("get","list","read","search","lookup","fetch","find","query","view",

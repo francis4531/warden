@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BUILTINS = {
     "builtin_enterprise": [sys.executable, os.path.join(HERE, "mcp_server.py")],
     "builtin_files":      [sys.executable, os.path.join(HERE, "mcp_fs_server.py")],
+    "builtin_code":       [sys.executable, os.path.join(HERE, "mcp_code_server.py")],
 }
 
 class _LoopThread:

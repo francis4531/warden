@@ -24,6 +24,9 @@ CATALOG = [
   {"id":"builtin_files","name":"Filesystem (Warden)","category":"Files & Docs",
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Read, list, and write files inside a sandboxed workspace. A working second server."},
+  {"id":"builtin_code","name":"Self-Audit (Warden)","category":"Dev",
+   "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
+   "desc":"Reads Warden's own source, runs a static self-check, and proposes fixes (gated). Warden debugging Warden."},
 
   # --- live public remote server, no credentials, connect and go ---
   {"id":"deepwiki","name":"DeepWiki (GitHub repos)","category":"Dev","maintainer":"vendor",
