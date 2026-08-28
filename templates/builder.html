@@ -1,11 +1,26 @@
 {% extends "base.html" %}
 {% set active='build' %}
 {% block body %}
+<style>
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;align-items:flex-start;justify-content:center;padding:44px 16px;overflow:auto}
+.modal .panel{background:var(--ink2);border:1px solid var(--line2);border-radius:14px;max-width:780px;width:100%;padding:22px 24px}
+.modal .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+.mconn{border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mconn .nm{font-weight:600;font-size:13.5px}
+.mconn .dsc{color:var(--dim);font-size:11.5px;flex-basis:100%;order:5;margin-top:2px}
+.mconn .act{margin-left:auto;display:flex;gap:6px;align-items:center}
+.mconn .act input{background:var(--ink);border:1px solid var(--line2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:10px;padding:5px 8px;width:150px}
+.cstatus{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+</style>
+
 <div class="page-h">
   <div class="eyebrow">Build an agent</div>
   <h1>Define what it does, and what it's allowed to touch.</h1>
-  <p class="sub">Give the agent instructions and grant it tools from your connected servers. Each tool carries a risk tier Warden enforces at run time. Manage servers on the <a href="{{ url_for('connections') }}" style="color:var(--brass-b)">Connections</a> page.</p>
+  <p class="sub">Give the agent instructions and grant it tools from your connected servers. Need a server it can't see? Connect one right here, without leaving this page.</p>
 </div>
+
 <form method="post" action="{{ url_for('create_agent') }}">
   <div class="card">
     <label class="f" for="name">Agent name</label>
@@ -15,22 +30,24 @@
     <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
     <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6">
 
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 4px">
+      <label class="f" style="margin:0">Granted tools</label>
+      <button type="button" class="btn ghost sm" onclick="openConn()">+ Connect a server</button>
+    </div>
+    <div id="toolsections">
     {% for sid, g in groups.items() %}
-    <label class="f">{{ g.name }} · granted tools</label>
-    {% for s in g.tools %}
-    <label class="skill-row">
-      <input type="checkbox" name="skills" value="{{ s.key }}" {{ 'checked' if s.risk in ['LOW','HIGH'] }}>
-      <span class="sk-body">
-        <span class="sk-top">
-          <span class="sk-name">{{ s.tool }}</span>
+      <label class="f">{{ g.name }} &middot; granted tools</label>
+      {% for s in g.tools %}
+      <label class="skill-row">
+        <input type="checkbox" name="skills" value="{{ s.key }}" {{ 'checked' if s.risk in ['LOW','HIGH'] }}>
+        <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
           <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
-          {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}
-        </span>
-        <span class="sk-desc">{{ s.description }}</span>
-      </span>
-    </label>
+          {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
+          <span class="sk-desc">{{ s.description }}</span></span>
+      </label>
+      {% endfor %}
     {% endfor %}
-    {% endfor %}
+    </div>
 
     <div style="margin-top:20px;display:flex;gap:10px">
       <button class="btn brass" type="submit">Create agent</button>
@@ -38,4 +55,70 @@
     </div>
   </div>
 </form>
+
+<!-- inline connect modal -->
+<div class="modal" id="connmodal">
+  <div class="panel">
+    <div class="phead"><h2>Connect a server</h2><button class="btn ghost sm" onclick="closeConn()">Done</button></div>
+    <div style="color:var(--mut);font-size:12.5px;margin-bottom:14px">Connect a server and its tools appear in the builder below. Your agent details stay as they are.</div>
+    {% for e in catalog if e.transport!='builtin' %}
+    <div class="mconn" data-id="{{ e.id }}">
+      <span class="nm">{{ e.name }}</span>
+      <span class="mini" style="font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px">{{ slabel[e.status] }}</span>
+      <span class="cstatus">{% if status.get(e.id) and status[e.id].status=='connected' %}connected · {{ status[e.id].tool_count }} tools{% elif status.get(e.id) and status[e.id].status=='error' %}error{% endif %}</span>
+      <div class="act">
+        {% if e.id in enabled %}
+          <form class="connform" method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
+        {% elif e.transport=='http' and e.auth=='none' %}
+          <form class="connform" method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
+        {% elif e.transport=='http' %}
+          <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}"><button class="btn brass sm">Connect</button></form>
+        {% else %}
+          <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="command" value="{{ e.run }}"><button class="btn sm">Enable</button></form>
+        {% endif %}
+      </div>
+      <span class="dsc">{{ e.desc }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+function openConn(){document.getElementById('connmodal').style.display='flex';}
+function closeConn(){document.getElementById('connmodal').style.display='none';}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function gatePill(g){return g==='approval'?'<span class="pill awaiting_approval">needs approval</span>':'<span class="pill">auto-run</span>';}
+
+async function refreshTools(){
+  const keep = new Set([...document.querySelectorAll('input[name=skills]:checked')].map(c=>c.value));
+  const existing = new Set([...document.querySelectorAll('input[name=skills]')].map(c=>c.value));
+  let data; try{ data=await (await fetch('/tools.json')).json(); }catch(_){ return; }
+  let html='';
+  for(const g of data.groups){
+    html += `<label class="f">${esc(g.server)} &middot; granted tools</label>`;
+    for(const t of g.tools){
+      const isNew = !existing.has(t.key);
+      const checked = keep.has(t.key) || (isNew && t.risk!=='MED');
+      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" ${checked?'checked':''}>`
+        +`<span class="sk-body"><span class="sk-top"><span class="sk-name">${esc(t.tool)}</span>`
+        +`<span class="stamp ${t.risk}">${t.risk}</span>${gatePill(t.gate)}</span>`
+        +`<span class="sk-desc">${esc(t.description)}</span></span></label>`;
+    }
+  }
+  document.getElementById('toolsections').innerHTML = html || '<div style="color:var(--dim);font-size:13px">No tools yet. Connect a server above.</div>';
+}
+
+document.querySelectorAll('#connmodal form.connform').forEach(f=>{
+  f.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const btn=f.querySelector('button'), card=f.closest('.mconn'), s=card&&card.querySelector('.cstatus');
+    const orig=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+    if(s) s.innerHTML='<span class="spin"></span> connecting\u2026';
+    let res={}; try{ res=await (await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))})).json(); }catch(_){}
+    if(s) s.textContent = res.status==='connected' ? ('connected \u00b7 '+(res.tool_count||0)+' tools') : (res.status==='error'?'error':'');
+    btn.disabled=false; btn.innerHTML=orig;
+    await refreshTools();
+  });
+});
+</script>
 {% endblock %}

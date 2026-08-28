@@ -136,9 +136,21 @@ def tool_risk():
     store.set_override(request.form.get("key"), request.form.get("risk"))
     return redirect(request.form.get("back") or url_for("connections"))
 
+@app.route("/tools.json")
+def tools_json():
+    groups = {}
+    for t in connected_tools():
+        g = groups.setdefault(t["server_id"], {"server": t["server_name"], "tools": []})
+        g["tools"].append({"key": t["key"], "tool": t["tool"], "risk": t["risk"],
+                           "gate": t["gate"], "description": t["description"]})
+    return {"groups": list(groups.values())}
+
 @app.route("/new")
 def new_agent():
-    return render_template("builder.html", groups=tools_by_server())
+    status = {s["id"]: s for s in cm().connected_servers()}
+    return render_template("builder.html", groups=tools_by_server(),
+                           catalog=cat.CATALOG, status=status, enabled={c["id"] for c in store.enabled_connections()},
+                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
 
 @app.route("/agents", methods=["POST"])
 def create_agent():
