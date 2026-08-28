@@ -117,13 +117,18 @@ def enable_connection():
     command = request.form.get("command") or None
     url = request.form.get("url") or entry.get("run")
     store.enable_connection(cid, transport, command=command, url=url, token=token)
-    cm().connect_spec({"id": cid, "transport": transport, "command": command, "url": url, "token": token})
+    st = cm().connect_spec({"id": cid, "transport": transport, "command": command, "url": url, "token": token})
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "status": (st or {}).get("status"), "error": (st or {}).get("error"),
+                "tool_count": (st or {}).get("tool_count", 0)}
     return redirect(url_for("connections"))
 
 @app.route("/connections/disable", methods=["POST"])
 def disable_connection():
     cid = request.form.get("id")
     store.disable_connection(cid); cm().disconnect(cid)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True}
     return redirect(url_for("connections"))
 
 @app.route("/tool-risk", methods=["POST"])

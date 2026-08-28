@@ -2,53 +2,64 @@
 {% set active='connections' %}
 {% block title %}Connections · Warden{% endblock %}
 {% block body %}
-<div class="page-h">
+<style>
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:6px}
+.conn{border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--ink2);display:flex;flex-direction:column;gap:7px}
+.conn .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conn .nm{font-weight:600;font-size:14px}
+.conn .desc{color:var(--mut);font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conn .cmd{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conn .err{color:var(--high);font-size:11px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conn .act{margin-top:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conn .act input{background:var(--ink);border:1px solid var(--line2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:6px 8px;flex:1;min-width:120px}
+.conn .cstatus{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+.mini{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+</style>
+
+<div class="page-h" style="margin-bottom:18px">
   <div class="eyebrow">Connections</div>
   <h1>Choose the MCP servers your agents can use.</h1>
-  <p class="sub">Warden ships with two working servers and connects to the common enterprise MCP servers. Every tool a server exposes is classified by risk the moment it connects, reads run on their own, writes and anything unrecognized are gated, and you can override any of it below.</p>
+  <p class="sub">Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated. Override any of it below.</p>
 </div>
 
-{% set cats = catalog | groupby('category') %}
-{% for category, entries in cats %}
-<div class="section-h"><span class="lbl">{{ category }}</span></div>
-<div class="list">
+{% for category, entries in catalog | groupby('category') %}
+<div style="font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--mut);margin:16px 0 9px">{{ category }}</div>
+<div class="cgrid">
   {% for e in entries %}
   {% set st = status.get(e.id) %}
-  <div class="row" style="align-items:flex-start">
-    <div class="r-main" style="flex:1">
-      <div class="r-title">{{ e.name }}
-        <span class="pill">{{ mlabel[e.maintainer] }}</span>
-        {% if st and st.status=='connected' %}<span class="stamp LOW">connected · {{ st.tool_count }} tools</span>
-        {% elif st and st.status=='error' %}<span class="stamp HIGH">error</span>{% endif %}
-      </div>
-      <div class="r-meta" style="font-family:var(--body);color:var(--mut);font-size:13px;margin-top:4px">{{ e.desc }}</div>
-      {% if e.run %}<div class="r-meta" style="margin-top:5px">{{ e.run }}</div>{% endif %}
-      {% if st and st.status=='error' %}<div class="r-meta" style="color:var(--high);margin-top:5px">{{ st.error }}</div>{% endif %}
+  <div class="conn" data-id="{{ e.id }}">
+    <div class="top">
+      <span class="nm">{{ e.name }}</span>
+      <span class="mini">{{ mlabel[e.maintainer] }}</span>
+      {% if st and st.status=='connected' %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
+      {% elif st and st.status=='error' %}<span class="stamp HIGH">error</span>{% endif %}
+      <span class="mini" style="margin-left:auto">{{ slabel[e.status] }}</span>
     </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:220px">
-      <span class="pill {{ 'done' if e.status=='ready' else '' }}">{{ slabel[e.status] }}</span>
+    <div class="desc">{{ e.desc }}</div>
+    {% if e.run %}<div class="cmd" title="{{ e.run }}">{{ e.run }}</div>{% endif %}
+    {% if st and st.status=='error' %}<div class="err" title="{{ st.error }}">{{ st.error }}</div>{% endif %}
+    <div class="act">
+      <span class="cstatus"></span>
       {% if e.transport=='builtin' %}
-        <span class="pill done">always on</span>
+        <span class="pill done" style="margin-left:auto">always on</span>
       {% elif e.id in enabled %}
-        <form method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
-          <button class="btn ghost sm">Disconnect</button></form>
+        <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="margin-left:auto">
+          <input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
       {% elif e.transport=='http' and e.auth=='none' %}
-        <form method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
-          <button class="btn brass sm">Connect</button></form>
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="margin-left:auto">
+          <input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
-        <form method="post" action="{{ url_for('enable_connection') }}" style="display:flex;flex-direction:column;gap:6px">
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">
           <input type="hidden" name="id" value="{{ e.id }}">
-          <input type="text" name="token" placeholder="access token" style="font-size:12px;padding:7px 9px">
-          <button class="btn brass sm">Connect</button>
-          {% if e.env %}<div style="font-family:var(--mono);font-size:10px;color:var(--dim);text-align:right">or set ${{ e.env }}</div>{% endif %}
-        </form>
+          <input type="text" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
+          <button class="btn brass sm">Connect</button></form>
       {% else %}
-        <form method="post" action="{{ url_for('enable_connection') }}" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">
           <input type="hidden" name="id" value="{{ e.id }}">
-          <input type="text" name="command" value="{{ e.run }}" title="edit to supply a real connection string or token"
-                 style="width:250px;font-family:var(--mono);font-size:10.5px;padding:6px 8px">
-          <button class="btn sm">Enable</button>
-        </form>
+          <input type="text" name="command" value="{{ e.run }}" title="edit to add a real connection string or token">
+          <button class="btn sm">Enable</button></form>
       {% endif %}
     </div>
   </div>
@@ -56,32 +67,41 @@
 </div>
 {% endfor %}
 
-<div class="section-h"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} tools across connected servers</span></div>
+<div class="section-h" style="margin-top:26px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
 {% for server_name, group in tools|groupby('server_name') %}
 {% set gtools = group|list %}
-<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px">
-  <span style="font-family:var(--disp);font-size:16px;font-weight:600">{{ server_name }}</span>
-  <span class="pill">{{ gtools|length }} tool{{ '' if gtools|length==1 else 's' }}</span>
+<div style="display:flex;align-items:center;gap:9px;margin:14px 0 7px">
+  <span style="font-family:var(--disp);font-size:15px;font-weight:600">{{ server_name }}</span>
+  <span class="pill">{{ gtools|length }}</span>
 </div>
 <div class="ledger">
   {% for t in gtools %}
-  <div class="ev" style="grid-template-columns:1fr 190px;align-items:center">
-    <span class="kind" style="color:var(--txt)">{{ t.tool }}
-      <span class="stamp {{ t.risk }}">{{ t.risk }}</span>
-      {% if t.override %}<span class="pill">override</span>{% endif %}
-    </span>
+  <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
+    <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
     <span>
       <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
-        <input type="hidden" name="key" value="{{ t.key }}">
-        <input type="hidden" name="back" value="{{ url_for('connections') }}">
-        <select name="risk" style="width:auto;padding:5px 8px;font-size:12px">
+        <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
+        <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
           {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
-        </select>
-        <button class="btn sm">Set</button>
+        </select><button class="btn sm">Set</button>
       </form>
     </span>
   </div>
   {% endfor %}
 </div>
 {% endfor %}
+
+<script>
+document.querySelectorAll('form.connform').forEach(f=>{
+  f.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const btn=f.querySelector('button'); const card=f.closest('.conn');
+    const verb=f.dataset.busy||'working';
+    btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+    const s=card && card.querySelector('.cstatus'); if(s){ s.innerHTML='<span class="spin"></span> '+verb+'\u2026'; }
+    try{ await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}); }catch(_){}
+    location.reload();
+  });
+});
+</script>
 {% endblock %}
