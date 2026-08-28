@@ -5,6 +5,8 @@ gate high-risk actions behind human approval with a full audit trail.
 """
 import os
 import datetime
+import threading
+import json as _json
 from flask import Flask, request, redirect, url_for, render_template, abort
 import store, governance as gov, agent_runtime as rt
 import connection_manager as cmod
@@ -104,11 +106,26 @@ def agent(aid):
     runs = [r for r in store.list_runs(50) if r["agent_id"] == aid]
     return render_template("agent.html", agent=ag, idx=idx, runs=runs)
 
+def _advance_bg(rid):
+    """Run the agent loop in the background so the browser isn't blocked."""
+    def worker():
+        try:
+            rt.advance(rid)
+        except Exception as e:
+            try:
+                r = store.get_run(rid)
+                store.audit(rid, r["agent_id"], "error", detail={"text": str(e)[:200]})
+                store.update_run(rid, status="error")
+            except Exception:
+                pass
+    threading.Thread(target=worker, daemon=True).start()
+
 @app.route("/run", methods=["POST"])
 def run():
     aid = request.form.get("agent_id"); user_input = request.form.get("input", "").strip()
     if not store.get_agent(aid) or not user_input: abort(400)
-    rid = store.create_run(aid, user_input); rt.advance(rid)
+    rid = store.create_run(aid, user_input)
+    _advance_bg(rid)
     return redirect(url_for("run_view", rid=rid))
 
 @app.route("/run/<rid>")
@@ -119,13 +136,61 @@ def run_view(rid):
     return render_template("run.html", run=r, agent=ag, audit=store.audit_for_run(rid),
                            approvals=store.approvals_for_run(rid))
 
+def _fmt_event(e):
+    d = e.get("detail") or {}
+    kind = e["kind"]
+    if kind in ("run_started", "user_message"):
+        text = d.get("input") or d.get("text") or ""
+    elif kind in ("final", "thought", "error"):
+        text = d.get("text", "")
+    elif "result" in d:
+        text = "-> " + _json.dumps(d["result"])[:300]
+    elif "input" in d:
+        text = _json.dumps(d["input"])[:300]
+    else:
+        text = ""
+    return {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"),
+            "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
+            "text": text}
+
+@app.route("/run/<rid>/events")
+def run_events(rid):
+    r = store.get_run(rid)
+    if not r: abort(404)
+    audit = store.audit_for_run(rid)
+    pend = [{"id": a["id"], "tool": (a["skill"] or "").split("__")[-1], "risk": a["risk"],
+             "input": a["arguments"].get("input"),
+             "approve": url_for("approval", apid=a["id"])}
+            for a in store.approvals_for_run(rid) if a["status"] == "pending"]
+    return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
+            "pending": pend, "back": url_for("run_view", rid=rid)}
+
+@app.route("/run/<rid>/say", methods=["POST"])
+def run_say(rid):
+    r = store.get_run(rid)
+    if not r: abort(404)
+    if r["status"] in ("running", "awaiting_approval"):
+        return {"error": "busy"}, 409
+    text = request.form.get("input", "").strip()
+    if not text:
+        return {"error": "empty"}, 400
+    tr = r["transcript"]
+    tr.append({"role": "user", "content": text})
+    store.update_run(rid, status="running", transcript=tr)
+    store.audit(rid, r["agent_id"], "user_message", detail={"text": text})
+    _advance_bg(rid)
+    return {"ok": True}
+
 @app.route("/approval/<apid>", methods=["POST"])
 def approval(apid):
     ap = store.get_approval(apid)
     if not ap: abort(404)
     decision = request.form.get("decision")
     if decision in ("approved", "denied"):
-        store.decide_approval(apid, decision, by="operator"); rt.advance(ap["run_id"])
+        store.decide_approval(apid, decision, by="operator"); _advance_bg(ap["run_id"])
+    # AJAX callers get JSON; form callers get a redirect
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True}
     return redirect(request.form.get("back") or url_for("run_view", rid=ap["run_id"]))
 
 @app.route("/approvals")

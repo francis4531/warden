@@ -13,8 +13,13 @@ import uuid
 DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warden.db")
 
 def _conn():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=10)
     c.row_factory = sqlite3.Row
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=8000")
+    except Exception:
+        pass
     return c
 
 def now():
