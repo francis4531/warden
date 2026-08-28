@@ -4,10 +4,20 @@ Connect MCP servers, build an agent from their tools, run it against a live mode
 gate high-risk actions behind human approval with a full audit trail.
 """
 import os
+import datetime
 from flask import Flask, request, redirect, url_for, render_template, abort
 import store, governance as gov, agent_runtime as rt
 import connection_manager as cmod
 import catalog as cat
+
+WARDEN_VERSION = "0.3"
+try:
+    from zoneinfo import ZoneInfo
+    _PT = ZoneInfo("America/Los_Angeles")
+except Exception:
+    _PT = datetime.timezone(datetime.timedelta(hours=-7), "PDT")
+# captured once at process start; on Render each deploy restarts the process
+DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M %Z")
 
 app = Flask(__name__)
 store.init()
@@ -17,7 +27,8 @@ def cm():
 
 @app.context_processor
 def inject_globals():
-    return {"pending": store.pending_approvals(), "mode": rt.mode()}
+    return {"pending": store.pending_approvals(), "mode": rt.mode(),
+            "version": WARDEN_VERSION, "deployed_at": DEPLOYED_AT}
 
 def connected_tools():
     """All tools across connected servers, with effective governance risk."""
