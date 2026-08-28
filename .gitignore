@@ -1,0 +1,4 @@
+warden.db
+data/*.json
+__pycache__/
+*.pyc

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} · Warden{% endblock %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Agent</div>
+  <h1>{{ agent.name }}</h1>
+  <p class="sub">{{ agent.instructions }}</p>
+</div>
+
+<div class="section-h"><span class="lbl">Granted skills</span></div>
+<div class="list">
+  {% for s in agent.skills %}
+  {% set m = catalog.get(s) %}
+  <div class="row">
+    <div class="r-main">
+      <div class="r-title" style="font-family:var(--mono);font-size:13.5px">{{ s }}</div>
+      <div class="r-meta">{{ m.description if m else '' }}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      {% if m %}<span class="stamp {{ m.risk }}">{{ m.risk }}</span>
+      {% if m.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="section-h"><span class="lbl">Run the agent</span></div>
+<form method="post" action="{{ url_for('run') }}" class="card">
+  <input type="hidden" name="agent_id" value="{{ agent.id }}">
+  <textarea name="input" placeholder="Account AC-1001 says they were charged twice for $4200. Please make it right." required></textarea>
+  <div style="margin-top:14px"><button class="btn brass" type="submit">Run agent &rarr;</button>
+  <span style="color:var(--dim);font-size:12.5px;margin-left:10px">Try an account: AC-1001 (double charge), AC-1002, AC-1003 (past due)</span></div>
+</form>
+
+{% if runs %}
+<div class="section-h"><span class="lbl">Runs</span></div>
+<div class="list">
+  {% for r in runs %}
+  <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
+    <div class="r-main"><div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
+    <div class="r-meta">{{ r.id }} &middot; {{ r.created_at[:19].replace('T',' ') }}</div></div>
+    <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

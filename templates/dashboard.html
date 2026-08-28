@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set active='home' %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Governed by default</div>
+  <h1>Every agent here runs under human oversight.</h1>
+  <p class="sub">Build an agent, give it tools over MCP, and let it work. Warden runs low-risk actions on its own and holds anything that moves money or changes state for a human to approve, with a full audit trail behind every step.</p>
+</div>
+
+<div class="grid g3">
+  <div class="card k"><span class="kv">{{ agents|length }}</span><span class="kl">Agents</span><span class="kd">defined in the studio</span></div>
+  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if pending|length else 'var(--txt)' }}">{{ pending|length }}</span><span class="kl">Awaiting approval</span><span class="kd">high-risk actions on hold</span></a>
+  <div class="card k"><span class="kv">{{ runs|length }}</span><span class="kl">Recent runs</span><span class="kd">each fully audited</span></div>
+</div>
+
+{% if pending|length %}
+<div class="section-h"><span class="lbl">On hold, needs a human</span></div>
+<div class="list">
+  {% for ap in pending %}
+  <div class="row">
+    <div class="r-main">
+      <div class="r-title">{{ ap.skill }} <span class="stamp {{ ap.risk }}">{{ ap.risk }}</span></div>
+      <div class="r-meta">{{ ap.arguments.input }}</div>
+    </div>
+    <a class="btn brass sm" href="{{ url_for('run_view', rid=ap.run_id) }}">Review &rarr;</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="section-h"><span class="lbl">Agents</span><a class="btn ghost sm" href="{{ url_for('new_agent') }}">+ New agent</a></div>
+{% if agents %}
+<div class="list">
+  {% for a in agents %}
+  <a class="row" href="{{ url_for('agent', aid=a.id) }}">
+    <div class="r-main">
+      <div class="r-title">{{ a.name }}</div>
+      <div class="r-meta">{{ a.skills|length }} skill{{ '' if a.skills|length==1 else 's' }} &middot; {{ a.model }}</div>
+    </div>
+    <span class="pill">open &rarr;</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><h2>No agents yet</h2>Build your first governed agent to see it here.<br><br><a class="btn brass" href="{{ url_for('new_agent') }}">Build an agent</a></div>
+{% endif %}
+
+{% if runs %}
+<div class="section-h"><span class="lbl">Recent runs</span></div>
+<div class="list">
+  {% for r in runs %}
+  <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
+    <div class="r-main">
+      <div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
+      <div class="r-meta">{{ r.id }} &middot; {{ r.created_at[:19].replace('T',' ') }}</div>
+    </div>
+    <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

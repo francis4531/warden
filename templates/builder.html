@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set active='build' %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Build an agent</div>
+  <h1>Define what it does, and what it's allowed to touch.</h1>
+  <p class="sub">Give the agent its instructions and grant it skills. Each skill carries a risk tier that Warden enforces at run time, you don't wire up the governance, it comes with the skill.</p>
+</div>
+
+<form method="post" action="{{ url_for('create_agent') }}">
+  <div class="card">
+    <label class="f" for="name">Agent name</label>
+    <input type="text" id="name" name="name" placeholder="Billing Resolver" required>
+
+    <label class="f" for="instructions">Instructions</label>
+    <textarea id="instructions" name="instructions" placeholder="You resolve billing issues for enterprise customers. Look up the account, check policy in the knowledge base, and make the customer whole. Be concise and never guess at numbers.">You resolve billing issues for enterprise customers. Look up the account, check policy in the knowledge base, and make the customer whole. Be concise and never guess at numbers.</textarea>
+
+    <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
+    <input type="text" id="model" name="model" placeholder="{{ (agents and agents[0].model) or 'claude-sonnet-4-5' }}">
+
+    <label class="f">Skills &middot; granted tools</label>
+    {% for s in catalog %}
+    <label class="skill-row">
+      <input type="checkbox" name="skills" value="{{ s.name }}" {{ 'checked' if s.risk in ['LOW','HIGH'] }}>
+      <span class="sk-body">
+        <span class="sk-top">
+          <span class="sk-name">{{ s.name }}</span>
+          <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
+          {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}
+        </span>
+        <span class="sk-desc">{{ s.description }}</span>
+      </span>
+    </label>
+    {% endfor %}
+
+    <div style="margin-top:20px;display:flex;gap:10px">
+      <button class="btn brass" type="submit">Create agent</button>
+      <a class="btn ghost" href="{{ url_for('home') }}">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}

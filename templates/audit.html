@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set active='audit' %}
+{% block title %}Audit log · Warden{% endblock %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Audit log</div>
+  <h1>Every step, every agent, on the record.</h1>
+  <p class="sub">One append-only trail across all runs: what each agent thought, which tools it called, what came back, and every approval decision, with the risk tier stamped on each entry.</p>
+</div>
+
+<div class="ledger">
+  {% for e in events %}
+  <div class="ev">
+    <span class="ts">{{ e.ts[5:19].replace('T',' ') }}</span>
+    <span class="kind k-{{ e.kind }}">
+      {{ e.kind.replace('_',' ') }}
+      {% if e.risk %}<span class="stamp {{ e.risk }}">{{ e.risk }}</span>{% endif %}
+    </span>
+    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill }}</b>  {% endif %}
+{%- if e.detail -%}
+  {%- if e.detail.text -%}{{ e.detail.text[:160] }}
+  {%- elif e.detail.result -%}&rarr; {{ e.detail.result | tojson }}
+  {%- elif e.detail.input -%}{{ e.detail.input | tojson }}
+  {%- else -%}{{ e.detail | tojson }}{%- endif -%}
+{%- endif -%}
+<a href="{{ url_for('run_view', rid=e.run_id) }}" style="color:var(--dim);margin-left:8px">{{ e.run_id }}</a></span>
+  </div>
+  {% else %}
+  <div class="ev"><span></span><span class="detail" style="color:var(--dim)">No activity yet.</span><span></span></div>
+  {% endfor %}
+</div>
+{% endblock %}

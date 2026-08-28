@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Run · Warden{% endblock %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Run &middot; {{ agent.name }}</div>
+  <h1 style="font-size:24px">{{ run.input }}</h1>
+  <div style="margin-top:10px"><span class="pill {{ run.status }}">{{ run.status.replace('_',' ') }}</span>
+  <span style="color:var(--dim);font-family:var(--mono);font-size:11.5px;margin-left:8px">{{ run.id }}</span></div>
+</div>
+
+{% set pend = approvals | selectattr('status','equalto','pending') | list %}
+{% if pend %}
+  {% for ap in pend %}
+  <div class="gate">
+    <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
+    <div class="g-title">The agent wants to run <span style="font-family:var(--mono)">{{ ap.skill }}</span></div>
+    <div style="color:var(--mut);font-size:13px">This action changes state and is held until you approve it. Nothing has happened yet.</div>
+    <div class="g-args">{{ ap.arguments.input | tojson(indent=2) }}</div>
+    <form method="post" action="{{ url_for('approval', apid=ap.id) }}" class="g-actions">
+      <input type="hidden" name="back" value="{{ url_for('run_view', rid=run.id) }}">
+      <button class="btn brass" name="decision" value="approved">Approve &amp; run</button>
+      <button class="btn deny" name="decision" value="denied">Deny</button>
+    </form>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% set finals = audit | selectattr('kind','equalto','final') | list %}
+{% if finals %}
+<div class="bubble agent" style="border-left-color:var(--brass)">
+  <div class="who">Agent &middot; result</div>
+  {{ finals[-1].detail.text }}
+</div>
+{% endif %}
+
+<div class="section-h"><span class="lbl">Governed trace</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ audit|length }} events</span></div>
+<div class="ledger">
+  {% for e in audit %}
+  <div class="ev">
+    <span class="ts">{{ e.ts[11:19] }}</span>
+    <span class="kind k-{{ e.kind }}">
+      {{ e.kind.replace('_',' ') }}
+      {% if e.risk %}<span class="stamp {{ e.risk }}">{{ e.risk }}</span>{% endif %}
+    </span>
+    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill }}</b>  {% endif %}
+{%- if e.detail -%}
+  {%- if e.detail.text -%}{{ e.detail.text }}
+  {%- elif e.detail.result -%}&rarr; {{ e.detail.result | tojson }}
+  {%- elif e.detail.input -%}{{ e.detail.input | tojson }}
+  {%- else -%}{{ e.detail | tojson }}{%- endif -%}
+{%- endif -%}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div style="margin-top:22px"><a class="btn ghost sm" href="{{ url_for('agent', aid=agent.id) }}">&larr; back to {{ agent.name }}</a></div>
+{% endblock %}
