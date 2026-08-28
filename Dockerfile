@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . .
 
+# Unique per image build (independent of Render git vars) so the build number
+# increments on every deploy. Runs whenever the copied code changes.
+RUN date -u +%Y%m%dT%H%M%SZ > /app/BUILD_ID
+
 ENV PORT=8000
 # shell form so $PORT (set by Render) expands
 CMD gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT

@@ -1,4 +1,7 @@
-warden.db
-data/
-__pycache__/
 *.pyc
+.warden_key
+BUILD_ID
+__pycache__/
+build.json
+data/
+warden.db

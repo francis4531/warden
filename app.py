@@ -15,24 +15,38 @@ import catalog as cat
 WARDEN_VERSION = "0.3"
 
 def _build_info():
-    """Increment a build number on each new deploy. Render sets RENDER_GIT_COMMIT per
-    deploy; when it changes we bump a counter persisted on the disk. Restarts of the same
-    build don't bump. Falls back to bumping every boot when no commit info is present."""
+    """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
+    if Render provides it, else a BUILD_ID baked into the image at build time (see
+    Dockerfile), else 'local'. The counter (persisted on the disk) bumps whenever that
+    identity changes; a plain restart of the same build does not bump it."""
     import json
-    commit = os.environ.get("RENDER_GIT_COMMIT", "")
+    ident = os.environ.get("RENDER_GIT_COMMIT", "")
+    src = "commit"
+    if not ident:
+        try:
+            ident = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "BUILD_ID")).read().strip()
+            src = "build"
+        except Exception:
+            ident = ""
     meta_path = os.path.join(store.DATA_ROOT, "build.json")
     try:
         meta = json.load(open(meta_path))
     except Exception:
         meta = {}
     num = meta.get("build", 0)
-    if not commit or commit != meta.get("commit"):
+    if not ident or ident != meta.get("ident"):
         num += 1
     try:
-        json.dump({"commit": commit or "local", "build": num}, open(meta_path, "w"))
+        json.dump({"ident": ident or "local", "build": num}, open(meta_path, "w"))
     except Exception:
         pass
-    return num, (commit[:7] if commit else "local")
+    if src == "commit":
+        label = ident[:7]
+    elif src == "build":
+        label = ident[:13]           # e.g. 20260828T1912
+    else:
+        label = "local"
+    return num, label
 
 _BUILD_NUM, BUILD_COMMIT = _build_info()
 VERSION_FULL = f"{WARDEN_VERSION}.{_BUILD_NUM}"
