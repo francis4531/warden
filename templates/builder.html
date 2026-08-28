@@ -61,25 +61,9 @@
   <div class="panel">
     <div class="phead"><h2>Connect a server</h2><button class="btn ghost sm" onclick="closeConn()">Done</button></div>
     <div style="color:var(--mut);font-size:12.5px;margin-bottom:14px">Connect a server and its tools appear in the builder below. Your agent details stay as they are.</div>
-    {% for e in catalog if e.transport!='builtin' %}
-    <div class="mconn" data-id="{{ e.id }}">
-      <span class="nm">{{ e.name }}</span>
-      <span class="mini" style="font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px">{{ slabel[e.status] }}</span>
-      <span class="cstatus">{% if status.get(e.id) and status[e.id].status=='connected' %}connected · {{ status[e.id].tool_count }} tools{% elif status.get(e.id) and status[e.id].status=='error' %}error{% endif %}</span>
-      <div class="act">
-        {% if e.id in enabled %}
-          <form class="connform" method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
-        {% elif e.transport=='http' and e.auth=='none' %}
-          <form class="connform" method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
-        {% elif e.transport=='http' %}
-          <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}"><button class="btn brass sm">Connect</button></form>
-        {% else %}
-          <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="command" value="{{ e.run }}"><button class="btn sm">Enable</button></form>
-        {% endif %}
-      </div>
-      <span class="dsc">{{ e.desc }}</span>
+    <div id="connlist">
+      {% include '_connlist.html' %}
     </div>
-    {% endfor %}
   </div>
 </div>
 
@@ -108,17 +92,16 @@ async function refreshTools(){
   document.getElementById('toolsections').innerHTML = html || '<div style="color:var(--dim);font-size:13px">No tools yet. Connect a server above.</div>';
 }
 
-document.querySelectorAll('#connmodal form.connform').forEach(f=>{
-  f.addEventListener('submit', async e=>{
-    e.preventDefault();
-    const btn=f.querySelector('button'), card=f.closest('.mconn'), s=card&&card.querySelector('.cstatus');
-    const orig=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-    if(s) s.innerHTML='<span class="spin"></span> connecting\u2026';
-    let res={}; try{ res=await (await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))})).json(); }catch(_){}
-    if(s) s.textContent = res.status==='connected' ? ('connected \u00b7 '+(res.tool_count||0)+' tools') : (res.status==='error'?'error':'');
-    btn.disabled=false; btn.innerHTML=orig;
-    await refreshTools();
-  });
+const connlist = document.getElementById('connlist');
+connlist.addEventListener('submit', async e=>{
+  if(!e.target.matches('form.connform')) return;
+  e.preventDefault();
+  const f=e.target, btn=f.querySelector('button'), card=f.closest('.mconn'), s=card&&card.querySelector('.cstatus');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  if(s) s.innerHTML='<span class="spin"></span> working\u2026';
+  try{ await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}); }catch(_){}
+  try{ connlist.innerHTML = await (await fetch('/connlist')).text(); }catch(_){}   // re-render: correct button, token cleared
+  await refreshTools();
 });
 </script>
 {% endblock %}

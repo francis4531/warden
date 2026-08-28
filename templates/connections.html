@@ -53,7 +53,7 @@
       {% elif e.transport=='http' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">
           <input type="hidden" name="id" value="{{ e.id }}">
-          <input type="text" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
+          <input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
           <button class="btn brass sm">Connect</button></form>
       {% else %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">

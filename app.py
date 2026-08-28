@@ -136,6 +136,13 @@ def tool_risk():
     store.set_override(request.form.get("key"), request.form.get("risk"))
     return redirect(request.form.get("back") or url_for("connections"))
 
+@app.route("/connlist")
+def connlist():
+    status = {s["id"]: s for s in cm().connected_servers()}
+    return render_template("_connlist.html", catalog=cat.CATALOG, status=status,
+                           enabled={c["id"] for c in store.enabled_connections()},
+                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
+
 @app.route("/tools.json")
 def tools_json():
     groups = {}
