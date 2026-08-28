@@ -2,3 +2,4 @@ warden.db
 data/
 __pycache__/
 *.pyc
+.git/

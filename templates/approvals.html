@@ -12,7 +12,7 @@
 {% for ap in pending %}
 <div class="gate">
   <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
-  <div class="g-title">Run <span style="font-family:var(--mono)">{{ ap.skill }}</span></div>
+  <div class="g-title">Run <span style="font-family:var(--mono)">{{ ap.skill.split('__')[-1] }}</span></div>
   <div class="g-args">{{ ap.arguments.input | tojson(indent=2) }}</div>
   <form method="post" action="{{ url_for('approval', apid=ap.id) }}" class="g-actions">
     <input type="hidden" name="back" value="{{ url_for('approvals') }}">

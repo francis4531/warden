@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active='connections' %}
+{% block title %}Connections · Warden{% endblock %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Connections</div>
+  <h1>Choose the MCP servers your agents can use.</h1>
+  <p class="sub">Warden ships with two working servers and connects to the common enterprise MCP servers. Every tool a server exposes is classified by risk the moment it connects, reads run on their own, writes and anything unrecognized are gated, and you can override any of it below.</p>
+</div>
+
+{% set cats = catalog | groupby('category') %}
+{% for category, entries in cats %}
+<div class="section-h"><span class="lbl">{{ category }}</span></div>
+<div class="list">
+  {% for e in entries %}
+  {% set st = status.get(e.id) %}
+  <div class="row" style="align-items:flex-start">
+    <div class="r-main" style="flex:1">
+      <div class="r-title">{{ e.name }}
+        <span class="pill">{{ mlabel[e.maintainer] }}</span>
+        {% if st and st.status=='connected' %}<span class="stamp LOW">connected · {{ st.tool_count }} tools</span>
+        {% elif st and st.status=='error' %}<span class="stamp HIGH">error</span>{% endif %}
+      </div>
+      <div class="r-meta" style="font-family:var(--body);color:var(--mut);font-size:13px;margin-top:4px">{{ e.desc }}</div>
+      {% if e.run %}<div class="r-meta" style="margin-top:5px">{{ e.run }}</div>{% endif %}
+      {% if st and st.status=='error' %}<div class="r-meta" style="color:var(--high);margin-top:5px">{{ st.error }}</div>{% endif %}
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:220px">
+      <span class="pill {{ 'done' if e.status=='ready' else '' }}">{{ slabel[e.status] }}</span>
+      {% if e.transport=='builtin' %}
+        <span class="pill done">always on</span>
+      {% elif e.id in enabled %}
+        <form method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
+          <button class="btn ghost sm">Disconnect</button></form>
+      {% elif e.transport=='http' %}
+        <form method="post" action="{{ url_for('enable_connection') }}" style="display:flex;flex-direction:column;gap:6px">
+          <input type="hidden" name="id" value="{{ e.id }}">
+          <input type="text" name="token" placeholder="access token" style="font-size:12px;padding:7px 9px">
+          <button class="btn brass sm">Connect</button>
+        </form>
+      {% else %}
+        <form method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
+          <button class="btn sm">Enable</button></form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<div class="section-h"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} tools across connected servers</span></div>
+<div class="ledger">
+  {% for t in tools %}
+  <div class="ev" style="grid-template-columns:150px 1fr 190px;align-items:center">
+    <span class="ts" style="color:var(--mut)">{{ t.server_name }}</span>
+    <span class="kind" style="color:var(--txt)">{{ t.tool }}
+      <span class="stamp {{ t.risk }}">{{ t.risk }}</span>
+      {% if t.override %}<span class="pill">override</span>{% endif %}
+    </span>
+    <span>
+      <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
+        <input type="hidden" name="key" value="{{ t.key }}">
+        <input type="hidden" name="back" value="{{ url_for('connections') }}">
+        <select name="risk" style="width:auto;padding:5px 8px;font-size:12px">
+          {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
+        </select>
+        <button class="btn sm">Set</button>
+      </form>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

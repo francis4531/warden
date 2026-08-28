@@ -19,7 +19,7 @@
   {% for ap in pending %}
   <div class="row">
     <div class="r-main">
-      <div class="r-title">{{ ap.skill }} <span class="stamp {{ ap.risk }}">{{ ap.risk }}</span></div>
+      <div class="r-title">{{ ap.skill.split('__')[-1] }} <span class="stamp {{ ap.risk }}">{{ ap.risk }}</span></div>
       <div class="r-meta">{{ ap.arguments.input }}</div>
     </div>
     <a class="btn brass sm" href="{{ url_for('run_view', rid=ap.run_id) }}">Review &rarr;</a>

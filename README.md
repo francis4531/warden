@@ -2,74 +2,99 @@
 
 **An enterprise AI agent studio where every agent is governed by default.**
 
-Build an agent, grant it tools over the Model Context Protocol, and run it against a
-live model. Warden runs low-risk actions on its own and holds anything that moves
-money or changes state for a human to approve, with a full audit trail behind every
-step. It is a working demonstration of the thing every enterprise agent platform is
+Connect MCP servers, build an agent from their tools, run it against a live model, and
+gate high-risk actions behind human approval, with a full audit trail behind every
+step. Warden is a working demonstration of the thing every enterprise agent platform is
 really selling: not the model, but the governance around letting an agent act.
 
 ## What's real here
 
-- **Real MCP.** `mcp_server.py` is a genuine Model Context Protocol server exposing
-  four enterprise tools. The runtime is a real MCP client: it discovers tools over the
-  protocol and invokes them. Nothing about the tool layer is mocked.
-- **Real agent loop.** `agent_runtime.py` runs a perceive -> decide -> act loop against
-  an Anthropic model, with tool use, tool results, and a final answer.
-- **Real governance.** Every skill carries a risk tier (LOW / MED / HIGH). Reads
-  auto-run; high-risk writes (issuing a refund) pause the run, open an approval, and
-  execute only after a human decides. Deny, and the money never moves.
-- **Real audit.** Every thought, tool call, tool result, and approval decision is
-  written to an append-only log you can read per-run or across the whole studio.
+- **Real MCP, multiple servers.** Warden ships two working local MCP servers
+  (enterprise tools + a sandboxed filesystem) and connects to external ones from a
+  catalog of common enterprise MCP servers, over stdio or remote HTTP. It discovers
+  each server's tools over the protocol and routes calls back to the right server.
+- **Real governance, including for tools you didn't write.** Built-in tools have a
+  hand-set risk registry. Tools discovered from any other server are classified
+  automatically and fail closed: reads run on their own, writes and anything
+  unrecognized are gated. You can override any tool's risk from the Connections page.
+- **Real agent loop.** A perceive -> decide -> act loop against an Anthropic model,
+  with tool use across servers, pausing at the approval gate and resuming on decision.
+- **Real audit.** Every thought, tool call, result, and approval decision is written to
+  an append-only log, per-run and studio-wide, each stamped with its risk tier.
 
 ## Architecture
 
 | File | Role |
 |------|------|
-| `mcp_server.py` | MCP server: `lookup_customer`, `search_knowledge`, `create_ticket`, `issue_refund` |
-| `mcp_client.py` | Thread-safe MCP client (one dedicated event-loop thread, one persistent session) |
-| `governance.py` | Risk registry and the auto-run vs approval policy |
-| `agent_runtime.py`| The agent loop, gating, and pause/resume on approval |
-| `store.py` | SQLite persistence: agents, runs, audit, approvals |
-| `app.py` | Flask app: dashboard, builder, run console, approvals queue, audit log |
+| `catalog.py` | Curated directory of common enterprise MCP servers (metadata, transport, auth) |
+| `connection_manager.py` | Multi-server MCP client: persistent sessions on one loop thread, stdio + HTTP |
+| `mcp_server.py` | Built-in MCP server: lookup_customer, search_knowledge, create_ticket, issue_refund |
+| `mcp_fs_server.py` | Built-in MCP server: sandboxed list_files, read_file, write_file |
+| `governance.py` | Risk registry + auto-classification of external tools + overrides |
+| `agent_runtime.py` | The agent loop, gating, and pause/resume on approval |
+| `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides |
+| `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
+
+## Connections
+
+The Connections page lists common enterprise MCP servers grouped by category (GitHub,
+Linear, Notion, Stripe, Sentry, Slack, Postgres, Supabase, Playwright, the Anthropic
+reference servers, and more). Each entry shows who maintains it and how it connects:
+
+- Built in (Enterprise Tools, Filesystem): always connected, no setup.
+- Remote (GitHub, Linear, Notion, Stripe, Sentry, Cloudflare): paste an access token and
+  connect over HTTP. Works without any local runtime.
+- stdio (Filesystem official, Supabase, Playwright, Postgres, Slack, Fetch, Git): these
+  are Node (npx) or Python (uvx) processes and require that runtime present. On a
+  Python-only host they report a clear connection error rather than connecting; expected.
 
 ## Run locally
 
-```bash
-pip install -r requirements.txt
-python app.py            # http://localhost:8000
-```
+    pip install -r requirements.txt
+    python app.py            # http://localhost:8000
 
-With no API key it runs in **sandbox** mode: a deterministic planner drives the same
-governance flow so everything is demonstrable offline. Set a key for live model calls:
+No key -> sandbox mode: a deterministic planner drives the same governance flow so
+everything is demonstrable offline. For live model calls:
 
-```bash
-export ANTHROPIC_API_KEY=sk-...
-export WARDEN_MODEL=claude-sonnet-4-5   # optional; set to a model on your account
-python app.py
-```
+    export ANTHROPIC_API_KEY=sk-...
+    export WARDEN_MODEL=claude-sonnet-4-6   # optional; a model on your account
+    python app.py
 
 ## Deploy (Render)
 
-1. Push this folder to a repo and create a Render Web Service from it.
-2. Build command: `pip install -r requirements.txt`
-3. Start command comes from the `Procfile`:
-   `gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT`
-   Keep it to **one worker** (the MCP session and SQLite live in-process; one worker
-   with threads is the simplest correct setup for a demo).
-4. Environment variables:
-   - `ANTHROPIC_API_KEY` — set this to run agents against a live model.
-   - `WARDEN_MODEL` — optional, defaults to `claude-sonnet-4-5`.
+Two options:
 
-Note: `warden.db` and the JSON ledgers under `data/` sit on Render's ephemeral
-filesystem and reset on redeploy. That is fine for a demo; the point is that within a
-session every action and approval is durably recorded and queryable.
+**Docker (recommended, unlocks the whole catalog).** The included `Dockerfile` provides
+Python + Node + uv, so npx- and uvx-based MCP servers spawn on the host.
+- Set the Render service Language to **Docker**. It builds from the `Dockerfile`.
+- Env: `ANTHROPIC_API_KEY` for live mode; `WARDEN_MODEL` optional.
+
+**Python (lighter, built-in + remote-HTTP servers only).**
+- Language: Python 3. Build: `pip install -r requirements.txt`.
+- Start (from `Procfile`): `gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT`
+- Keep it to one worker (MCP sessions and SQLite live in-process).
+- On this path the npx/uvx catalog entries can't spawn (no Node); they report a clear
+  connection error. The two built-in servers and any remote-HTTP servers still work.
+
+`warden.db` and `data/` are ephemeral and reset on redeploy (fine for a demo).
+
+## Connect a real remote server (GitHub)
+
+On the Connections page, GitHub is a remote (HTTP) server. Paste a GitHub token
+(a fine-grained PAT with the scopes you want the agent to have, or an OAuth token) into
+its token box and click Connect. Warden opens an HTTP MCP session to
+`https://api.githubcopilot.com/mcp/`, sends `Authorization: Bearer <token>`, discovers
+GitHub's tools, and classifies them: reading issues and repos runs on its own, while
+`create_issue`, `create_pull_request`, and the like are gated for approval. Scope the
+token tightly, the whole point of Warden is that even a broadly-scoped token is safe
+because writes stop at the gate.
 
 ## Try it
 
-Build the sample "Billing Resolver" agent with all four skills, then run:
+Build the "Billing Resolver" with the enterprise tools and run:
 
 > Account AC-1001 says they were charged twice for $4200. Please make it right.
 
-The agent looks up the account and checks policy (both auto-run), then reaches for
-`issue_refund` and **stops** at the approval gate. Approve it and the refund executes
-and is logged; deny it and nothing moves. Either way, open the audit log.
+It looks up the account and checks policy (auto), then reaches for issue_refund and
+stops at the approval gate. Approve to execute and log it; deny and nothing moves. Or
+grant it the filesystem tools and ask it to write a file, same gate on write_file.

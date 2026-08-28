@@ -16,7 +16,7 @@
       {{ e.kind.replace('_',' ') }}
       {% if e.risk %}<span class="stamp {{ e.risk }}">{{ e.risk }}</span>{% endif %}
     </span>
-    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill }}</b>  {% endif %}
+    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill.split('__')[-1] }}</b>  {% endif %}
 {%- if e.detail -%}
   {%- if e.detail.text -%}{{ e.detail.text[:160] }}
   {%- elif e.detail.result -%}&rarr; {{ e.detail.result | tojson }}

@@ -13,7 +13,7 @@
   {% for ap in pend %}
   <div class="gate">
     <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
-    <div class="g-title">The agent wants to run <span style="font-family:var(--mono)">{{ ap.skill }}</span></div>
+    <div class="g-title">The agent wants to run <span style="font-family:var(--mono)">{{ ap.skill.split('__')[-1] }}</span></div>
     <div style="color:var(--mut);font-size:13px">This action changes state and is held until you approve it. Nothing has happened yet.</div>
     <div class="g-args">{{ ap.arguments.input | tojson(indent=2) }}</div>
     <form method="post" action="{{ url_for('approval', apid=ap.id) }}" class="g-actions">
@@ -42,7 +42,7 @@
       {{ e.kind.replace('_',' ') }}
       {% if e.risk %}<span class="stamp {{ e.risk }}">{{ e.risk }}</span>{% endif %}
     </span>
-    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill }}</b>  {% endif %}
+    <span class="detail">{%- if e.skill -%}<b style="color:var(--txt)">{{ e.skill.split('__')[-1] }}</b>  {% endif %}
 {%- if e.detail -%}
   {%- if e.detail.text -%}{{ e.detail.text }}
   {%- elif e.detail.result -%}&rarr; {{ e.detail.result | tojson }}
