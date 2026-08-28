@@ -43,9 +43,12 @@ class _LoopThread:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
 def _http_params(sid, spec):
-    url = spec.get("url") or catalog_mod.BY_ID.get(sid, {}).get("run")
+    cat = catalog_mod.BY_ID.get(sid, {})
+    url = spec.get("url") or cat.get("run")
     headers = {}
     tok = spec.get("token")
+    if not tok and cat.get("env"):          # fall back to an environment variable
+        tok = os.environ.get(cat["env"])
     if tok:
         headers["Authorization"] = tok if tok.lower().startswith("bearer") else f"Bearer {tok}"
     return url, (headers or None)
@@ -113,7 +116,12 @@ class _Manager:
             self._status[sid] = {"status": "connected", "error": None, "name": name,
                                  "transport": transport, "tool_count": len(tools)}
         except Exception as e:
-            self._status[sid] = {"status": "error", "error": (str(e) or e.__class__.__name__)[:200],
+            msg = (str(e) or e.__class__.__name__)
+            low = msg.lower()
+            if transport != "http" and ("closed" in low or "exit" in low or "broken pipe" in low or not msg.strip()):
+                msg = ("server exited on startup, it likely needs credentials or configuration. "
+                       "Edit the command to supply them (e.g. a real connection string or token).")
+            self._status[sid] = {"status": "error", "error": msg[:220],
                                  "name": name, "transport": transport, "tool_count": 0}
 
     async def _aopen(self, sid, spec, transport):

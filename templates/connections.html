@@ -40,10 +40,15 @@
           <input type="hidden" name="id" value="{{ e.id }}">
           <input type="text" name="token" placeholder="access token" style="font-size:12px;padding:7px 9px">
           <button class="btn brass sm">Connect</button>
+          {% if e.env %}<div style="font-family:var(--mono);font-size:10px;color:var(--dim);text-align:right">or set ${{ e.env }}</div>{% endif %}
         </form>
       {% else %}
-        <form method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
-          <button class="btn sm">Enable</button></form>
+        <form method="post" action="{{ url_for('enable_connection') }}" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <input type="hidden" name="id" value="{{ e.id }}">
+          <input type="text" name="command" value="{{ e.run }}" title="edit to supply a real connection string or token"
+                 style="width:250px;font-family:var(--mono);font-size:10.5px;padding:6px 8px">
+          <button class="btn sm">Enable</button>
+        </form>
       {% endif %}
     </div>
   </div>

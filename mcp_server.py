@@ -15,7 +15,7 @@ import os
 import datetime
 from mcp.server.fastmcp import FastMCP
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DATA_DIR = os.path.join(os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__))), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CUSTOMERS = {

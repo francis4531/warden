@@ -3,3 +3,4 @@ anthropic>=1.0
 mcp==1.13.1
 gunicorn>=21.0
 tzdata
+cryptography

@@ -13,6 +13,30 @@ import connection_manager as cmod
 import catalog as cat
 
 WARDEN_VERSION = "0.3"
+
+def _build_info():
+    """Increment a build number on each new deploy. Render sets RENDER_GIT_COMMIT per
+    deploy; when it changes we bump a counter persisted on the disk. Restarts of the same
+    build don't bump. Falls back to bumping every boot when no commit info is present."""
+    import json
+    commit = os.environ.get("RENDER_GIT_COMMIT", "")
+    meta_path = os.path.join(store.DATA_ROOT, "build.json")
+    try:
+        meta = json.load(open(meta_path))
+    except Exception:
+        meta = {}
+    num = meta.get("build", 0)
+    if not commit or commit != meta.get("commit"):
+        num += 1
+    try:
+        json.dump({"commit": commit or "local", "build": num}, open(meta_path, "w"))
+    except Exception:
+        pass
+    return num, (commit[:7] if commit else "local")
+
+_BUILD_NUM, BUILD_COMMIT = _build_info()
+VERSION_FULL = f"{WARDEN_VERSION}.{_BUILD_NUM}"
+
 try:
     from zoneinfo import ZoneInfo
     _PT = ZoneInfo("America/Los_Angeles")
@@ -24,13 +48,21 @@ DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M %Z")
 app = Flask(__name__)
 store.init()
 
+def _env_specs():
+    """Servers to auto-connect on boot, from WARDEN_AUTOCONNECT (comma-separated catalog ids).
+    Tokens resolve from each server's env var, so config survives redeploys."""
+    ids = [x.strip() for x in os.environ.get("WARDEN_AUTOCONNECT", "").split(",") if x.strip()]
+    return [{"id": i, "transport": cat.BY_ID[i]["transport"]} for i in ids if i in cat.BY_ID]
+
 def cm():
-    c = cmod.manager(); c.ensure_started(store.enabled_connections()); return c
+    c = cmod.manager()
+    c.ensure_started(store.enabled_connections() + _env_specs())
+    return c
 
 @app.context_processor
 def inject_globals():
     return {"pending": store.pending_approvals(), "mode": rt.mode(),
-            "version": WARDEN_VERSION, "deployed_at": DEPLOYED_AT}
+            "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
 def connected_tools():
     """All tools across connected servers, with effective governance risk."""

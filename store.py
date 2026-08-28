@@ -10,7 +10,9 @@ import sqlite3
 import datetime
 import uuid
 
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warden.db")
+DATA_ROOT = os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(DATA_ROOT, exist_ok=True)
+DB = os.path.join(DATA_ROOT, "warden.db")
 
 def _conn():
     c = sqlite3.connect(DB, timeout=10)
@@ -152,21 +154,23 @@ def approvals_for_run(run_id):
 
 # ---- connections (enabled external MCP servers) ----
 def enable_connection(cid, transport, command=None, url=None, token=None):
+    import vault
     c = _conn()
     c.execute("INSERT OR REPLACE INTO connections VALUES(?,?,?,?,?,?,?)",
-              (cid, transport, command, url, token, 1, now()))
+              (cid, transport, command, url, vault.encrypt(token), 1, now()))
     c.commit(); c.close()
 
 def disable_connection(cid):
     c = _conn(); c.execute("DELETE FROM connections WHERE id=?", (cid,)); c.commit(); c.close()
 
 def enabled_connections():
+    import vault
     c = _conn(); rows = c.execute("SELECT * FROM connections WHERE enabled=1").fetchall(); c.close()
     out = []
     for r in rows:
-        d = dict(r); d["id"] = d["id"]; out.append(
-            {"id": d["id"], "transport": d["transport"], "command": d["command"],
-             "url": d["url"], "token": d["token"]})
+        d = dict(r)
+        out.append({"id": d["id"], "transport": d["transport"], "command": d["command"],
+                    "url": d["url"], "token": vault.decrypt(d["token"])})
     return out
 
 def is_enabled(cid):

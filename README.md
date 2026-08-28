@@ -76,7 +76,27 @@ Python + Node + uv, so npx- and uvx-based MCP servers spawn on the host.
 - On this path the npx/uvx catalog entries can't spawn (no Node); they report a clear
   connection error. The two built-in servers and any remote-HTTP servers still work.
 
-`warden.db` and `data/` are ephemeral and reset on redeploy (fine for a demo).
+## Keeping configuration across deploys
+
+Render's filesystem is ephemeral, so attach a **Render Disk** and set `WARDEN_DATA_DIR`
+to its mount path (e.g. `/var/warden`). Everything Warden stores, agents, enabled
+connections, tool overrides, runs, and the audit log, lives on that disk and survives
+redeploys.
+
+**Tokens are entered in the UI and persist on the disk, encrypted.** Paste a server's
+access token on the Connections page once; it is encrypted at rest (never stored as
+plaintext) and reused after every redeploy. No per-token environment variables.
+
+- Encryption key: taken from `WARDEN_SECRET_KEY` if you set one (kept out of the data
+  dir, the stronger option), otherwise generated once and stored on the disk beside the
+  data (zero-config). Any string works as `WARDEN_SECRET_KEY`.
+- Optional: a server can instead read its token from an environment variable
+  (`GITHUB_TOKEN`, `STRIPE_API_KEY`, etc.) if you prefer that for a specific one, and
+  `WARDEN_AUTOCONNECT=deepwiki,github` will auto-connect a list of servers on boot. These
+  are optional conveniences, not required, the disk handles persistence on its own.
+
+Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,
+`WARDEN_DATA_DIR=/var/warden`, and optionally `WARDEN_SECRET_KEY=<any long random string>`.
 
 ## Connect a real remote server (GitHub)
 
