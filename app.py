@@ -132,6 +132,11 @@ def approval(apid):
 def approvals():
     return render_template("approvals.html", pending=store.pending_approvals())
 
+@app.route("/architecture")
+def architecture():
+    servers = cm().connected_servers()
+    return render_template("architecture.html", servers=servers, tools=connected_tools())
+
 @app.route("/audit")
 def audit():
     return render_template("audit.html", events=store.audit_all(300))

@@ -32,6 +32,9 @@
       {% elif e.id in enabled %}
         <form method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
           <button class="btn ghost sm">Disconnect</button></form>
+      {% elif e.transport=='http' and e.auth=='none' %}
+        <form method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}">
+          <button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
         <form method="post" action="{{ url_for('enable_connection') }}" style="display:flex;flex-direction:column;gap:6px">
           <input type="hidden" name="id" value="{{ e.id }}">
@@ -49,10 +52,15 @@
 {% endfor %}
 
 <div class="section-h"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} tools across connected servers</span></div>
+{% for server_name, group in tools|groupby('server_name') %}
+{% set gtools = group|list %}
+<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px">
+  <span style="font-family:var(--disp);font-size:16px;font-weight:600">{{ server_name }}</span>
+  <span class="pill">{{ gtools|length }} tool{{ '' if gtools|length==1 else 's' }}</span>
+</div>
 <div class="ledger">
-  {% for t in tools %}
-  <div class="ev" style="grid-template-columns:150px 1fr 190px;align-items:center">
-    <span class="ts" style="color:var(--mut)">{{ t.server_name }}</span>
+  {% for t in gtools %}
+  <div class="ev" style="grid-template-columns:1fr 190px;align-items:center">
     <span class="kind" style="color:var(--txt)">{{ t.tool }}
       <span class="stamp {{ t.risk }}">{{ t.risk }}</span>
       {% if t.override %}<span class="pill">override</span>{% endif %}
@@ -70,4 +78,5 @@
   </div>
   {% endfor %}
 </div>
+{% endfor %}
 {% endblock %}

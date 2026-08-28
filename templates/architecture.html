@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active='architecture' %}
+{% block title %}Architecture · Warden{% endblock %}
+{% block body %}
+<div class="page-h">
+  <div class="eyebrow">Architecture</div>
+  <h1>How Warden works.</h1>
+  <p class="sub">Warden is a studio for building agents and a control plane for governing them. An agent is just instructions plus a set of tools; the tools come from MCP servers you connect; and every action an agent takes passes through one governance gate before it happens. Here is the whole pipeline.</p>
+</div>
+
+<!-- pipeline -->
+<div style="display:flex;flex-direction:column;gap:0;margin:8px 0 10px">
+  {% macro stage(num, title, body, accent='') %}
+  <div style="border:1px solid var(--line);border-left:3px solid {{ accent or 'var(--line2)' }};border-radius:12px;padding:18px 20px;background:var(--ink2)">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ num }}</span>
+      <span style="font-family:var(--disp);font-size:18px;font-weight:600">{{ title }}</span>
+    </div>
+    <div style="color:var(--mut);font-size:13.5px;margin-top:6px;max-width:74ch">{{ body|safe }}</div>
+  </div>
+  <div style="text-align:center;color:var(--dim);font-family:var(--mono);font-size:16px;line-height:1.1;padding:3px 0">&darr;</div>
+  {% endmacro %}
+
+  {{ stage('01', 'Connections · MCP servers',
+     'You choose which MCP servers an agent can reach on the Connections page: two built-in servers, remote HTTP servers like GitHub or Stripe, or local stdio servers. Warden opens a session to each and discovers its tools over the Model Context Protocol.', 'var(--brass)') }}
+  {{ stage('02', 'Governance · risk classification',
+     'The moment a tool is discovered, Warden assigns it a risk tier. Built-in tools use a hand-set registry; tools from any other server are classified automatically and <b>fail closed</b>: reads run on their own, writes and anything unrecognized are gated. You can override any tool&rsquo;s tier.', 'var(--low)') }}
+  {{ stage('03', 'Builder · define the agent',
+     'An agent is instructions plus a chosen subset of those tools. Nothing about governance is wired by hand, the risk tier travels with the tool, so an agent granted a high-risk tool is automatically subject to the gate.') }}
+  {{ stage('04', 'Runtime · perceive, decide, act',
+     'On a run, the agent loops against a live model: it reads context, decides which tool to call, and Warden executes it over MCP, feeding the result back. Low and medium tools run straight through. A high-risk tool <b>pauses the run</b>.', 'var(--brass)') }}
+  {{ stage('05', 'The gate · human approval',
+     'A paused run opens an approval. Nothing has happened yet, the money has not moved, the file is not written. A human approves, and the action executes and is recorded; or denies, and the agent is told to stop. This is the one checkpoint every state-changing action passes through.', 'var(--high)') }}
+  <div style="border:1px solid var(--line);border-left:3px solid var(--brass-dim);border-radius:12px;padding:18px 20px;background:var(--ink2)">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--dim)">06</span>
+      <span style="font-family:var(--disp);font-size:18px;font-weight:600">Audit · the record</span>
+    </div>
+    <div style="color:var(--mut);font-size:13.5px;margin-top:6px;max-width:74ch">Every thought, tool call, result, and approval decision is written to an append-only log, per run and across the whole studio, each entry stamped with its risk tier. Nothing an agent does is off the record.</div>
+  </div>
+</div>
+
+<!-- risk model -->
+<div class="section-h"><span class="lbl">The risk model</span></div>
+<div class="grid g3">
+  <div class="card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="stamp LOW">LOW</span><b>Reads, auto-run</b></div>
+    <div style="color:var(--mut);font-size:13px">Lookups, searches, file reads. No side effects, so the agent runs them on its own.</div></div>
+  <div class="card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="stamp MED">MED</span><b>Reversible writes</b></div>
+    <div style="color:var(--mut);font-size:13px">Opening a ticket and the like. Runs automatically, but logged prominently.</div></div>
+  <div class="card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="stamp HIGH">HIGH</span><b>Irreversible, gated</b></div>
+    <div style="color:var(--mut);font-size:13px">Moving money, writing files, creating PRs. Pauses for human approval before it runs.</div></div>
+</div>
+<p class="sub" style="margin-top:14px">Unrecognized tools default to HIGH. That is deliberate: a tool from a server Warden has never seen is gated until a human decides otherwise, rather than trusted by default.</p>
+
+<!-- run lifecycle -->
+<div class="section-h"><span class="lbl">A run&rsquo;s life</span></div>
+<div class="ledger">
+  <div class="ev" style="grid-template-columns:170px 1fr"><span class="kind" style="color:var(--mut)">running</span><span class="detail">the agent is reading and calling low/medium tools</span></div>
+  <div class="ev" style="grid-template-columns:170px 1fr"><span class="kind k-approval_request">awaiting approval</span><span class="detail">a high-risk tool is held; a human must approve or deny</span></div>
+  <div class="ev" style="grid-template-columns:170px 1fr"><span class="kind k-final">done</span><span class="detail">the agent finished; the full trace is in the audit log</span></div>
+</div>
+
+<!-- current state -->
+<div class="section-h"><span class="lbl">Right now</span></div>
+<div class="card">
+  <div style="color:var(--mut);font-size:13.5px">This instance has <b style="color:var(--txt)">{{ servers|length }}</b> server(s) connected exposing <b style="color:var(--txt)">{{ tools|length }}</b> governed tools:</div>
+  <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">
+    {% for s in servers %}<span class="pill {{ 'done' if s.status=='connected' }}">{{ s.name }} &middot; {{ s.tool_count }} tools</span>{% endfor %}
+  </div>
+  <div style="margin-top:14px"><a class="btn ghost sm" href="{{ url_for('connections') }}">Manage connections &rarr;</a>
+  <a class="btn brass sm" href="{{ url_for('new_agent') }}" style="margin-left:8px">Build an agent &rarr;</a></div>
+</div>
+{% endblock %}

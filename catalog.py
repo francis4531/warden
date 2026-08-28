@@ -25,6 +25,11 @@ CATALOG = [
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Read, list, and write files inside a sandboxed workspace. A working second server."},
 
+  # --- live public remote server, no credentials, connect and go ---
+  {"id":"deepwiki","name":"DeepWiki (GitHub repos)","category":"Dev","maintainer":"vendor",
+   "transport":"http","run":"https://mcp.deepwiki.com/mcp","auth":"none","status":"ready",
+   "desc":"Ask real questions about any public GitHub repository and read its docs, live. No token needed."},
+
   # --- Anthropic official reference servers ---
   {"id":"fetch","name":"Fetch","category":"Web","maintainer":"official","transport":"stdio_python",
    "run":"uvx mcp-server-fetch","auth":"none","status":"needs_python",
