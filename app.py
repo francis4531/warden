@@ -356,6 +356,29 @@ def observability():
     return render_template("observability.html", k=kpis, risk=dict(risk_dist),
                            agents=agent_rows, tools=tool_rows, days=days)
 
+@app.route("/run/<rid>/trace")
+def run_trace(rid):
+    import telemetry
+    r = store.get_run(rid)
+    if not r: abort(404)
+    spans, meta = telemetry.build_spans(rid)
+    return render_template("trace.html", run=r, agent=store.get_agent(r["agent_id"]),
+                           spans=spans, meta=meta,
+                           otlp_configured=bool(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")))
+
+@app.route("/run/<rid>/trace.json")
+def run_trace_json(rid):
+    import telemetry
+    if not store.get_run(rid): abort(404)
+    return app.response_class(_json.dumps(telemetry.to_otlp(rid), indent=2),
+                              mimetype="application/json")
+
+@app.route("/run/<rid>/export", methods=["POST"])
+def run_export(rid):
+    import telemetry
+    if not store.get_run(rid): abort(404)
+    return telemetry.export(rid)
+
 @app.route("/healthz")
 def healthz():
     import paths
