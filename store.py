@@ -188,3 +188,7 @@ def get_override(model_key):
 def all_overrides():
     c = _conn(); rows = c.execute("SELECT * FROM tool_overrides").fetchall(); c.close()
     return {r["model_key"]: r["risk"] for r in rows}
+
+def approval_counts():
+    c = _conn(); rows = c.execute("SELECT status, COUNT(*) n FROM approvals GROUP BY status").fetchall(); c.close()
+    return {r["status"]: r["n"] for r in rows}

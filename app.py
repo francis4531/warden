@@ -286,6 +286,76 @@ def architecture():
 def audit():
     return render_template("audit.html", events=store.audit_all(300))
 
+@app.route("/observability")
+def observability():
+    from collections import Counter, defaultdict
+    events = store.audit_all(4000)
+    runs = store.list_runs(500)
+    agents = {a["id"]: a["name"] for a in store.list_agents()}
+
+    model_calls = [e for e in events if e["kind"] == "model_call"]
+    tool_calls = [e for e in events if e["kind"] in ("tool_result", "tool_result_gated")]
+    denied_ev = [e for e in events if e["kind"] == "denied"]
+
+    def d(e): return e.get("detail") or {}
+    total_cost = sum(d(e).get("cost", 0) or 0 for e in model_calls)
+    total_tokens = sum((d(e).get("input_tokens", 0) or 0) + (d(e).get("output_tokens", 0) or 0) for e in model_calls)
+    tool_errors = sum(1 for e in tool_calls if d(e).get("outcome") == "error")
+
+    ac = store.approval_counts()
+    approved = ac.get("approved", 0); denied = ac.get("denied", 0); pending = ac.get("pending", 0)
+    decided = approved + denied
+
+    kpis = {
+        "runs": len(runs),
+        "cost": total_cost,
+        "tokens": total_tokens,
+        "approval_rate": (approved / decided) if decided else None,
+        "denial_rate": (denied / decided) if decided else None,
+        "tool_err_rate": (tool_errors / len(tool_calls)) if tool_calls else None,
+        "gated": approved + denied + pending,
+        "decided": decided, "denied": denied, "approved": approved, "pending": pending,
+        "mode": rt.mode(),
+    }
+
+    risk_dist = Counter(e["risk"] for e in tool_calls if e["risk"])
+
+    per_agent = {}
+    for r in runs:
+        a = per_agent.setdefault(r["agent_id"], {"name": agents.get(r["agent_id"], "—"), "runs": 0, "cost": 0.0, "gated": 0, "denied": 0})
+        a["runs"] += 1
+    for e in model_calls:
+        a = per_agent.get(e["agent_id"]);  a and a.__setitem__("cost", a["cost"] + (d(e).get("cost", 0) or 0))
+    for e in events:
+        if e["kind"] == "approval_request" and e["agent_id"] in per_agent: per_agent[e["agent_id"]]["gated"] += 1
+    for e in denied_ev:
+        if e["agent_id"] in per_agent: per_agent[e["agent_id"]]["denied"] += 1
+    agent_rows = sorted(per_agent.values(), key=lambda x: x["runs"], reverse=True)
+
+    per_tool = {}
+    for e in tool_calls:
+        name = (e["skill"] or "").split("__")[-1]
+        t = per_tool.setdefault(name, {"tool": name, "calls": 0, "errors": 0, "lat": [], "risk": e["risk"]})
+        t["calls"] += 1
+        if d(e).get("outcome") == "error": t["errors"] += 1
+        lm = d(e).get("latency_ms")
+        if lm: t["lat"].append(lm)
+    tool_rows = []
+    for t in per_tool.values():
+        t["avg_ms"] = int(sum(t["lat"]) / len(t["lat"])) if t["lat"] else None
+        t["err_rate"] = (t["errors"] / t["calls"]) if t["calls"] else 0
+        tool_rows.append(t)
+    tool_rows.sort(key=lambda x: x["calls"], reverse=True)
+
+    # runs per day (last 10 with activity)
+    by_day = defaultdict(int)
+    for r in runs:
+        by_day[(r["created_at"] or "")[:10]] += 1
+    days = sorted(by_day.items())[-10:]
+
+    return render_template("observability.html", k=kpis, risk=dict(risk_dist),
+                           agents=agent_rows, tools=tool_rows, days=days)
+
 @app.route("/healthz")
 def healthz():
     import paths
