@@ -32,10 +32,16 @@
 
 <form method="post" action="{{ url_for('create_agent') }}">
   <div class="card">
+    <label class="f" for="tpl">Start from a template <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
+    <select id="tpl">
+      <option value="">Blank agent</option>
+      {% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    </select>
+    <div id="tplnote" style="color:var(--med);font-size:12px;margin-top:6px"></div>
     <label class="f" for="name">Agent name</label>
-    <input type="text" id="name" name="name" placeholder="Billing Resolver" required>
+    <input type="text" id="name" name="name" placeholder="Name your agent" required>
     <label class="f" for="instructions">Instructions</label>
-    <textarea id="instructions" name="instructions">You resolve billing issues for enterprise customers. Look up the account, check policy, and make the customer whole. Be concise and never guess at numbers.</textarea>
+    <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval."></textarea>
     <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
     <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6">
 
@@ -82,6 +88,28 @@
 </div>
 
 <script>
+const TEMPLATES = {{ templates|tojson }};
+document.getElementById('tpl').addEventListener('change', e=>{
+  const t = TEMPLATES.find(x=>x.id===e.target.value);
+  const name=document.getElementById('name'), instr=document.getElementById('instructions');
+  if(!t){ name.value=''; instr.value=''; return; }               // "Blank agent"
+  name.value=t.name; instr.value=t.instructions;
+  const want=new Set(t.tools);
+  document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{
+    b.checked = want.has(b.value.split('__').pop());              // match by tool name, any server
+  });
+  let missing=[...want];
+  document.querySelectorAll('details.tsec').forEach(sec=>{
+    const boxes=[...sec.querySelectorAll('input[name=skills]')];
+    boxes.forEach(b=>{ const n=b.value.split('__').pop(); const i=missing.indexOf(n); if(i>=0) missing.splice(i,1); });
+    const n=sec.querySelectorAll('input[name=skills]:checked').length;
+    const c=sec.querySelector('.selc'); if(c) c.textContent=n;
+    if(n>0) sec.open=true;                                        // reveal what got granted
+  });
+  const note=document.getElementById('tplnote');
+  note.textContent = missing.length ? ('Connect a server for: '+missing.join(', ')+' to grant the rest.') : '';
+});
+
 function openConn(){document.getElementById('connmodal').style.display='flex';}
 function closeConn(){document.getElementById('connmodal').style.display='none';}
 // keep each server section's "granted" count current

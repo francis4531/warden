@@ -20,6 +20,14 @@
 .conn .cstatus{font-family:var(--mono);font-size:10.5px;margin-right:auto}
 .conn.on{border-color:color-mix(in srgb,var(--low) 45%,var(--line))}
 .conn.err{border-color:color-mix(in srgb,var(--high) 45%,var(--line))}
+.gsec{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:10px;background:var(--ink2)}
+.gsec>summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;gap:10px}
+.gsec>summary::-webkit-details-marker{display:none}
+.gsec>summary .gname{font-family:var(--disp);font-size:15px;font-weight:600}
+.gsec>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
+.gsec[open]>summary .chev{transform:rotate(90deg)}
+.gsec .ledger{border:none;border-radius:0;border-top:1px solid var(--line)}
+.gsec .ev:last-child{border-bottom:none}
 </style>
 
 <div class="page-h" style="margin-bottom:20px">
@@ -73,25 +81,24 @@
 <div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
 {% for server_name, group in tools|groupby('server_name') %}
 {% set gtools = group|list %}
-<div style="display:flex;align-items:center;gap:9px;margin:16px 0 7px">
-  <span style="font-family:var(--disp);font-size:15px;font-weight:600">{{ server_name }}</span>
-  <span class="pill">{{ gtools|length }}</span>
-</div>
-<div class="ledger">
-  {% for t in gtools %}
-  <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
-    <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
-    <span>
-      <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
-        <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
-        <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
-          {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
-        </select><button class="btn sm">Set</button>
-      </form>
-    </span>
+<details class="gsec" {{ 'open' if gtools|length <= 6 }}>
+  <summary><span class="chev">&#9654;</span><span class="gname">{{ server_name }}</span><span class="pill">{{ gtools|length }}</span></summary>
+  <div class="ledger">
+    {% for t in gtools %}
+    <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
+      <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
+      <span>
+        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
+          <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
+          <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
+            {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
+          </select><button class="btn sm">Set</button>
+        </form>
+      </span>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
+</details>
 {% endfor %}
 
 <script>

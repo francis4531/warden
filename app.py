@@ -152,12 +152,41 @@ def tools_json():
                            "gate": t["gate"], "description": t["description"]})
     return {"groups": list(groups.values())}
 
+AGENT_TEMPLATES = [
+    {"id": "billing", "name": "Billing Resolver",
+     "instructions": "You resolve billing issues for enterprise customers. Look up the account, check policy, and make the customer whole. Be concise and never guess at numbers.",
+     "tools": ["lookup_customer", "search_knowledge", "create_ticket", "issue_refund"]},
+    {"id": "triage", "name": "Support Triage",
+     "instructions": "You triage inbound support requests. Look up the customer, search the knowledge base for a known fix, and open a ticket with a clear summary when it needs a human. Do not promise resolutions you cannot verify.",
+     "tools": ["lookup_customer", "search_knowledge", "create_ticket"]},
+    {"id": "refund_audit", "name": "Refund Auditor (read-only)",
+     "instructions": "You investigate refund requests but cannot issue refunds yourself. Look up the account, verify the charge against policy, and write a clear recommendation for a human to approve. State the exact amount and the policy basis.",
+     "tools": ["lookup_customer", "search_knowledge"]},
+    {"id": "repo_qa", "name": "Codebase Explainer",
+     "instructions": "You answer questions about a public GitHub repository. Read its docs and structure, then explain how it works in plain language with references to the relevant files. If you are unsure, say so.",
+     "tools": ["ask_question", "read_wiki_contents", "read_wiki_structure"]},
+    {"id": "repo_maint", "name": "Repo Maintainer",
+     "instructions": "You help maintain a GitHub repository. Read issues, pull requests, and code to understand the request, then propose changes. Any write (a branch, a commit, a pull request) is held for review before it runs. Never merge without explicit approval.",
+     "tools": ["get_file_contents", "list_issues", "list_pull_requests", "search_code",
+               "create_branch", "create_pull_request", "push_files", "merge_pull_request"]},
+    {"id": "files", "name": "File Organizer",
+     "instructions": "You organize a working folder. List and read files to understand what is there, then propose a tidier structure. Any file you create or overwrite is held for review first.",
+     "tools": ["list_files", "read_file", "write_file"]},
+    {"id": "self_audit", "name": "Warden Self-Audit",
+     "instructions": "You audit Warden's own source code. List and read the source, run the self-check, and report concrete issues with file and line references. Any fix you propose is held as a patch for a human to review before anything changes.",
+     "tools": ["list_source", "read_source", "run_selfcheck", "propose_patch"]},
+    {"id": "kb", "name": "Knowledge Assistant",
+     "instructions": "You answer policy and product questions from the internal knowledge base and public repo docs. Cite the source you used. If the answer is not in the sources, say you do not know rather than guessing.",
+     "tools": ["search_knowledge", "ask_question", "read_wiki_contents"]},
+]
+
 @app.route("/new")
 def new_agent():
     status = {s["id"]: s for s in cm().connected_servers()}
     return render_template("builder.html", groups=tools_by_server(),
                            catalog=cat.CATALOG, status=status, enabled={c["id"] for c in store.enabled_connections()},
-                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
+                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
+                           templates=AGENT_TEMPLATES)
 
 @app.route("/agents", methods=["POST"])
 def create_agent():
