@@ -224,9 +224,13 @@ def _fmt_event(e):
     elif kind in ("final", "thought", "error"):
         text = d.get("text", "")
     elif "result" in d:
-        text = "-> " + _json.dumps(d["result"])[:300]
+        res = d["result"]
+        s = res if isinstance(res, str) else _json.dumps(res, ensure_ascii=False)
+        s = " ".join(s.split())               # collapse newlines/whitespace
+        text = "-> " + s[:200]
     elif "input" in d:
-        text = _json.dumps(d["input"])[:300]
+        s = _json.dumps(d["input"], ensure_ascii=False)
+        text = " ".join(s.split())[:200]
     else:
         text = ""
     return {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"),
