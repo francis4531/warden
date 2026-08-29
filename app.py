@@ -173,8 +173,18 @@ def agent(aid):
     ag = store.get_agent(aid)
     if not ag: abort(404)
     idx = {t["key"]: t for t in connected_tools()}
+    skills = ag["skills"] or []
+    granted = [idx[k] for k in skills if k in idx]
+    groups = {}
+    for t in granted:
+        groups.setdefault(t["server_name"], []).append(t)
+    counts = {"total": len(granted), "servers": len(groups),
+              "gated": sum(1 for t in granted if t["gate"] == "approval"),
+              "auto": sum(1 for t in granted if t["gate"] != "approval")}
+    missing = [k for k in skills if k not in idx]
     runs = [r for r in store.list_runs(50) if r["agent_id"] == aid]
-    return render_template("agent.html", agent=ag, idx=idx, runs=runs)
+    return render_template("agent.html", agent=ag, groups=groups, counts=counts,
+                           missing=missing, runs=runs)
 
 def _advance_bg(rid):
     """Run the agent loop in the background so the browser isn't blocked."""

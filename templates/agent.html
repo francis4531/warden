@@ -1,42 +1,87 @@
 {% extends "base.html" %}
 {% block title %}{{ agent.name }} · Warden{% endblock %}
 {% block body %}
-<div class="page-h">
+<style>
+.starter{background:var(--ink2);border:1px solid var(--line);border-radius:14px;padding:20px}
+.starter .lab{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+.starter textarea{min-height:74px;background:var(--ink)}
+.starter .go{display:flex;align-items:center;gap:12px;margin-top:13px}
+.starter .hint{color:var(--dim);font-size:12.5px}
+.tools{border:1px solid var(--line);border-radius:12px;background:var(--ink2);overflow:hidden}
+.tools>summary{list-style:none;cursor:pointer;padding:15px 18px;display:flex;align-items:center;gap:12px}
+.tools>summary::-webkit-details-marker{display:none}
+.tools>summary .chev{color:var(--dim);transition:transform .15s;font-size:12px}
+.tools[open]>summary .chev{transform:rotate(90deg)}
+.tools>summary .sm-title{font-weight:600}
+.tools>summary .sm-meta{color:var(--mut);font-size:12.5px}
+.tools .body{padding:4px 18px 18px;border-top:1px solid var(--line)}
+.tgroup{margin-top:14px}
+.tgroup .gh{font-weight:600;font-size:13.5px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:7px}
+.tmini{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--ink)}
+.tmini .tn{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+
+<div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow">Agent</div>
   <h1>{{ agent.name }}</h1>
   <p class="sub">{{ agent.instructions }}</p>
 </div>
-<div class="section-h"><span class="lbl">Granted tools</span></div>
-<div class="list">
-  {% for s in agent.skills %}
-  {% set m = idx.get(s) %}
-  <div class="row">
-    <div class="r-main">
-      <div class="r-title" style="font-family:var(--mono);font-size:13.5px">{{ m.tool if m else s }}
-        {% if m %}<span style="color:var(--dim);font-size:12px;font-family:var(--body)">· {{ m.server_name }}</span>{% endif %}</div>
-      <div class="r-meta">{{ m.description if m else 'tool from a disconnected server' }}</div>
+
+<!-- primary action: talk to the agent -->
+<div class="starter">
+  <div class="lab">Start a conversation</div>
+  <form method="post" action="{{ url_for('run') }}">
+    <input type="hidden" name="agent_id" value="{{ agent.id }}">
+    <textarea name="input" placeholder="Ask the agent to do something…" required autofocus></textarea>
+    <div class="go">
+      <button class="btn brass" type="submit">Run agent &rarr;</button>
+      <span class="hint">The agent works in a conversation, reply to it, and approve anything it wants to run.</span>
     </div>
-    {% if m %}<span class="stamp {{ m.risk }}">{{ m.risk }}</span>{% else %}<span class="pill error">unavailable</span>{% endif %}
-  </div>
-  {% endfor %}
+  </form>
 </div>
-<div class="section-h"><span class="lbl">Run the agent</span></div>
-<form method="post" action="{{ url_for('run') }}" class="card">
-  <input type="hidden" name="agent_id" value="{{ agent.id }}">
-  <textarea name="input" placeholder="Account AC-1001 says they were charged twice for $4200. Please make it right." required></textarea>
-  <div style="margin-top:14px"><button class="btn brass" type="submit">Run agent &rarr;</button>
-  <span style="color:var(--dim);font-size:12.5px;margin-left:10px">Try: AC-1001 (double charge), or ask it to write a file.</span></div>
-</form>
+
 {% if runs %}
-<div class="section-h"><span class="lbl">Runs</span></div>
+<div class="section-h"><span class="lbl">Conversations</span></div>
 <div class="list">
   {% for r in runs %}
   <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
     <div class="r-main"><div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
-    <div class="r-meta">{{ r.id }} &middot; {{ r.created_at[:19].replace('T',' ') }}</div></div>
+    <div class="r-meta">{{ r.created_at[:16].replace('T',' ') }}</div></div>
     <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
   </a>
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- reference: what it's allowed to touch (collapsed) -->
+<div class="section-h"><span class="lbl">Permissions</span></div>
+<details class="tools">
+  <summary>
+    <span class="chev">&#9654;</span>
+    <span class="sm-title">{{ counts.total }} tool{{ '' if counts.total==1 else 's' }}</span>
+    <span class="sm-meta">across {{ counts.servers }} server{{ '' if counts.servers==1 else 's' }} &middot;
+      {{ counts.gated }} gated for approval &middot; {{ counts.auto }} auto-run{% if missing %} &middot; {{ missing|length }} unavailable{% endif %}</span>
+  </summary>
+  <div class="body">
+    {% for server, tools in groups.items() %}
+    <div class="tgroup">
+      <div class="gh">{{ server }} <span class="pill">{{ tools|length }}</span></div>
+      <div class="tgrid">
+        {% for t in tools %}
+        <div class="tmini" title="{{ t.description }}">
+          <span class="tn">{{ t.tool }}</span>
+          <span class="stamp {{ t.risk }}">{{ t.risk }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if missing %}
+    <div class="tgroup"><div class="gh" style="color:var(--high)">Unavailable <span class="pill error">{{ missing|length }}</span></div>
+      <div class="hint" style="color:var(--mut);font-size:12.5px">Granted from a server that isn't connected right now. Reconnect it on the <a href="{{ url_for('connections') }}" style="color:var(--brass)">Connections</a> page.</div>
+    </div>
+    {% endif %}
+  </div>
+</details>
 {% endblock %}
