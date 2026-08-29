@@ -288,7 +288,18 @@ def audit():
 
 @app.route("/healthz")
 def healthz():
-    return {"ok": True, "mode": rt.mode(), "servers": len(cm().connected_servers())}
+    dd = store.DATA_ROOT
+    return {"ok": True, "mode": rt.mode(),
+            "servers": len(cm().connected_servers()),
+            "version": VERSION_FULL, "commit": BUILD_COMMIT,
+            "persistence": {
+                "WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
+                "data_dir": dd,
+                "writable": os.access(dd, os.W_OK),
+                "build_json_exists": os.path.exists(os.path.join(dd, "build.json")),
+                "db_exists": os.path.exists(os.path.join(dd, "warden.db")),
+                "agents_saved": len(store.list_agents()),
+            }}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=False, threaded=True)
