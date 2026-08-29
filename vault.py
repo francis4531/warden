@@ -15,8 +15,7 @@ try:
 except Exception:
     _OK = False
 
-import paths
-DATA_ROOT = paths.DATA_ROOT
+DATA_ROOT = os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
 KEY_FILE = os.path.join(DATA_ROOT, ".warden_key")
 
 def _key():
