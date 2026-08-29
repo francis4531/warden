@@ -288,16 +288,19 @@ def audit():
 
 @app.route("/healthz")
 def healthz():
+    import paths
     dd = store.DATA_ROOT
     return {"ok": True, "mode": rt.mode(),
             "servers": len(cm().connected_servers()),
             "version": VERSION_FULL, "commit": BUILD_COMMIT,
             "persistence": {
                 "WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
+                "requested_dir": paths.REQUESTED,
                 "data_dir": dd,
+                "using_fallback": paths.FALLBACK,
+                "persisting": (not paths.FALLBACK),
                 "writable": os.access(dd, os.W_OK),
                 "build_json_exists": os.path.exists(os.path.join(dd, "build.json")),
-                "db_exists": os.path.exists(os.path.join(dd, "warden.db")),
                 "agents_saved": len(store.list_agents()),
             }}
 

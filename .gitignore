@@ -5,3 +5,4 @@ __pycache__/
 build.json
 data/
 warden.db
+_localdata/

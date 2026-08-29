@@ -10,8 +10,8 @@ import sqlite3
 import datetime
 import uuid
 
-DATA_ROOT = os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-os.makedirs(DATA_ROOT, exist_ok=True)
+import paths
+DATA_ROOT = paths.DATA_ROOT
 DB = os.path.join(DATA_ROOT, "warden.db")
 
 def _conn():

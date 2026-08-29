@@ -7,7 +7,8 @@ import os
 import json
 from mcp.server.fastmcp import FastMCP
 
-WORKSPACE = os.path.join(os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__))), "data", "workspace")
+import paths
+WORKSPACE = os.path.join(paths.DATA_ROOT, "data", "workspace")
 os.makedirs(WORKSPACE, exist_ok=True)
 
 # seed one file so reads have something to find
