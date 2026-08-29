@@ -13,6 +13,15 @@
 .mconn .act{margin-left:auto;display:flex;gap:6px;align-items:center}
 .mconn .act input{background:var(--ink);border:1px solid var(--line2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:10px;padding:5px 8px;width:150px}
 .cstatus{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+.tsec{border:1px solid var(--line);border-radius:10px;margin-bottom:9px;overflow:hidden;background:var(--ink2)}
+.tsec>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.tsec>summary::-webkit-details-marker{display:none}
+.tsec>summary b{font-size:13.5px}
+.tsec>summary .cnt{margin-left:auto;font-size:12px;color:var(--dim)}
+.tsec>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
+.tsec[open]>summary .chev{transform:rotate(90deg)}
+.tsec .tbody{padding:4px 12px 12px}
+.tsec .skill-row{background:var(--ink)}
 </style>
 
 <div class="page-h">
@@ -36,7 +45,10 @@
     </div>
     <div id="toolsections">
     {% for sid, g in groups.items() %}
-      <label class="f">{{ g.name }} &middot; granted tools</label>
+    {% set sel = g.tools | selectattr('risk','in',['LOW','HIGH']) | list | length %}
+    <details class="tsec" {{ 'open' if g.tools|length <= 6 }}>
+      <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
+      <div class="tbody">
       {% for s in g.tools %}
       <label class="skill-row">
         <input type="checkbox" name="skills" value="{{ s.key }}" {{ 'checked' if s.risk in ['LOW','HIGH'] }}>
@@ -46,6 +58,8 @@
           <span class="sk-desc">{{ s.description }}</span></span>
       </label>
       {% endfor %}
+      </div>
+    </details>
     {% endfor %}
     </div>
 
@@ -70,6 +84,13 @@
 <script>
 function openConn(){document.getElementById('connmodal').style.display='flex';}
 function closeConn(){document.getElementById('connmodal').style.display='none';}
+// keep each server section's "granted" count current
+document.getElementById('toolsections').addEventListener('change', e=>{
+  if(!e.target.matches('input[name=skills]')) return;
+  const sec=e.target.closest('details.tsec'); if(!sec) return;
+  const n=sec.querySelectorAll('input[name=skills]:checked').length;
+  const c=sec.querySelector('.selc'); if(c) c.textContent=n;
+});
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function gatePill(g){return g==='approval'?'<span class="pill awaiting_approval">needs approval</span>':'<span class="pill">auto-run</span>';}
 
@@ -79,15 +100,22 @@ async function refreshTools(){
   let data; try{ data=await (await fetch('/tools.json')).json(); }catch(_){ return; }
   let html='';
   for(const g of data.groups){
-    html += `<label class="f">${esc(g.server)} &middot; granted tools</label>`;
-    for(const t of g.tools){
+    const rows = g.tools.map(t=>{
       const isNew = !existing.has(t.key);
       const checked = keep.has(t.key) || (isNew && t.risk!=='MED');
+      return {t, checked};
+    });
+    const sel = rows.filter(r=>r.checked).length;
+    const open = g.tools.length<=6 ? 'open':'';
+    html += `<details class="tsec" ${open}><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
+      +`<span class="cnt">${g.tools.length} tools &middot; <span class="selc">${sel}</span> granted</span></summary><div class="tbody">`;
+    for(const {t,checked} of rows){
       html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" ${checked?'checked':''}>`
         +`<span class="sk-body"><span class="sk-top"><span class="sk-name">${esc(t.tool)}</span>`
         +`<span class="stamp ${t.risk}">${t.risk}</span>${gatePill(t.gate)}</span>`
         +`<span class="sk-desc">${esc(t.description)}</span></span></label>`;
     }
+    html += `</div></details>`;
   }
   document.getElementById('toolsections').innerHTML = html || '<div style="color:var(--dim);font-size:13px">No tools yet. Connect a server above.</div>';
 }
