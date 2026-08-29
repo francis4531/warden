@@ -12,6 +12,7 @@ import governance as gov
 import store
 
 MODEL_DEFAULT = os.environ.get("WARDEN_MODEL", "claude-sonnet-4-5")
+MAX_TOKENS = int(os.environ.get("WARDEN_MAX_TOKENS", "4096"))
 SANDBOX = not bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 # Estimated USD price per 1M tokens (input, output). Approximate list prices, editable;
@@ -55,6 +56,54 @@ def tools_for(agent):
     return out
 
 # ---- model dispatch ----
+def _repair(messages):
+    """Guarantee the API invariant: every assistant tool_use is answered by a tool_result
+    in the very next message. If a tool crashed, a response was truncated, or a follow-up
+    landed on a dangling turn, backfill synthetic 'interrupted' results so the request is
+    valid. Turns a hard 400 into a graceful continuation the model can reason about."""
+    i = 0
+    while i < len(messages):
+        m = messages[i]
+        if m.get("role") == "assistant" and isinstance(m.get("content"), list):
+            ids = [b["id"] for b in m["content"]
+                   if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")]
+            if ids:
+                nxt = messages[i + 1] if i + 1 < len(messages) else None
+                answered = set()
+                if nxt and nxt.get("role") == "user" and isinstance(nxt.get("content"), list):
+                    answered = {b.get("tool_use_id") for b in nxt["content"]
+                                if isinstance(b, dict) and b.get("type") == "tool_result"}
+                missing = [t for t in ids if t not in answered]
+                if missing:
+                    fills = [{"type": "tool_result", "tool_use_id": t,
+                              "content": json.dumps({"error": "interrupted",
+                                  "note": "This tool did not complete. Do not assume it ran."})}
+                             for t in missing]
+                    if nxt and nxt.get("role") == "user" and isinstance(nxt.get("content"), list):
+                        nxt["content"] = fills + nxt["content"]
+                    else:
+                        messages.insert(i + 1, {"role": "user", "content": fills})
+        i += 1
+
+_TRANSIENT = ("rate", "overloaded", "timeout", "timedout", "internal", "unavailable", "connection")
+def _is_transient(ex):
+    code = getattr(ex, "status_code", None)
+    if code in (408, 409, 429, 500, 502, 503, 504, 529):
+        return True
+    return any(w in (type(ex).__name__ + " " + str(ex)).lower() for w in _TRANSIENT)
+
+def _friendly_error(ex):
+    code = getattr(ex, "status_code", None)
+    if code == 401 or "authentication" in str(ex).lower():
+        return "The model rejected the API key. Check ANTHROPIC_API_KEY."
+    if code == 429 or "rate" in str(ex).lower():
+        return "The model is rate-limited right now. Try again in a moment."
+    if code and 500 <= code < 600:
+        return "The model service had a temporary error. Try again in a moment."
+    if code == 400:
+        return "The model rejected the request. This run hit a malformed-request error; the transcript has been repaired, please retry."
+    return "The run hit an error talking to the model: " + str(ex)[:200]
+
 def _call_model(system, messages, tools):
     t0 = time.time()
     if SANDBOX:
@@ -64,11 +113,19 @@ def _call_model(system, messages, tools):
         return r
     import anthropic
     client = anthropic.Anthropic()
-    resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=1024,
-                                  system=system, messages=messages, tools=tools)
-    return {"stop_reason": resp.stop_reason, "content": [_b2d(b) for b in resp.content],
-            "usage": {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens},
-            "model": MODEL_DEFAULT, "latency_ms": int((time.time() - t0) * 1000)}
+    last = None
+    for attempt in range(3):
+        try:
+            resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=MAX_TOKENS,
+                                          system=system, messages=messages, tools=tools)
+            return {"stop_reason": resp.stop_reason, "content": [_b2d(b) for b in resp.content],
+                    "usage": {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens},
+                    "model": MODEL_DEFAULT, "latency_ms": int((time.time() - t0) * 1000)}
+        except Exception as ex:
+            last = ex
+            if _is_transient(ex) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1)); continue
+            raise last
 
 def _b2d(b):
     if b.type == "text": return {"type": "text", "text": b.text}
@@ -162,7 +219,13 @@ def _advance_once(run_id):
             if _execute_tool_turn(run_id, agent, last, messages, idx) == "paused":
                 store.update_run(run_id, status="awaiting_approval", transcript=messages)
                 return store.get_run(run_id)
-        resp = _call_model(system, messages, tools)
+        _repair(messages)   # never send an unanswered tool_use to the API
+        try:
+            resp = _call_model(system, messages, tools)
+        except Exception as ex:
+            store.audit(run_id, agent["id"], "error", detail={"text": _friendly_error(ex)})
+            store.update_run(run_id, status="error", transcript=messages)
+            return store.get_run(run_id)
         u = resp.get("usage", {})
         store.audit(run_id, agent["id"], "model_call",
                     detail={"model": resp.get("model"), "input_tokens": u.get("input_tokens", 0),
@@ -210,7 +273,11 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                         detail={"input":b["input"],"outcome":"denied"})
         else:
             t0=time.time()
-            rtext=_cm().call_by_key(b["name"], b["input"])
+            try:
+                rtext=_cm().call_by_key(b["name"], b["input"])
+            except Exception as ex:
+                rtext=json.dumps({"error":"tool_failed","message":str(ex)[:300],
+                                  "note":"This tool raised an error. Do not assume it ran; explain or try another approach."})
             parsed=_safe(rtext)
             outcome="error" if isinstance(parsed, dict) and parsed.get("error") else "ok"
             store.audit(run_id, agent["id"], "tool_result_gated" if gated else "tool_result",
