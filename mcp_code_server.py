@@ -8,7 +8,8 @@ import os, json, ast, py_compile, tempfile
 from mcp.server.fastmcp import FastMCP
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-PATCH_DIR = os.path.join(os.environ.get("WARDEN_DATA_DIR", APP_DIR), "data", "patches")
+import paths
+PATCH_DIR = os.path.join(paths.DATA_ROOT, "data", "patches")
 os.makedirs(PATCH_DIR, exist_ok=True)
 
 def _py_files():

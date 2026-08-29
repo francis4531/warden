@@ -171,6 +171,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
       <a href="{{ url_for('approvals') }}" class="{{ 'active' if active=='approvals' }}">Approvals
         {% if pending and pending|length %}<span class="badge">{{ pending|length }}</span>{% endif %}</a>
       <a href="{{ url_for('audit') }}" class="{{ 'active' if active=='audit' }}">Audit log</a>
+      <a href="{{ url_for('observability') }}" class="{{ 'active' if active=='observability' }}">Observability</a>
       <a href="{{ url_for('architecture') }}" class="{{ 'active' if active=='architecture' }}">Architecture</a>
     </nav>
     <div class="foot">

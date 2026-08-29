@@ -10,8 +10,8 @@ import sqlite3
 import datetime
 import uuid
 
-DATA_ROOT = os.environ.get("WARDEN_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-os.makedirs(DATA_ROOT, exist_ok=True)
+import paths
+DATA_ROOT = paths.DATA_ROOT
 DB = os.path.join(DATA_ROOT, "warden.db")
 
 def _conn():
@@ -188,3 +188,7 @@ def get_override(model_key):
 def all_overrides():
     c = _conn(); rows = c.execute("SELECT * FROM tool_overrides").fetchall(); c.close()
     return {r["model_key"]: r["risk"] for r in rows}
+
+def approval_counts():
+    c = _conn(); rows = c.execute("SELECT status, COUNT(*) n FROM approvals GROUP BY status").fetchall(); c.close()
+    return {r["status"]: r["n"] for r in rows}
