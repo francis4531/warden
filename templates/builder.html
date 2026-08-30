@@ -32,16 +32,10 @@
 
 <form method="post" action="{{ url_for('create_agent') }}">
   <div class="card">
-    <label class="f" for="tpl">Start from a template <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-    <select id="tpl">
-      <option value="">Blank agent</option>
-      {% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-    </select>
-    <div id="tplnote" style="color:var(--med);font-size:12px;margin-top:6px"></div>
     <label class="f" for="name">Agent name</label>
-    <input type="text" id="name" name="name" placeholder="Name your agent" required>
+    <input type="text" id="name" name="name" placeholder="Billing Resolver" required>
     <label class="f" for="instructions">Instructions</label>
-    <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval."></textarea>
+    <textarea id="instructions" name="instructions">You resolve billing issues for enterprise customers. Look up the account, check policy, and make the customer whole. Be concise and never guess at numbers.</textarea>
     <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
     <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6">
 
@@ -51,13 +45,13 @@
     </div>
     <div id="toolsections">
     {% for sid, g in groups.items() %}
-    {% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}
+    {% set sel = g.tools | selectattr('risk','in',['LOW','HIGH']) | list | length %}
     <details class="tsec" {{ 'open' if g.tools|length <= 6 }}>
       <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
       <div class="tbody">
       {% for s in g.tools %}
       <label class="skill-row">
-        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" {{ 'checked' if s.risk == 'LOW' }}>
+        <input type="checkbox" name="skills" value="{{ s.key }}" {{ 'checked' if s.risk in ['LOW','HIGH'] }}>
         <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
           <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
           {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
@@ -88,32 +82,6 @@
 </div>
 
 <script>
-const TEMPLATES = {{ templates|tojson }};
-// read-only (LOW) tools are the baseline that flows down to every agent; a template
-// adds its purposeful writes on top. Blank resets to that baseline.
-function applyGrants(want){
-  document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{
-    b.checked = (b.dataset.risk==='LOW') || want.has(b.value.split('__').pop());
-  });
-  const missing=[...want];
-  document.querySelectorAll('details.tsec').forEach(sec=>{
-    sec.querySelectorAll('input[name=skills]').forEach(b=>{ const i=missing.indexOf(b.value.split('__').pop()); if(i>=0) missing.splice(i,1); });
-    const n=sec.querySelectorAll('input[name=skills]:checked').length;
-    const c=sec.querySelector('.selc'); if(c) c.textContent=n;
-    if(n>0) sec.open=true;
-  });
-  return missing;
-}
-document.getElementById('tpl').addEventListener('change', e=>{
-  const t = TEMPLATES.find(x=>x.id===e.target.value);
-  const name=document.getElementById('name'), instr=document.getElementById('instructions');
-  name.value = t ? t.name : '';
-  instr.value = t ? t.instructions : '';
-  const missing = applyGrants(new Set(t ? t.tools : []));
-  document.getElementById('tplnote').textContent =
-    (t && missing.length) ? ('Connect a server to also grant: '+missing.join(', ')) : '';
-});
-
 function openConn(){document.getElementById('connmodal').style.display='flex';}
 function closeConn(){document.getElementById('connmodal').style.display='none';}
 // keep each server section's "granted" count current
@@ -134,7 +102,7 @@ async function refreshTools(){
   for(const g of data.groups){
     const rows = g.tools.map(t=>{
       const isNew = !existing.has(t.key);
-      const checked = keep.has(t.key) || (isNew && t.risk==='LOW');   // read-only flows down by default
+      const checked = keep.has(t.key) || (isNew && t.risk!=='MED');
       return {t, checked};
     });
     const sel = rows.filter(r=>r.checked).length;
@@ -142,7 +110,7 @@ async function refreshTools(){
     html += `<details class="tsec" ${open}><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
       +`<span class="cnt">${g.tools.length} tools &middot; <span class="selc">${sel}</span> granted</span></summary><div class="tbody">`;
     for(const {t,checked} of rows){
-      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" data-risk="${t.risk}" ${checked?'checked':''}>`
+      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" ${checked?'checked':''}>`
         +`<span class="sk-body"><span class="sk-top"><span class="sk-name">${esc(t.tool)}</span>`
         +`<span class="stamp ${t.risk}">${t.risk}</span>${gatePill(t.gate)}</span>`
         +`<span class="sk-desc">${esc(t.description)}</span></span></label>`;
