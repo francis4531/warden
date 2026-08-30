@@ -21,7 +21,7 @@ SKILLS = {
 
 READ_HINTS  = ("get","list","read","search","lookup","fetch","find","query","view",
                "describe","show","count","status","summary","recent","ask","explore",
-               "inspect","check")
+               "inspect","check","scrape","crawl","browse","retrieve","download")
 WRITE_HINTS = ("create","write","update","delete","remove","issue","send","post","add",
                "set","merge","close","open","deploy","execute","run","refund","cancel",
                "approve","edit","upload","move","rename","revoke","grant","pay","charge")
