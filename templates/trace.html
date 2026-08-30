@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block body %}
+<style>
+.tmeta{display:flex;gap:22px;flex-wrap:wrap;margin:2px 0 20px;color:var(--mut);font-size:13px}
+.tmeta b{color:var(--txt);font-weight:600}
+.wf{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--ink2)}
+.wrow{display:grid;grid-template-columns:230px 1fr 88px;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.wrow:last-child{border-bottom:none}
+.wrow.run{background:var(--stripe)}
+.wname{display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wname .kdot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.k-model{background:var(--brass)} .k-tool{background:var(--low)} .k-gate{background:var(--high)} .k-final{background:var(--mut)} .k-run{background:var(--txt)}
+.track{position:relative;height:16px;background:var(--ink3);border-radius:5px;overflow:hidden}
+.barr{position:absolute;top:0;height:100%;border-radius:5px;min-width:3px}
+.dur{text-align:right;color:var(--dim);font-family:var(--mono);font-size:11.5px}
+.attrs{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+.att{font-family:var(--mono);font-size:10.5px;color:var(--mut);background:var(--ink);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.indent{padding-left:16px}
+</style>
+
+<div class="page-h" style="margin-bottom:8px">
+  <div class="eyebrow"><a href="{{ url_for('run_view', rid=run.id) }}" style="color:var(--brass)">&larr; conversation</a> &middot; Trace</div>
+  <h1>Run trace</h1>
+  <p class="sub">The run as an OpenTelemetry trace: the run is the root span, each model call, tool call, and approval gate is a child span. Built from the audit log, exportable to your collector.</p>
+</div>
+<div class="tmeta">
+  <span>trace <b style="font-family:var(--mono);font-size:12px">{{ meta.trace_id[:16] }}…</b></span>
+  <span><b>{{ meta.spans }}</b> spans</span>
+  <span><b>{{ '%.1f'|format(meta.total_ns/1e6) }}</b> ms wall</span>
+  <span>est. cost <b>${{ '%.4f'|format(meta.cost) }}</b></span>
+  <span><b>{{ '{:,}'.format(meta.tokens) }}</b> tokens</span>
+</div>
+
+<div class="wf">
+  {% for s in spans %}
+  {% set off = ((s.start - meta.t0) / meta.total_ns * 100) if meta.total_ns else 0 %}
+  {% set wid = ((s.end - s.start) / meta.total_ns * 100) if meta.total_ns else 100 %}
+  <div class="wrow {{ 'run' if s.row=='run' }}">
+    <div class="wname {{ '' if s.row=='run' else 'indent' }}">
+      <span class="kdot k-{{ s.row }}"></span>{{ s.name }}
+    </div>
+    <div class="track">
+      <div class="barr" style="left:{{ off|round(2) }}%;width:{{ [wid,1.2]|max|round(2) }}%;
+        background:{{ 'var(--high)' if s.error else 'var(--brass)' if s.row in ['run','model'] else 'var(--low)' if s.row=='tool' else 'var(--high)' if s.row=='gate' else 'var(--mut)' }}"></div>
+    </div>
+    <div class="dur">{{ '%.1f'|format((s.end - s.start)/1e6) }} ms</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% for s in spans if s.attrs %}
+{% if loop.first %}<div class="section-h"><span class="lbl">Span attributes</span></div>{% endif %}
+<div style="padding:10px 4px;border-bottom:1px solid var(--line)">
+  <div style="font-weight:600;font-size:13px">{{ s.name }}</div>
+  <div class="attrs">{% for k,v in s.attrs.items() %}{% if v is not none %}<span class="att">{{ k }}={{ v }}</span>{% endif %}{% endfor %}</div>
+</div>
+{% endfor %}
+
+<div class="section-h" style="margin-top:26px"><span class="lbl">Export</span></div>
+<div class="card">
+  <div style="color:var(--mut);font-size:13.5px;margin-bottom:12px">
+    {% if otlp_configured %}An OTLP endpoint is configured. Export sends this trace as OTLP/HTTP to your collector.
+    {% else %}Set <span style="font-family:var(--mono);font-size:12px">OTEL_EXPORTER_OTLP_ENDPOINT</span> (and optional <span style="font-family:var(--mono);font-size:12px">OTEL_EXPORTER_OTLP_HEADERS</span>) to export to Datadog, Grafana Tempo, Honeycomb, or any OTLP collector.{% endif %}
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="btn brass sm" onclick="doExport(this)">Export to OTLP</button>
+    <a class="btn ghost sm" href="{{ url_for('run_trace_json', rid=run.id) }}" target="_blank">View raw OTLP JSON</a>
+    <span id="exres" style="font-size:12.5px;color:var(--mut)"></span>
+  </div>
+</div>
+
+<script>
+async function doExport(btn){
+  btn.disabled=true; const o=btn.textContent; btn.textContent='Exporting…';
+  const res=document.getElementById('exres');
+  try{
+    const r=await fetch('{{ url_for("run_export", rid=run.id) }}',{method:'POST'});
+    const j=await r.json();
+    if(j.ok){ res.style.color='var(--low)'; res.textContent=`Sent ${j.spans} spans → ${j.endpoint} (HTTP ${j.status})`; }
+    else{ res.style.color=j.configured?'var(--high)':'var(--mut)'; res.textContent=j.reason; }
+  }catch(e){ res.style.color='var(--high)'; res.textContent='Export failed: '+e; }
+  btn.disabled=false; btn.textContent=o;
+}
+</script>
+{% endblock %}
