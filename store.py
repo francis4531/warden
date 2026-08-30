@@ -6,6 +6,7 @@ action and every approval is durably recorded and queryable.
 """
 import os
 import json
+import hashlib
 import sqlite3
 import datetime
 import uuid
@@ -41,7 +42,7 @@ def init():
       transcript TEXT, created_at TEXT, updated_at TEXT);
     CREATE TABLE IF NOT EXISTS audit(
       id TEXT PRIMARY KEY, run_id TEXT, agent_id TEXT, ts TEXT,
-      kind TEXT, skill TEXT, risk TEXT, detail TEXT);
+      kind TEXT, skill TEXT, risk TEXT, detail TEXT, prev_hash TEXT, hash TEXT);
     CREATE TABLE IF NOT EXISTS approvals(
       id TEXT PRIMARY KEY, run_id TEXT, agent_id TEXT, skill TEXT, risk TEXT,
       arguments TEXT, status TEXT, created_at TEXT, decided_at TEXT, decided_by TEXT);
@@ -51,6 +52,12 @@ def init():
     CREATE TABLE IF NOT EXISTS tool_overrides(
       model_key TEXT PRIMARY KEY, risk TEXT);
     """)
+    # migrate older databases: add the audit hash-chain columns if they are missing
+    cols = [r["name"] for r in c.execute("PRAGMA table_info(audit)").fetchall()]
+    if "prev_hash" not in cols:
+        c.execute("ALTER TABLE audit ADD COLUMN prev_hash TEXT")
+    if "hash" not in cols:
+        c.execute("ALTER TABLE audit ADD COLUMN hash TEXT")
     c.commit(); c.close()
 
 # ---- agents ----
@@ -97,13 +104,41 @@ def list_runs(limit=50):
     c = _conn(); rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall(); c.close()
     return [dict(r) for r in rows]
 
-# ---- audit ----
+# ---- audit (hash-chained, tamper-evident) ----
+def _audit_payload(eid, run_id, agent_id, ts, kind, skill, risk, detail_s):
+    return "|".join([eid, run_id or "", agent_id or "", ts, kind or "",
+                     skill or "", risk or "", detail_s or ""])
+
 def audit(run_id, agent_id, kind, skill=None, risk=None, detail=None):
     c = _conn()
-    c.execute("INSERT INTO audit VALUES(?,?,?,?,?,?,?,?)",
-              (_id("ev"), run_id, agent_id, now(), kind, skill, risk,
-               json.dumps(detail) if detail is not None else None))
+    eid = _id("ev"); ts = now()
+    detail_s = json.dumps(detail) if detail is not None else None
+    prev = c.execute("SELECT hash FROM audit ORDER BY rowid DESC LIMIT 1").fetchone()
+    prev_hash = prev["hash"] if (prev and prev["hash"]) else ""
+    h = hashlib.sha256((prev_hash + "\n" + _audit_payload(
+        eid, run_id, agent_id, ts, kind, skill, risk, detail_s)).encode()).hexdigest()
+    c.execute("INSERT INTO audit(id,run_id,agent_id,ts,kind,skill,risk,detail,prev_hash,hash) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?)",
+              (eid, run_id, agent_id, ts, kind, skill, risk, detail_s, prev_hash, h))
     c.commit(); c.close()
+
+def verify_audit():
+    """Walk the audit log in insertion order and recompute the hash chain. Any edit,
+    deletion, or reorder breaks a link and is reported. Rows written before chaining was
+    added (no hash) are counted as 'legacy' and reset the chain rather than fail it."""
+    c = _conn(); rows = c.execute("SELECT * FROM audit ORDER BY rowid").fetchall(); c.close()
+    prev_hash = ""; checked = 0; legacy = 0
+    for r in rows:
+        d = dict(r)
+        if not d.get("hash"):
+            legacy += 1; prev_hash = ""; continue
+        expect = hashlib.sha256(((d.get("prev_hash") or "") + "\n" + _audit_payload(
+            d["id"], d["run_id"], d["agent_id"], d["ts"], d["kind"], d["skill"], d["risk"], d["detail"])).encode()).hexdigest()
+        if expect != d["hash"] or (d.get("prev_hash") or "") != prev_hash:
+            return {"ok": False, "checked": checked, "legacy": legacy,
+                    "broken_at": d["id"], "broken_ts": d["ts"], "total": len(rows)}
+        prev_hash = d["hash"]; checked += 1
+    return {"ok": True, "checked": checked, "legacy": legacy, "broken_at": None, "total": len(rows)}
 
 def audit_for_run(run_id):
     c = _conn(); rows = c.execute("SELECT * FROM audit WHERE run_id=? ORDER BY ts", (run_id,)).fetchall(); c.close()

@@ -18,6 +18,41 @@ import store
 
 SERVICE = "warden"
 
+# --- redaction: scrub sensitive fields from tool args/results before they leave Warden ---
+# On by default. Toggle with WARDEN_REDACT=off; extend the key list with WARDEN_REDACT_KEYS.
+REDACT_ON = os.environ.get("WARDEN_REDACT", "on").lower() not in ("0", "off", "false", "no")
+_MARKERS = ["token", "secret", "password", "passwd", "api_key", "apikey", "access_key",
+            "secret_key", "authorization", "credential", "ssn", "card", "cvv", "pin",
+            "private_key", "email", "passphrase"]
+_MARKERS += [m.strip().lower() for m in os.environ.get("WARDEN_REDACT_KEYS", "").split(",") if m.strip()]
+
+def _sensitive(k):
+    k = str(k).lower()
+    return any(m in k for m in _MARKERS)
+
+def redact(obj):
+    """Recursively replace values whose key looks sensitive with [redacted]. Structure and
+    non-sensitive values are preserved so the telemetry stays useful."""
+    if not REDACT_ON:
+        return obj
+    if isinstance(obj, dict):
+        return {k: ("[redacted]" if _sensitive(k) else redact(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact(v) for v in obj]
+    return obj
+
+def _preview(obj, n=600):
+    if obj is None:
+        return None
+    try:
+        s = json.dumps(redact(obj), ensure_ascii=False)
+    except Exception:
+        s = str(obj)
+    return s if len(s) <= n else s[:n] + "\u2026"
+
+def redaction_status():
+    return {"on": REDACT_ON, "patterns": len(_MARKERS)}
+
 def _ns(ts_iso):
     if not ts_iso:
         return 0
@@ -90,15 +125,19 @@ def build_spans(run_id):
             name = "tool: " + tool
             attrs = {"warden.tool": tool, "warden.risk": e.get("risk"),
                      "warden.gated": kind == "tool_result_gated",
-                     "warden.outcome": d.get("outcome"), "warden.latency_ms": dur_ms}
+                     "warden.outcome": d.get("outcome"), "warden.latency_ms": dur_ms,
+                     "warden.tool.input": _preview(d.get("input")),
+                     "warden.tool.output": _preview(d.get("result"))}
             row = "tool"
         elif kind == "approval_request":
             name = "gate: " + tool
-            attrs = {"warden.tool": tool, "warden.risk": e.get("risk"), "warden.decision": "requested"}
+            attrs = {"warden.tool": tool, "warden.risk": e.get("risk"), "warden.decision": "requested",
+                     "warden.tool.input": _preview(d.get("input"))}
             row = "gate"
         elif kind == "denied":
             name = "denied: " + tool
-            attrs = {"warden.tool": tool, "warden.risk": e.get("risk"), "warden.decision": "denied"}
+            attrs = {"warden.tool": tool, "warden.risk": e.get("risk"), "warden.decision": "denied",
+                     "warden.tool.input": _preview(d.get("input"))}
             row = "gate"
         elif kind == "final":
             name = "final response"; attrs = {}; row = "final"

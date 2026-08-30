@@ -100,5 +100,5 @@
   {% else %}<div class="tr"><span style="color:var(--dim)">No tool calls yet.</span></div>{% endfor %}
 </div>
 
-<p class="sub" style="margin-top:20px;font-size:12.5px">Telemetry is governed too: tool arguments and results are redaction-eligible before anything is exported, and the audit log stays the tamper-evident source of truth. OpenTelemetry export (each run a trace, each step a span) is the path to plugging these into Datadog or Grafana.</p>
+<p class="sub" style="margin-top:20px;font-size:12.5px">Telemetry is governed too. Sensitive fields in tool arguments and results ({{ redact.patterns }} key patterns: tokens, secrets, emails, and more) are <b>redacted before export</b> {% if redact.on %}<span style="color:var(--brass-b)">&#10003; on</span>{% else %}<span style="color:var(--dim)">(off)</span>{% endif %}, and the audit log is <b>hash-chained</b> so any edit or deletion is detectable {% if integrity.ok %}<span style="color:var(--brass-b)">&#10003; {{ integrity.checked }} verified</span>{% else %}<span style="color:var(--high)">&#9888; tamper detected</span>{% endif %}. OpenTelemetry export (each run a trace, each step a span) plugs these into Datadog or Grafana.</p>
 {% endblock %}

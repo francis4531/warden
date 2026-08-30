@@ -8,6 +8,18 @@
   <p class="sub">One append-only trail across all runs: what each agent thought, which tools it called, what came back, and every approval decision, with the risk tier stamped on each entry.</p>
 </div>
 
+{% if integrity %}
+<div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:16px;border-color:{{ 'color-mix(in srgb,var(--high) 45%,var(--line))' if not integrity.ok else 'var(--line)' }}">
+  {% if integrity.ok %}
+  <span style="font-size:20px;color:var(--brass-b)">&#10003;</span>
+  <div><b>Chain verified.</b> <span style="color:var(--mut)">{{ integrity.checked }} entr{{ 'y' if integrity.checked==1 else 'ies' }} hash-chained and intact{% if integrity.legacy %}, {{ integrity.legacy }} legacy (pre-chain){% endif %}. Each entry seals the one before it, so any edit, deletion, or reorder is detectable.</span></div>
+  {% else %}
+  <span style="font-size:20px;color:var(--high)">&#9888;</span>
+  <div><b style="color:var(--high)">Tamper detected.</b> <span style="color:var(--mut)">The hash chain breaks at {{ integrity.broken_ts[:19].replace('T',' ') }} ({{ integrity.broken_at }}). {{ integrity.checked }} of {{ integrity.total }} entries verified before the break. Entries were edited, deleted, or reordered after they were written.</span></div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="ledger">
   {% for e in events %}
   <div class="ev">

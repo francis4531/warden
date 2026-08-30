@@ -11,6 +11,7 @@ from flask import Flask, request, redirect, url_for, render_template, abort
 import store, governance as gov, agent_runtime as rt
 import connection_manager as cmod
 import catalog as cat
+import telemetry
 
 WARDEN_VERSION = "0.3"
 
@@ -427,7 +428,7 @@ def architecture():
 
 @app.route("/audit")
 def audit():
-    return render_template("audit.html", events=store.audit_all(300))
+    return render_template("audit.html", events=store.audit_all(300), integrity=store.verify_audit())
 
 @app.route("/observability")
 def observability():
@@ -497,7 +498,8 @@ def observability():
     days = sorted(by_day.items())[-10:]
 
     return render_template("observability.html", k=kpis, risk=dict(risk_dist),
-                           agents=agent_rows, tools=tool_rows, days=days)
+                           agents=agent_rows, tools=tool_rows, days=days,
+                           redact=telemetry.redaction_status(), integrity=store.verify_audit())
 
 @app.route("/run/<rid>/trace")
 def run_trace(rid):
