@@ -2,6 +2,15 @@
 {% set active='build' %}
 {% block body %}
 <style>
+.tplservers{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--ink)}
+.tplservers .tpl-line{font-size:12.5px;color:var(--mut);margin-bottom:8px}
+.tplservers .tpl-line.dim{color:var(--dim)}
+.tplservers .tpl-line.ok{color:var(--brass-b);margin-bottom:0}
+.srvchip{display:inline-flex;align-items:center;font-family:var(--mono);font-size:11px;border-radius:20px;padding:2px 10px;margin:2px 3px 0 0;border:1px solid var(--line2)}
+.srvchip.ok{color:var(--brass-b);border-color:color-mix(in srgb,var(--brass-b) 40%,var(--line2))}
+.srvchip.off{color:var(--mut)}
+.mconn.flash{animation:flashcard 2.4s ease}
+@keyframes flashcard{0%,100%{box-shadow:none}15%,55%{box-shadow:0 0 0 2px var(--brass)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;align-items:flex-start;justify-content:center;padding:44px 16px;overflow:auto}
@@ -89,30 +98,61 @@
 
 <script>
 const TEMPLATES = {{ templates|tojson }};
+const CATALOG_META = {{ catalog_meta|tojson }};
 // read-only (LOW) tools are the baseline that flows down to every agent; a template
 // adds its purposeful writes on top. Blank resets to that baseline.
 function applyGrants(want){
   document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{
     b.checked = (b.dataset.risk==='LOW') || want.has(b.value.split('__').pop());
   });
-  const missing=[...want];
   document.querySelectorAll('details.tsec').forEach(sec=>{
-    sec.querySelectorAll('input[name=skills]').forEach(b=>{ const i=missing.indexOf(b.value.split('__').pop()); if(i>=0) missing.splice(i,1); });
     const n=sec.querySelectorAll('input[name=skills]:checked').length;
     const c=sec.querySelector('.selc'); if(c) c.textContent=n;
     if(n>0) sec.open=true;
   });
-  return missing;
+}
+function renderTplPrompt(t){
+  const note=document.getElementById('tplnote');
+  if(!t || !(t.servers||[]).length){ note.innerHTML=''; return; }
+  const parts = t.servers.map(id => Object.assign({id}, CATALOG_META[id] || {name:id, connected:false}));
+  const have = parts.filter(p=>p.connected);
+  const need = parts.filter(p=>!p.connected);
+  let html = '<div class="tplservers">';
+  html += '<div class="tpl-line">This template uses: ' + parts.map(p =>
+    `<span class="srvchip ${p.connected?'ok':'off'}">${p.connected?'\u2713 ':''}${esc(p.name)}</span>`).join(' ') + '</div>';
+  if(need.length){
+    const ids = JSON.stringify(need.map(p=>p.id));
+    const label = need.length===1 ? ('Connect ' + esc(need[0].name)) : ('Connect ' + need.length + ' servers');
+    html += `<div class="tpl-line dim">Read-only tools are granted already. To grant its write tools, connect `
+      + need.map(p=>`<b>${esc(p.name)}</b>`).join(', ') + `.</div>`;
+    html += `<button type="button" class="btn brass sm" onclick='openConnFor(${ids})'>${label} &rarr;</button>`;
+  } else {
+    html += '<div class="tpl-line ok">\u2713 Everything this template needs is connected.</div>';
+  }
+  html += '</div>';
+  note.innerHTML = html;
 }
 document.getElementById('tpl').addEventListener('change', e=>{
   const t = TEMPLATES.find(x=>x.id===e.target.value);
   const name=document.getElementById('name'), instr=document.getElementById('instructions');
   name.value = t ? t.name : '';
   instr.value = t ? t.instructions : '';
-  const missing = applyGrants(new Set(t ? t.tools : []));
-  document.getElementById('tplnote').textContent =
-    (t && missing.length) ? ('Connect a server to also grant: '+missing.join(', ')) : '';
+  applyGrants(new Set(t ? t.tools : []));
+  renderTplPrompt(t);
 });
+// open the connect modal and highlight the specific server(s) the template needs
+function openConnFor(ids){
+  openConn();
+  requestAnimationFrame(()=>{
+    let first=null;
+    (ids||[]).forEach(id=>{
+      const card=document.querySelector(`#connmodal .mconn[data-id="${id}"]`);
+      if(card){ card.classList.add('flash'); first=first||card;
+        setTimeout(()=>card.classList.remove('flash'), 2400); }
+    });
+    if(first) first.scrollIntoView({block:'center', behavior:'smooth'});
+  });
+}
 
 function openConn(){document.getElementById('connmodal').style.display='flex';}
 function closeConn(){document.getElementById('connmodal').style.display='none';}

@@ -174,50 +174,54 @@ def tools_json():
 AGENT_TEMPLATES = [
     {"id": "billing", "name": "Billing Resolver",
      "instructions": "You resolve billing issues for enterprise customers. Look up the account, check policy, and make the customer whole. Be concise and never guess at numbers.",
-     "tools": ["lookup_customer", "search_knowledge", "create_ticket", "issue_refund"]},
+     "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge", "create_ticket", "issue_refund"]},
     {"id": "triage", "name": "Support Triage",
      "instructions": "You triage inbound support requests. Look up the customer, search the knowledge base for a known fix, and open a ticket with a clear summary when it needs a human. Do not promise resolutions you cannot verify.",
-     "tools": ["lookup_customer", "search_knowledge", "create_ticket"]},
+     "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge", "create_ticket"]},
     {"id": "refund_audit", "name": "Refund Auditor (read-only)",
      "instructions": "You investigate refund requests but cannot issue refunds yourself. Look up the account, verify the charge against policy, and write a clear recommendation for a human to approve. State the exact amount and the policy basis.",
-     "tools": ["lookup_customer", "search_knowledge"]},
+     "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge"]},
     {"id": "repo_qa", "name": "Codebase Explainer",
      "instructions": "You answer questions about a public GitHub repository. Read its docs and structure, then explain how it works in plain language with references to the relevant files. If you are unsure, say so.",
-     "tools": ["ask_question", "read_wiki_contents", "read_wiki_structure"]},
+     "servers": ["deepwiki"], "tools": ["ask_question", "read_wiki_contents", "read_wiki_structure"]},
     {"id": "repo_maint", "name": "Repo Maintainer",
      "instructions": "You help maintain a GitHub repository. Read issues, pull requests, and code to understand the request, then propose changes. Any write (a branch, a commit, a pull request) is held for review before it runs. Never merge without explicit approval.",
-     "tools": ["get_file_contents", "list_issues", "list_pull_requests", "search_code",
+     "servers": ["github"], "tools": ["get_file_contents", "list_issues", "list_pull_requests", "search_code",
                "create_branch", "create_pull_request", "push_files", "merge_pull_request"]},
     {"id": "files", "name": "File Organizer",
      "instructions": "You organize a working folder. List and read files to understand what is there, then propose a tidier structure. Any file you create or overwrite is held for review first.",
-     "tools": ["list_files", "read_file", "write_file"]},
+     "servers": ["builtin_files"], "tools": ["list_files", "read_file", "write_file"]},
     {"id": "self_audit", "name": "Warden Self-Audit",
      "instructions": "You audit Warden's own source code. List and read the source, run the self-check, and report concrete issues with file and line references. Any fix you propose is held as a patch for a human to review before anything changes.",
-     "tools": ["list_source", "read_source", "run_selfcheck", "propose_patch"]},
+     "servers": ["builtin_code"], "tools": ["list_source", "read_source", "run_selfcheck", "propose_patch"]},
     {"id": "kb", "name": "Knowledge Assistant",
      "instructions": "You answer policy and product questions from the internal knowledge base and public repo docs. Cite the source you used. If the answer is not in the sources, say you do not know rather than guessing.",
-     "tools": ["search_knowledge", "ask_question", "read_wiki_contents"]},
+     "servers": ["builtin_enterprise", "deepwiki"], "tools": ["search_knowledge", "ask_question", "read_wiki_contents"]},
     {"id": "incident", "name": "Incident Responder",
      "instructions": "You are on-call support. Read active alerts, error spikes, and recent metrics to understand what is failing, then propose the smallest safe remediation. Reading is automatic. Acknowledging or resolving an incident, and anything that changes production, is held for a human. Never restart or roll back without approval.",
-     "tools": ["acknowledge_incident", "resolve_incident", "resolve_issue"]},
+     "servers": ["sentry", "grafana", "pagerduty"], "tools": ["acknowledge_incident", "resolve_incident", "resolve_issue"]},
     {"id": "jira", "name": "Jira / Confluence Agent",
      "instructions": "You help manage work in Jira and Confluence. Read issues, boards, and wiki pages to understand context, then draft updates. Comments and new items are routine; transitioning, closing, or deleting an issue is held for a human. Always cite the issue key or page you used.",
-     "tools": ["add_comment", "create_issue", "transition_issue", "create_page", "update_page"]},
+     "servers": ["atlassian"], "tools": ["add_comment", "create_issue", "transition_issue", "create_page", "update_page"]},
     {"id": "warehouse", "name": "Warehouse Analyst",
      "instructions": "You answer questions from the data warehouse. Run read-only queries to investigate, and explain what the numbers mean in plain language. Anything that writes, updates, deletes, or changes schema is held for a human. Never guess at a number you did not query.",
-     "tools": ["execute_sql", "apply_migration"]},
+     "servers": ["supabase", "postgres"], "tools": ["execute_sql", "apply_migration"]},
     {"id": "research", "name": "Web Research Analyst",
      "instructions": "You research questions using the web and public documentation. Search, fetch, and read sources, then synthesize an answer with citations to the sources you used. If the sources do not support a claim, say so plainly. This agent is read-only by design and never needs to write anything.",
-     "tools": ["ask_question", "read_wiki_contents", "search", "scrape", "fetch"]},
+     "servers": ["deepwiki", "firecrawl", "exa", "fetch"], "tools": ["ask_question", "read_wiki_contents", "search", "scrape", "fetch"]},
 ]
 
 @app.route("/new")
 def new_agent():
     status = {s["id"]: s for s in cm().connected_servers()}
-    return render_template("builder.html", groups=tools_by_server(),
+    groups = tools_by_server()
+    connected_ids = set(groups.keys())
+    catalog_meta = {c["id"]: {"name": c["name"], "connected": c["id"] in connected_ids}
+                    for c in cat.CATALOG}
+    return render_template("builder.html", groups=groups,
                            catalog=cat.CATALOG, status=status, enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                           templates=AGENT_TEMPLATES)
+                           templates=AGENT_TEMPLATES, catalog_meta=catalog_meta)
 
 @app.route("/agents", methods=["POST"])
 def create_agent():
