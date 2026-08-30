@@ -9,6 +9,7 @@ deterministic sandbox planner drives the same flow offline.
 import os, json, re, time
 import connection_manager as cmod
 import governance as gov
+import policy
 import store
 
 MODEL_DEFAULT = os.environ.get("WARDEN_MODEL", "claude-sonnet-4-5")
@@ -45,6 +46,33 @@ def risk_for(key, idx=None):
     idx = idx or tool_index()
     info = idx.get(key, {"tool": key, "desc": ""})
     return gov.meta(key, info["tool"], info["desc"], store.get_override(key))
+
+def _pol_ctx(run_id, tool_key, risk):
+    """Context for policy conditions: how many times this tool already ran in the run,
+    plus wall-clock and the tool's risk tier."""
+    from datetime import datetime, timezone
+    name = tool_key.split("__")[-1]
+    count = sum(1 for e in store.audit_for_run(run_id)
+                if e["kind"] in ("tool_result", "tool_result_gated")
+                and (e["skill"] or "").split("__")[-1] == name)
+    n = datetime.now(timezone.utc)
+    return {"count": count, "hour": n.hour, "weekday": n.weekday(), "risk": risk}
+
+def decide(run_id, agent_id, key, args, idx=None):
+    """Combine the risk-tier default with the policy engine. Returns
+    {effect: allow|gate|deny, risk, policy}. A policy can escalate, de-escalate, or deny;
+    with no matching policy the risk tier decides (HIGH gates, else auto)."""
+    m = risk_for(key, idx)
+    base = "gate" if m["gate"] == "approval" else "allow"
+    pol = policy.evaluate(agent_id, key, args, _pol_ctx(run_id, key, m["risk"]))
+    eff = pol["effect"]
+    if eff == "deny":
+        return {"effect": "deny", "risk": m["risk"], "policy": pol["name"]}
+    if eff == "require_approval":
+        return {"effect": "gate", "risk": m["risk"], "policy": pol["name"]}
+    if eff == "allow":
+        return {"effect": "allow", "risk": m["risk"], "policy": pol["name"]}
+    return {"effect": base, "risk": m["risk"], "policy": None}
 
 def tools_for(agent):
     allowed = set(agent.get("skills") or [])
@@ -250,26 +278,32 @@ def _has_tool_use(msg):
 def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
     blocks=[b for b in assistant_msg["content"] if b.get("type")=="tool_use"]
     for b in blocks:
-        m = risk_for(b["name"], idx)
-        if m["gate"]=="approval":
+        d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        if d["effect"]=="gate":
             ap=_approval_for(run_id,b["id"])
             if ap is None:
-                store.create_approval(run_id, agent["id"], b["name"], m["risk"],
-                                      {"tool_use_id":b["id"],"input":b["input"]})
+                store.create_approval(run_id, agent["id"], b["name"], d["risk"],
+                                      {"tool_use_id":b["id"],"input":b["input"],"policy":d["policy"]})
                 store.audit(run_id, agent["id"], "approval_request", skill=b["name"],
-                            risk=m["risk"], detail={"input":b["input"]})
+                            risk=d["risk"], detail={"input":b["input"], "policy":d["policy"]})
     for b in blocks:
-        if risk_for(b["name"], idx)["gate"]=="approval":
+        if decide(run_id, agent["id"], b["name"], b["input"], idx)["effect"]=="gate":
             ap=_approval_for(run_id,b["id"])
             if ap and ap["status"]=="pending":
                 return "paused"
     results=[]
     for b in blocks:
-        m=risk_for(b["name"], idx); gated=m["gate"]=="approval"
+        d=decide(run_id, agent["id"], b["name"], b["input"], idx)
+        gated=d["effect"]=="gate"
         ap=_approval_for(run_id,b["id"]) if gated else None
-        if gated and ap and ap["status"]=="denied":
+        if d["effect"]=="deny":
+            rtext=json.dumps({"denied":True,"by":"policy","policy":d["policy"],
+                              "note":"A governance policy blocked this action. Do not retry; explain that it is not permitted."})
+            store.audit(run_id, agent["id"], "policy_denied", skill=b["name"], risk=d["risk"],
+                        detail={"input":b["input"],"outcome":"denied","policy":d["policy"]})
+        elif gated and ap and ap["status"]=="denied":
             rtext=json.dumps({"denied":True,"note":"A human approver denied this action. Do not retry; explain and stop."})
-            store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=m["risk"],
+            store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied"})
         else:
             t0=time.time()
@@ -280,10 +314,12 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                                   "note":"This tool raised an error. Do not assume it ran; explain or try another approach."})
             parsed=_safe(rtext)
             outcome="error" if isinstance(parsed, dict) and parsed.get("error") else "ok"
+            det={"input":b["input"],"result":parsed,
+                 "latency_ms":int((time.time()-t0)*1000),"outcome":outcome}
+            if d["policy"]:                      # policy explicitly allowed this (e.g. below a threshold)
+                det["policy"]=d["policy"]
             store.audit(run_id, agent["id"], "tool_result_gated" if gated else "tool_result",
-                        skill=b["name"], risk=m["risk"],
-                        detail={"input":b["input"],"result":parsed,
-                                "latency_ms":int((time.time()-t0)*1000),"outcome":outcome})
+                        skill=b["name"], risk=d["risk"], detail=det)
         results.append({"type":"tool_result","tool_use_id":b["id"],"content":rtext})
     messages.append({"role":"user","content":results})
     store.update_run(run_id, transcript=messages)

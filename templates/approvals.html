@@ -14,6 +14,7 @@
   <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
   <div class="g-title">Run <span style="font-family:var(--mono)">{{ ap.skill.split('__')[-1] }}</span></div>
   {% set parts = fmt_args(ap.arguments.input) %}
+  {% if ap.arguments.policy %}<div class="argprose" style="margin-top:8px"><span class="k">held by policy</span><span class="v">{{ ap.arguments.policy }}</span></div>{% endif %}
   <div class="args">
     {% for p in parts %}
       {% if p.type=='code' %}

@@ -51,6 +51,9 @@ def init():
       enabled INTEGER, created_at TEXT);
     CREATE TABLE IF NOT EXISTS tool_overrides(
       model_key TEXT PRIMARY KEY, risk TEXT);
+    CREATE TABLE IF NOT EXISTS policies(
+      id TEXT PRIMARY KEY, name TEXT, priority INTEGER, agent_id TEXT, tool TEXT,
+      field TEXT, op TEXT, value TEXT, effect TEXT, enabled INTEGER, created_at TEXT);
     """)
     # migrate older databases: add the audit hash-chain columns if they are missing
     cols = [r["name"] for r in c.execute("PRAGMA table_info(audit)").fetchall()]
@@ -227,3 +230,37 @@ def all_overrides():
 def approval_counts():
     c = _conn(); rows = c.execute("SELECT status, COUNT(*) n FROM approvals GROUP BY status").fetchall(); c.close()
     return {r["status"]: r["n"] for r in rows}
+
+# ---- policies ----
+def create_policy(name, effect, agent_id="*", tool="*", field="", op="", value="", priority=100):
+    c = _conn(); pid = _id("pol")
+    c.execute("INSERT INTO policies VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+              (pid, name, int(priority), agent_id or "*", tool or "*",
+               field or "", op or "", value or "", effect, 1, now()))
+    c.commit(); c.close(); return pid
+
+def list_policies(enabled_only=False):
+    c = _conn()
+    q = "SELECT * FROM policies"
+    if enabled_only:
+        q += " WHERE enabled=1"
+    q += " ORDER BY priority ASC, created_at ASC"
+    rows = c.execute(q).fetchall(); c.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        a = get_agent(d["agent_id"]) if d["agent_id"] not in ("*", "", None) else None
+        d["agent_name"] = a["name"] if a else None
+        out.append(d)
+    return out
+
+def get_policy(pid):
+    c = _conn(); r = c.execute("SELECT * FROM policies WHERE id=?", (pid,)).fetchone(); c.close()
+    return dict(r) if r else None
+
+def toggle_policy(pid, enabled):
+    c = _conn(); c.execute("UPDATE policies SET enabled=? WHERE id=?", (1 if enabled else 0, pid))
+    c.commit(); c.close()
+
+def delete_policy(pid):
+    c = _conn(); c.execute("DELETE FROM policies WHERE id=?", (pid,)); c.commit(); c.close()

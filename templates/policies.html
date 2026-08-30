@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% set active='policies' %}
+{% block title %}Policies · Warden{% endblock %}
+{% block body %}
+<style>
+.prow{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.prow:last-child{border-bottom:none}
+.prow .pname{font-weight:600}
+.prow .pdesc{font-family:var(--mono);font-size:11.5px;color:var(--mut);margin-top:3px}
+.eff{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;border-radius:5px;padding:2px 8px}
+.eff.allow{color:var(--low);border:1px solid color-mix(in srgb,var(--low) 40%,var(--line2))}
+.eff.require_approval{color:var(--med);border:1px solid color-mix(in srgb,var(--med) 40%,var(--line2))}
+.eff.deny{color:var(--high);border:1px solid color-mix(in srgb,var(--high) 40%,var(--line2))}
+.pbuild{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;align-items:end}
+.pbuild label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.pbuild .fld{display:flex;flex-direction:column}
+.pbuild input,.pbuild select{width:100%}
+.muted{color:var(--dim);font-size:11.5px}
+.pill.off{opacity:.5}
+.example{font-family:var(--mono);font-size:11px;color:var(--mut);cursor:pointer;border:1px dashed var(--line2);border-radius:7px;padding:6px 10px;margin:0 6px 6px 0;display:inline-block}
+.example:hover{border-color:var(--brass);color:var(--txt)}
+</style>
+
+<div class="page-h">
+  <div class="eyebrow">Policies</div>
+  <h1>Rules that decide allow, gate, or deny.</h1>
+  <p class="sub">Risk tiers are the floor: HIGH-risk tools gate by default. Policies go further, spend caps, auto-approval thresholds, rate limits, and time windows, evaluated top to bottom by priority. The first rule that matches wins; if none match, the risk tier decides.</p>
+</div>
+
+<div class="section-h"><span class="lbl">Active policies</span><span class="muted">{{ policies|length }} rule{{ '' if policies|length==1 else 's' }}</span></div>
+<div class="card" style="padding:0">
+  {% for p in policies %}
+  <div class="prow">
+    <div>
+      <div class="pname">{{ p.name }} <span class="eff {{ p.effect }}">{{ 'auto-run' if p.effect=='allow' else 'gate' if p.effect=='require_approval' else 'deny' }}</span>{% if not p.enabled %} <span class="pill off">disabled</span>{% endif %}</div>
+      <div class="pdesc">priority {{ p.priority }} &middot; {{ describe_policy(p) }}</div>
+    </div>
+    <form method="post" action="{{ url_for('toggle_policy', pid=p.id) }}"><button class="btn ghost sm">{{ 'Disable' if p.enabled else 'Enable' }}</button></form>
+    <form method="post" action="{{ url_for('delete_policy', pid=p.id) }}"><button class="btn ghost sm" style="color:var(--high)">Delete</button></form>
+  </div>
+  {% else %}
+  <div style="padding:20px 16px;color:var(--mut)">No policies yet. The risk tiers still apply, HIGH-risk tools gate on their own. Add a rule below to go further.</div>
+  {% endfor %}
+</div>
+
+<div class="section-h" style="margin-top:28px"><span class="lbl">New policy</span></div>
+<div class="card">
+  <div style="margin-bottom:14px">
+    <span class="muted">Start from an example:</span><br>
+    <span class="example" onclick="fill('Cap large refunds','issue_refund','amount','&gt;','500','require_approval',20)">refund &gt; $500 &rarr; require approval</span>
+    <span class="example" onclick="fill('Auto-approve small refunds','issue_refund','amount','&lt;=','100','allow',10)">refund &le; $100 &rarr; auto-run</span>
+    <span class="example" onclick="fill('Refund rate limit','issue_refund','__count__','&gt;=','3','deny',5)">3+ refunds in a run &rarr; deny</span>
+    <span class="example" onclick="fill('No deploys after hours','create_pull_request','__hour__','&gt;=','18','require_approval',30)">deploys after 18:00 UTC &rarr; gate</span>
+    <span class="example" onclick="fill('Lock research agent to read-only','*','__risk__','==','HIGH','deny',40)">any HIGH tool &rarr; deny</span>
+  </div>
+  <form method="post" action="{{ url_for('create_policy') }}">
+    <div class="pbuild">
+      <div class="fld" style="grid-column:span 6"><label>Name</label><input name="name" id="p_name" placeholder="e.g. Cap large refunds" required></div>
+      <div class="fld" style="grid-column:span 3"><label>Effect</label>
+        <select name="effect" id="p_effect">
+          <option value="require_approval">Require approval (gate)</option>
+          <option value="allow">Auto-run (allow)</option>
+          <option value="deny">Deny (block)</option>
+        </select></div>
+      <div class="fld" style="grid-column:span 3"><label>Priority</label><input name="priority" id="p_priority" type="number" value="100" title="Lower runs first"></div>
+
+      <div class="fld" style="grid-column:span 4"><label>Agent</label>
+        <select name="agent_id" id="p_agent">
+          <option value="*">Any agent</option>
+          {% for a in agents %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+        </select></div>
+      <div class="fld" style="grid-column:span 8"><label>Tool</label><input name="tool" id="p_tool" value="*" placeholder="issue_refund, or * for any"></div>
+
+      <div class="fld" style="grid-column:span 5"><label>Condition field <span class="muted">(optional)</span></label><input name="field" id="p_field" placeholder="amount, or __count__ / __hour__ / __risk__"></div>
+      <div class="fld" style="grid-column:span 3"><label>Operator</label>
+        <select name="op" id="p_op">
+          <option value="">(none)</option>
+          {% for o in ops %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+        </select></div>
+      <div class="fld" style="grid-column:span 4"><label>Value</label><input name="value" id="p_value" placeholder="500, HIGH, ..."></div>
+    </div>
+    <div style="margin-top:8px" class="muted">Special fields: <b>__count__</b> (times this tool ran in the run), <b>__hour__</b> (0&ndash;23 UTC), <b>__weekday__</b> (0=Mon), <b>__risk__</b> (LOW/MED/HIGH). Any other field reads the tool&rsquo;s arguments.</div>
+    <div style="margin-top:16px"><button class="btn brass">Add policy</button></div>
+  </form>
+</div>
+
+<script>
+function fill(name,tool,field,op,val,effect,prio){
+  const d=s=>s.replace('&gt;','>').replace('&lt;','<').replace('&le;','<=').replace('&ge;','>=');
+  document.getElementById('p_name').value=name;
+  document.getElementById('p_tool').value=tool;
+  document.getElementById('p_field').value=field;
+  document.getElementById('p_op').value=d(op);
+  document.getElementById('p_value').value=val;
+  document.getElementById('p_effect').value=effect;
+  document.getElementById('p_priority').value=prio;
+  document.getElementById('p_name').scrollIntoView({block:'center'});
+}
+</script>
+{% endblock %}

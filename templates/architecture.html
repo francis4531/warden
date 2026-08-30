@@ -138,7 +138,7 @@
   <div class="card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="stamp HIGH">HIGH</span><b>Irreversible, gated</b></div>
     <div style="color:var(--mut);font-size:13px">Moving money, writing files, creating PRs. Pauses for human approval before it runs.</div></div>
 </div>
-<p class="sub" style="margin-top:14px">Unrecognized tools default to HIGH. A tool from a server Warden has never seen is gated until a human decides otherwise, rather than trusted by default.</p>
+<p class="sub" style="margin-top:14px">Unrecognized tools default to HIGH. A tool from a server Warden has never seen is gated until a human decides otherwise, rather than trusted by default. <b>Policies</b> then layer on top of these tiers, spend caps, auto-approval thresholds, rate limits, and time windows, so the gate can escalate, relax below a threshold, or deny outright based on the actual arguments.</p>
 
 <div class="section-h"><span class="lbl">A run&rsquo;s life</span></div>
 <div class="ledger">

@@ -12,6 +12,7 @@ import store, governance as gov, agent_runtime as rt
 import connection_manager as cmod
 import catalog as cat
 import telemetry
+import policy
 
 WARDEN_VERSION = "0.3"
 
@@ -376,6 +377,7 @@ def format_args(inp):
     return parts
 
 app.jinja_env.globals["fmt_args"] = format_args
+app.jinja_env.globals["describe_policy"] = policy.describe
 
 @app.route("/run/<rid>/events")
 def run_events(rid):
@@ -429,6 +431,37 @@ def architecture():
 @app.route("/audit")
 def audit():
     return render_template("audit.html", events=store.audit_all(300), integrity=store.verify_audit())
+
+@app.route("/policies")
+def policies():
+    return render_template("policies.html", policies=store.list_policies(),
+                           agents=store.list_agents(), ops=policy.OPS)
+
+@app.route("/policies/create", methods=["POST"])
+def create_policy():
+    f = request.form
+    effect = f.get("effect", "require_approval")
+    if effect not in policy.EFFECTS:
+        effect = "require_approval"
+    name = (f.get("name") or "").strip() or "Untitled policy"
+    store.create_policy(name, effect,
+                        agent_id=f.get("agent_id") or "*", tool=(f.get("tool") or "*").strip(),
+                        field=(f.get("field") or "").strip(), op=f.get("op") or "",
+                        value=(f.get("value") or "").strip(),
+                        priority=int(f.get("priority") or 100))
+    return redirect(url_for("policies"))
+
+@app.route("/policies/<pid>/toggle", methods=["POST"])
+def toggle_policy(pid):
+    p = store.get_policy(pid)
+    if p:
+        store.toggle_policy(pid, not p["enabled"])
+    return redirect(url_for("policies"))
+
+@app.route("/policies/<pid>/delete", methods=["POST"])
+def delete_policy(pid):
+    store.delete_policy(pid)
+    return redirect(url_for("policies"))
 
 @app.route("/observability")
 def observability():
