@@ -109,6 +109,7 @@ function renderChat(events){
 function renderParts(parts){
   return (parts||[]).map(p=>{
     if(p.type==='code') return `<div class="argcode"><div class="argcode-h"><span class="fn">${esc(p.label)}</span>${p.lang?`<span class="lang">${esc(p.lang)}</span>`:''}</div><pre><code>${esc(p.content)}</code></pre></div>`;
+    if(p.type==='diff') return `<div class="argcode"><div class="argcode-h"><span class="fn">${esc(p.label)}</span>${p.lang?`<span class="lang">${esc(p.lang)}</span>`:''}<span class="diffstat"><span class="a">+${p.added}</span> <span class="d">\u2212${p.removed}</span></span></div><div class="diffbody">${p.lines.map(l=>{const c=l.sign==='+'?'add':l.sign==='-'?'del':l.sign==='@'?'hunk':'ctx';const pre=(l.sign==='+'||l.sign==='-')?l.sign+' ':(l.sign==='@'?'':'  ');return `<div class="dl ${c}">${esc(pre+l.text)}</div>`;}).join('')}</div></div>`;
     if(p.type==='prose') return `<div class="argprose"><span class="k">${esc(p.label)}</span><span class="v">${esc(p.value)}</span></div>`;
     if(p.type==='json') return `<div class="argprose"><span class="k">${esc(p.label)}</span><pre class="argjson">${esc(p.value)}</pre></div>`;
     return `<div class="argrow"><span class="k">${esc(p.label)}</span><span class="v">${esc(p.value)}</span></div>`;

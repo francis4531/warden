@@ -18,6 +18,9 @@
     {% for p in parts %}
       {% if p.type=='code' %}
         <div class="argcode"><div class="argcode-h"><span class="fn">{{ p.label }}</span>{% if p.lang %}<span class="lang">{{ p.lang }}</span>{% endif %}</div><pre><code>{{ p.content }}</code></pre></div>
+      {% elif p.type=='diff' %}
+        <div class="argcode"><div class="argcode-h"><span class="fn">{{ p.label }}</span>{% if p.lang %}<span class="lang">{{ p.lang }}</span>{% endif %}<span class="diffstat"><span class="a">+{{ p.added }}</span> <span class="d">&minus;{{ p.removed }}</span></span></div>
+          <div class="diffbody">{% for ln in p.lines %}<div class="dl {{ 'add' if ln.sign=='+' else 'del' if ln.sign=='-' else 'hunk' if ln.sign=='@' else 'ctx' }}">{{ (ln.sign + ' ' if ln.sign in '+-' else ('' if ln.sign=='@' else '  ')) ~ ln.text }}</div>{% endfor %}</div></div>
       {% elif p.type=='prose' %}
         <div class="argprose"><span class="k">{{ p.label }}</span><span class="v">{{ p.value }}</span></div>
       {% elif p.type=='json' %}

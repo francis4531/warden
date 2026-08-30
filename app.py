@@ -277,10 +277,42 @@ def _lang_of(fname):
         return _LANGS.get(fname.rsplit(".", 1)[-1].lower(), "")
     return ""
 
+import difflib as _difflib
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _read_current(filename):
+    """Read the current version of a file, restricted to Warden's own source dir
+    (self-audit's propose_patch targets these). Returns None if not found."""
+    if not filename:
+        return None
+    base = os.path.realpath(_APP_DIR)
+    cand = os.path.realpath(os.path.join(base, os.path.basename(filename)))
+    if not cand.startswith(base):
+        return None
+    try:
+        with open(cand) as f:
+            return f.read()
+    except Exception:
+        return None
+
+def _diff_lines(old, new):
+    out, add, rem = [], 0, 0
+    for line in _difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=3):
+        if line[:3] in ("---", "+++"):
+            continue
+        if line.startswith("@@"):
+            out.append({"sign": "@", "text": line})
+        elif line.startswith("+"):
+            out.append({"sign": "+", "text": line[1:]}); add += 1
+        elif line.startswith("-"):
+            out.append({"sign": "-", "text": line[1:]}); rem += 1
+        else:
+            out.append({"sign": " ", "text": line[1:] if line[:1] == " " else line})
+    return out, add, rem
+
 def format_args(inp):
-    """Turn a tool's arguments into readable parts: code fields become real code blocks
-    (with the filename as a header), reasons/notes render as prose, everything else as
-    labeled rows. Keeps a code proposal from showing up as one line of escaped JSON."""
+    """Turn a tool's arguments into readable parts: code fields become code blocks (or a
+    diff when the current file is known), reasons render as prose, else labeled rows."""
     if not isinstance(inp, dict):
         return [{"type": "field", "label": "input", "value": str(inp)}]
     fname = inp.get("filename") or inp.get("path") or inp.get("file")
@@ -289,7 +321,13 @@ def format_args(inp):
         if k in ("filename", "file", "path"):
             continue
         if k in _CODE_FIELDS and isinstance(v, str) and ("\n" in v or len(v) > 100):
-            parts.append({"type": "code", "label": (fname or k), "lang": _lang_of(fname), "content": v})
+            old = _read_current(fname)
+            if old is not None and old != v:
+                lines, add, rem = _diff_lines(old, v)
+                parts.append({"type": "diff", "label": (fname or k), "lang": _lang_of(fname),
+                              "lines": lines, "added": add, "removed": rem})
+            else:
+                parts.append({"type": "code", "label": (fname or k), "lang": _lang_of(fname), "content": v})
             used_fname = True
         elif k in _PROSE_FIELDS and isinstance(v, str):
             parts.append({"type": "prose", "label": k, "value": v})
