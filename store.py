@@ -54,6 +54,9 @@ def init():
     CREATE TABLE IF NOT EXISTS policies(
       id TEXT PRIMARY KEY, name TEXT, priority INTEGER, agent_id TEXT, tool TEXT,
       field TEXT, op TEXT, value TEXT, effect TEXT, enabled INTEGER, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS custom_servers(
+      id TEXT PRIMARY KEY, name TEXT, category TEXT, transport TEXT,
+      url TEXT, command TEXT, description TEXT, repo TEXT, created_at TEXT);
     """)
     # migrate older databases: add the audit hash-chain columns if they are missing
     cols = [r["name"] for r in c.execute("PRAGMA table_info(audit)").fetchall()]
@@ -69,6 +72,12 @@ def create_agent(name, instructions, model, skills):
     c.execute("INSERT INTO agents VALUES(?,?,?,?,?,?)",
               (aid, name, instructions, model, json.dumps(skills), now()))
     c.commit(); c.close(); return aid
+
+def update_agent(aid, name, instructions, model, skills):
+    c = _conn()
+    c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=? WHERE id=?",
+              (name, instructions, model, json.dumps(skills), aid))
+    c.commit(); c.close()
 
 def get_agent(aid):
     c = _conn(); r = c.execute("SELECT * FROM agents WHERE id=?", (aid,)).fetchone(); c.close()
@@ -264,3 +273,22 @@ def toggle_policy(pid, enabled):
 
 def delete_policy(pid):
     c = _conn(); c.execute("DELETE FROM policies WHERE id=?", (pid,)); c.commit(); c.close()
+
+# ---- discovered (custom) MCP servers ----
+def add_custom_server(sid, name, category, transport, url="", command="", description="", repo=""):
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO custom_servers VALUES(?,?,?,?,?,?,?,?,?)",
+              (sid, name, category or "Discovered", transport, url or "", command or "",
+               description or "", repo or "", now()))
+    c.commit(); c.close(); return sid
+
+def list_custom_servers():
+    c = _conn(); rows = c.execute("SELECT * FROM custom_servers ORDER BY created_at DESC").fetchall(); c.close()
+    return [dict(r) for r in rows]
+
+def get_custom_server(sid):
+    c = _conn(); r = c.execute("SELECT * FROM custom_servers WHERE id=?", (sid,)).fetchone(); c.close()
+    return dict(r) if r else None
+
+def delete_custom_server(sid):
+    c = _conn(); c.execute("DELETE FROM custom_servers WHERE id=?", (sid,)); c.commit(); c.close()

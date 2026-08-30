@@ -36,14 +36,65 @@
   <p class="sub">Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated. Override any of it below.</p>
 </div>
 
+<style>
+.disco{border:1px solid var(--line);border-radius:14px;background:var(--ink2);padding:16px 18px;margin-bottom:22px}
+.disco form{display:flex;gap:10px}
+.disco input[type=text]{flex:1}
+.dres{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.dcard{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--ink)}
+.dcard .dn{font-weight:600}
+.dcard .dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;border-radius:5px;padding:2px 7px;margin-left:8px}
+.dcard .dt.remote{color:var(--low);border:1px solid color-mix(in srgb,var(--low) 40%,var(--line2))}
+.dcard .dt.stdio{color:var(--med);border:1px solid color-mix(in srgb,var(--med) 40%,var(--line2))}
+.dcard .dd{color:var(--mut);font-size:12.5px;margin-top:3px}
+.dcard .dr{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:4px}
+.disco .hint{color:var(--dim);font-size:11.5px;margin-top:8px}
+</style>
+
+<div class="disco">
+  <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
+  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect and Warden searches the official MCP Registry live. Add the best match and it drops into the catalog below to connect.</div>
+  <form method="get" action="{{ url_for('connections') }}">
+    <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar" autofocus>
+    <button class="btn brass">Search registry</button>
+  </form>
+  {% if discover is not none %}
+    {% if not discover.ok %}
+      <div class="hint">Couldn't reach the registry just now ({{ discover.error }}). Try again in a moment.</div>
+    {% elif not discover.results %}
+      <div class="hint">No servers found for &ldquo;{{ discover_q }}&rdquo;. Try a different term.</div>
+    {% else %}
+    <div class="dres">
+      {% for r in discover.results %}
+      <div class="dcard">
+        <div>
+          <div><span class="dn">{{ r.display }}</span><span class="dt {{ 'remote' if r.transport=='remote' else 'stdio' }}">{{ 'remote HTTP' if r.transport=='remote' else 'local package' }}</span></div>
+          {% if r.description %}<div class="dd">{{ r.description }}</div>{% endif %}
+          {% if r.run_hint %}<div class="dr">{{ r.run_hint }}</div>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('discover_add') }}">
+          <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="display" value="{{ r.display }}">
+          <input type="hidden" name="transport" value="{{ r.transport }}"><input type="hidden" name="endpoint" value="{{ r.endpoint }}">
+          <input type="hidden" name="desc" value="{{ r.description }}"><input type="hidden" name="repo" value="{{ r.repo }}">
+          <button class="btn sm">Add &rarr;</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="hint">Remote servers connect on your current runtime. Local packages need the Docker runtime.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
 <div class="cgrid">
   {% for e in catalog %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}
   {% set errored = st and st.status=='error' %}
-  <div class="conn {{ 'on' if connected }}{{ 'err' if errored }}">
+  <div class="conn {{ 'on' if connected }}{{ 'err' if errored }}" id="{{ e.id }}" data-id="{{ e.id }}">
     <div class="top">
       <span class="nm">{{ e.name }}</span>
+      {% if e.custom %}<span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">discovered</span>{% endif %}
       {% if connected %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
       {% elif errored %}<span class="stamp HIGH">error</span>{% endif %}
     </div>

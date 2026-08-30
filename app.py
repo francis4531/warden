@@ -13,6 +13,7 @@ import connection_manager as cmod
 import catalog as cat
 import telemetry
 import policy
+import registry
 
 WARDEN_VERSION = "0.3"
 
@@ -124,14 +125,16 @@ def home():
 @app.route("/connections")
 def connections():
     status = {s["id"]: s for s in cm().connected_servers()}
-    return render_template("connections.html", catalog=cat.CATALOG, status=status,
+    dq = (request.args.get("discover") or "").strip()
+    discover = registry.search(dq) if dq else None
+    return render_template("connections.html", catalog=merged_catalog(), status=status,
                            enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                           tools=connected_tools())
+                           tools=connected_tools(), discover=discover, discover_q=dq)
 
 @app.route("/connections/enable", methods=["POST"])
 def enable_connection():
-    cid = request.form.get("id"); entry = cat.BY_ID.get(cid)
+    cid = request.form.get("id"); entry = cat_by_id(cid)
     if not entry: abort(404)
     transport = entry["transport"]
     token = request.form.get("token") or None
@@ -152,6 +155,46 @@ def disable_connection():
         return {"ok": True}
     return redirect(url_for("connections"))
 
+def merged_catalog():
+    """Built-in curated catalog plus any servers discovered from the MCP registry,
+    so discovered servers become connectable through the same flow."""
+    extra = []
+    for cs in store.list_custom_servers():
+        extra.append({"id": cs["id"], "name": cs["name"], "category": cs["category"] or "Discovered",
+                      "maintainer": "community", "transport": cs["transport"],
+                      "run": cs["url"] or cs["command"] or "",
+                      "auth": "api_key" if cs["transport"] == "http" else "",
+                      "status": "remote" if cs["transport"] == "http" else "needs runtime",
+                      "env": "", "desc": cs["description"] or "", "repo": cs.get("repo") or "",
+                      "custom": True})
+    return list(cat.CATALOG) + extra
+
+def cat_by_id(cid):
+    for c in merged_catalog():
+        if c["id"] == cid:
+            return c
+    return None
+
+@app.route("/discover/add", methods=["POST"])
+def discover_add():
+    import re as _re
+    name = (request.form.get("display") or request.form.get("name") or "server").strip()
+    transport = request.form.get("transport", "remote")
+    endpoint = (request.form.get("endpoint") or "").strip()
+    desc = request.form.get("desc", "")
+    repo = request.form.get("repo", "")
+    sid = "disc_" + (_re.sub(r"[^a-z0-9]+", "_", (request.form.get("name") or name).lower()).strip("_")[:44] or "server")
+    if transport == "remote":
+        store.add_custom_server(sid, name, "Discovered", "http", url=endpoint, description=desc, repo=repo)
+    else:
+        store.add_custom_server(sid, name, "Discovered", "stdio_node", command=endpoint, description=desc, repo=repo)
+    return redirect(url_for("connections") + "#" + sid)
+
+@app.route("/discover/remove", methods=["POST"])
+def discover_remove():
+    store.delete_custom_server(request.form.get("id"))
+    return redirect(url_for("connections"))
+
 @app.route("/tool-risk", methods=["POST"])
 def tool_risk():
     store.set_override(request.form.get("key"), request.form.get("risk"))
@@ -160,7 +203,7 @@ def tool_risk():
 @app.route("/connlist")
 def connlist():
     status = {s["id"]: s for s in cm().connected_servers()}
-    return render_template("_connlist.html", catalog=cat.CATALOG, status=status,
+    return render_template("_connlist.html", catalog=merged_catalog(), status=status,
                            enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
 
@@ -213,17 +256,39 @@ AGENT_TEMPLATES = [
      "servers": ["deepwiki", "firecrawl", "exa", "fetch"], "tools": ["ask_question", "read_wiki_contents", "search", "scrape", "fetch"]},
 ]
 
-@app.route("/new")
-def new_agent():
+def _builder_ctx(edit_agent=None):
     status = {s["id"]: s for s in cm().connected_servers()}
     groups = tools_by_server()
     connected_ids = set(groups.keys())
     catalog_meta = {c["id"]: {"name": c["name"], "connected": c["id"] in connected_ids}
-                    for c in cat.CATALOG}
-    return render_template("builder.html", groups=groups,
-                           catalog=cat.CATALOG, status=status, enabled={c["id"] for c in store.enabled_connections()},
-                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                           templates=AGENT_TEMPLATES, catalog_meta=catalog_meta)
+                    for c in merged_catalog()}
+    return dict(groups=groups, catalog=merged_catalog(), status=status,
+                enabled={c["id"] for c in store.enabled_connections()},
+                mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
+                templates=AGENT_TEMPLATES, catalog_meta=catalog_meta,
+                edit_agent=edit_agent,
+                edit_skills=set(edit_agent["skills"]) if edit_agent else None)
+
+@app.route("/new")
+def new_agent():
+    return render_template("builder.html", **_builder_ctx())
+
+@app.route("/agent/<aid>/edit")
+def edit_agent(aid):
+    ag = store.get_agent(aid)
+    if not ag: abort(404)
+    return render_template("builder.html", **_builder_ctx(ag))
+
+@app.route("/agent/<aid>/update", methods=["POST"])
+def update_agent(aid):
+    ag = store.get_agent(aid)
+    if not ag: abort(404)
+    name = request.form.get("name", "").strip() or ag["name"]
+    instructions = request.form.get("instructions", "").strip()
+    model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
+    skills = request.form.getlist("skills")
+    store.update_agent(aid, name, instructions, model, skills)
+    return redirect(url_for("agent", aid=aid))
 
 @app.route("/agents", methods=["POST"])
 def create_agent():

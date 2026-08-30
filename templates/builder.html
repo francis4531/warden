@@ -34,25 +34,27 @@
 </style>
 
 <div class="page-h">
-  <div class="eyebrow">Build an agent</div>
-  <h1>Define what it does, and what it's allowed to touch.</h1>
+  <div class="eyebrow">{{ 'Edit agent' if edit_agent else 'Build an agent' }}</div>
+  <h1>{{ 'Adjust what it does and what it can touch.' if edit_agent else "Define what it does, and what it's allowed to touch." }}</h1>
   <p class="sub">Give the agent instructions and grant it tools from your connected servers. Need a server it can't see? Connect one right here, without leaving this page.</p>
 </div>
 
-<form method="post" action="{{ url_for('create_agent') }}">
+<form method="post" action="{{ url_for('update_agent', aid=edit_agent.id) if edit_agent else url_for('create_agent') }}">
   <div class="card">
+    {% if not edit_agent %}
     <label class="f" for="tpl">Start from a template <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
     <select id="tpl">
       <option value="">Blank agent</option>
       {% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
     <div id="tplnote" style="color:var(--med);font-size:12px;margin-top:6px"></div>
+    {% endif %}
     <label class="f" for="name">Agent name</label>
-    <input type="text" id="name" name="name" placeholder="Name your agent" required>
+    <input type="text" id="name" name="name" placeholder="Name your agent" value="{{ edit_agent.name if edit_agent }}" required>
     <label class="f" for="instructions">Instructions</label>
-    <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval."></textarea>
+    <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval.">{{ edit_agent.instructions if edit_agent }}</textarea>
     <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-    <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6">
+    <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6" value="{{ edit_agent.model if edit_agent and edit_agent.model }}">
 
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 4px">
       <label class="f" style="margin:0">Granted tools</label>
@@ -60,13 +62,13 @@
     </div>
     <div id="toolsections">
     {% for sid, g in groups.items() %}
-    {% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}
-    <details class="tsec" {{ 'open' if g.tools|length <= 6 }}>
+    {% if edit_skills is not none %}{% set sel = g.tools | selectattr('key','in',edit_skills) | list | length %}{% else %}{% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}{% endif %}
+    <details class="tsec" {{ 'open' if g.tools|length <= 6 or sel }}>
       <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
       <div class="tbody">
       {% for s in g.tools %}
       <label class="skill-row">
-        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" {{ 'checked' if s.risk == 'LOW' }}>
+        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" {% if edit_skills is not none %}{{ 'checked' if s.key in edit_skills }}{% else %}{{ 'checked' if s.risk == 'LOW' }}{% endif %}>
         <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
           <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
           {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
@@ -79,7 +81,7 @@
     </div>
 
     <div style="margin-top:20px;display:flex;gap:10px">
-      <button class="btn brass" type="submit">Create agent</button>
+      <button class="btn brass" type="submit">{{ 'Save changes' if edit_agent else 'Create agent' }}</button>
       <a class="btn ghost" href="{{ url_for('home') }}">Cancel</a>
     </div>
   </div>
