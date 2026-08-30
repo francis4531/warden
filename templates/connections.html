@@ -5,70 +5,58 @@
 <style>
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
-.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:stretch}
-.conn{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;padding:15px 16px;background:var(--ink2);min-height:172px}
-.conn .top{display:flex;align-items:center;gap:8px}
-.conn .nm{font-weight:600;font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.conn .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
-.tag{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
-.tag.cat{color:var(--brass);border-color:color-mix(in srgb,var(--brass) 35%,var(--line))}
-.conn .desc{color:var(--mut);font-size:12.5px;line-height:1.45;margin-top:11px;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.conn .act{margin-top:13px;display:flex;gap:7px;align-items:center}
-.conn .act form{display:flex;gap:7px;flex:1}
-.conn .act input{flex:1;min-width:0;background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:8px 10px}
-.conn .act .btn{flex-shrink:0}
-.conn .cstatus{font-family:var(--mono);font-size:10.5px;margin-right:auto}
-.conn.on{border-color:color-mix(in srgb,var(--low) 45%,var(--line))}
-.conn.err{border-color:color-mix(in srgb,var(--high) 45%,var(--line))}
-.gsec{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:10px;background:var(--ink2)}
-.gsec>summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;gap:10px}
-.gsec>summary::-webkit-details-marker{display:none}
-.gsec>summary .gname{font-family:var(--disp);font-size:15px;font-weight:600}
-.gsec>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
-.gsec[open]>summary .chev{transform:rotate(90deg)}
-.gsec .ledger{border:none;border-radius:0;border-top:1px solid var(--line)}
-.gsec .ev:last-child{border-bottom:none}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:6px}
+.conn{border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--ink2);display:flex;flex-direction:column;gap:7px}
+.conn .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conn .nm{font-weight:600;font-size:14px}
+.conn .desc{color:var(--mut);font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conn .cmd{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conn .err{color:var(--high);font-size:11px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conn .act{margin-top:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conn .act input{background:var(--ink);border:1px solid var(--line2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:6px 8px;flex:1;min-width:120px}
+.conn .cstatus{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+.mini{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
 </style>
 
-<div class="page-h" style="margin-bottom:20px">
+<div class="page-h" style="margin-bottom:18px">
   <div class="eyebrow">Connections</div>
   <h1>Choose the MCP servers your agents can use.</h1>
   <p class="sub">Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated. Override any of it below.</p>
 </div>
 
+{% for category, entries in catalog | groupby('category') %}
+<div style="font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--mut);margin:16px 0 9px">{{ category }}</div>
 <div class="cgrid">
-  {% for e in catalog %}
+  {% for e in entries %}
   {% set st = status.get(e.id) %}
-  {% set connected = e.id in enabled and st and st.status=='connected' %}
-  {% set errored = st and st.status=='error' %}
-  <div class="conn {{ 'on' if connected }}{{ 'err' if errored }}">
+  <div class="conn" data-id="{{ e.id }}">
     <div class="top">
       <span class="nm">{{ e.name }}</span>
-      {% if connected %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
-      {% elif errored %}<span class="stamp HIGH">error</span>{% endif %}
-    </div>
-    <div class="tags">
-      <span class="tag cat">{{ e.category }}</span>
-      <span class="tag">{{ mlabel[e.maintainer] }}</span>
-      <span class="tag">{{ slabel[e.status] }}</span>
+      <span class="mini">{{ mlabel[e.maintainer] }}</span>
+      {% if st and st.status=='connected' %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
+      {% elif st and st.status=='error' %}<span class="stamp HIGH">error</span>{% endif %}
+      <span class="mini" style="margin-left:auto">{{ slabel[e.status] }}</span>
     </div>
     <div class="desc">{{ e.desc }}</div>
+    {% if e.run %}<div class="cmd" title="{{ e.run }}">{{ e.run }}</div>{% endif %}
+    {% if st and st.status=='error' %}<div class="err" title="{{ st.error }}">{{ st.error }}</div>{% endif %}
     <div class="act">
+      <span class="cstatus"></span>
       {% if e.transport=='builtin' %}
         <span class="pill done" style="margin-left:auto">always on</span>
       {% elif e.id in enabled %}
-        <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
+        <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
       {% elif e.transport=='http' and e.auth=='none' %}
-        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
-        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">
           <input type="hidden" name="id" value="{{ e.id }}">
           <input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
           <button class="btn brass sm">Connect</button></form>
       {% else %}
-        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;width:100%">
           <input type="hidden" name="id" value="{{ e.id }}">
           <input type="text" name="command" value="{{ e.run }}" title="edit to add a real connection string or token">
           <button class="btn sm">Enable</button></form>
@@ -77,35 +65,40 @@
   </div>
   {% endfor %}
 </div>
+{% endfor %}
 
-<div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
+<div class="section-h" style="margin-top:26px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
 {% for server_name, group in tools|groupby('server_name') %}
 {% set gtools = group|list %}
-<details class="gsec" {{ 'open' if gtools|length <= 6 }}>
-  <summary><span class="chev">&#9654;</span><span class="gname">{{ server_name }}</span><span class="pill">{{ gtools|length }}</span></summary>
-  <div class="ledger">
-    {% for t in gtools %}
-    <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
-      <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
-      <span>
-        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
-          <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
-          <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
-            {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
-          </select><button class="btn sm">Set</button>
-        </form>
-      </span>
-    </div>
-    {% endfor %}
+<div style="display:flex;align-items:center;gap:9px;margin:14px 0 7px">
+  <span style="font-family:var(--disp);font-size:15px;font-weight:600">{{ server_name }}</span>
+  <span class="pill">{{ gtools|length }}</span>
+</div>
+<div class="ledger">
+  {% for t in gtools %}
+  <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
+    <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
+    <span>
+      <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
+        <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
+        <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
+          {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
+        </select><button class="btn sm">Set</button>
+      </form>
+    </span>
   </div>
-</details>
+  {% endfor %}
+</div>
 {% endfor %}
 
 <script>
 document.querySelectorAll('form.connform').forEach(f=>{
-  f.addEventListener('submit', async e=>{
+  f.addEventListener('submit', async (e)=>{
     e.preventDefault();
-    const btn=f.querySelector('button'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+    const btn=f.querySelector('button'); const card=f.closest('.conn');
+    const verb=f.dataset.busy||'working';
+    btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+    const s=card && card.querySelector('.cstatus'); if(s){ s.innerHTML='<span class="spin"></span> '+verb+'\u2026'; }
     try{ await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}); }catch(_){}
     location.reload();
   });

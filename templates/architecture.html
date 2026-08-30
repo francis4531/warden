@@ -8,127 +8,104 @@
 .dg .node{fill:var(--ink);stroke:var(--line2);stroke-width:1.5}
 .dg .node.soft{fill:var(--ink3)}
 .dg .node.gate{stroke:var(--high);stroke-width:1.75}
-.dg .phase{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:4 4}
-.dg .ttl{fill:var(--txt);font:600 13.5px var(--body)}
+.dg .ttl{fill:var(--txt);font:600 14px var(--body)}
 .dg .sub{fill:var(--mut);font:400 11px var(--body)}
 .dg .lbl{fill:var(--dim);font:500 10px var(--body);letter-spacing:.03em}
-.dg .phaselbl{fill:var(--brass);font:600 11px var(--body);letter-spacing:.14em}
 .dg .flow{stroke:var(--brass);stroke-width:2;fill:none;marker-end:url(#ahb)}
 .dg .wire{stroke:var(--mut);stroke-width:1.4;fill:none;marker-end:url(#ah)}
 .dg .dbl{marker-start:url(#ah)}
-.dg .arc{stroke:var(--brass);stroke-width:1.4;fill:none;stroke-dasharray:5 4;marker-end:url(#ahb);opacity:.85}
+.dg .arc{stroke:var(--brass);stroke-width:1.4;fill:none;stroke-dasharray:5 4;marker-end:url(#ahb);opacity:.8}
 .legend{display:flex;gap:20px;flex-wrap:wrap;color:var(--mut);font-size:12.5px;margin:2px 2px 4px}
 .legend span{display:inline-flex;align-items:center;gap:7px}
-.legend i{width:22px;border-top-width:2px;border-top-style:solid;display:inline-block}
+.legend i{width:22px;height:0;border-top-width:2px;border-top-style:solid;display:inline-block}
 </style>
 
 <div class="page-h">
   <div class="eyebrow">Architecture</div>
   <h1>How Warden works.</h1>
-  <p class="sub">Two phases. First you <b>build</b> an agent: give it instructions and grant it tools from your connected servers, and it&rsquo;s saved. Then you <b>run</b> it: you talk to it, it loops with the model, and every action it takes passes one gate before it happens. Here is the whole path.</p>
+  <p class="sub">An agent is instructions plus tools. The tools come from MCP servers you connect; every one is risk-classified on arrival; and every action the agent takes passes one gate before it happens. Here is the whole path.</p>
 </div>
 
 <div class="diagram">
-<svg class="dg" viewBox="0 0 1000 500" role="img" aria-label="Warden architecture: build and run">
+<svg class="dg" viewBox="0 0 1000 400" role="img" aria-label="Warden architecture diagram">
   <defs>
     <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--mut)"/></marker>
     <marker id="ahb" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--brass)"/></marker>
   </defs>
 
-  <!-- ============ phase 1: BUILD ============ -->
-  <text class="phaselbl" x="18" y="28">1 · BUILD AN AGENT</text>
-  <rect class="node soft" x="16" y="44" width="96" height="58" rx="10"/>
-  <text class="ttl" x="64" y="70" text-anchor="middle">You</text>
-  <text class="sub" x="64" y="88" text-anchor="middle">builder</text>
+  <!-- top return arc: approved actions run back on the server -->
+  <path class="arc" d="M888,70 C 888,18 96,18 96,68"/>
+  <text class="lbl" x="500" y="14" text-anchor="middle">on approve, the action runs on the server</text>
 
-  <path class="flow" d="M112,73 L146,73"/>
-  <rect class="node" x="150" y="40" width="184" height="66" rx="11"/>
-  <text class="ttl" x="166" y="66">Define the agent</text>
-  <text class="sub" x="166" y="86">write instructions, grant tools</text>
+  <!-- pipeline boxes -->
+  <g>
+    <rect class="node" x="16"  y="70" width="160" height="104" rx="11"/>
+    <text class="ttl" x="30" y="98">MCP Servers</text>
+    <text class="sub" x="30" y="120">Built-in</text>
+    <text class="sub" x="30" y="138">Remote HTTP</text>
+    <text class="sub" x="30" y="156">stdio (npx / uvx)</text>
 
-  <path class="flow" d="M334,73 L370,73"/>
-  <rect class="node" x="374" y="44" width="158" height="58" rx="11"/>
-  <text class="ttl" x="390" y="68">Agent</text>
-  <text class="sub" x="390" y="88">instructions + granted tools</text>
+    <rect class="node" x="214" y="70" width="160" height="104" rx="11"/>
+    <text class="ttl" x="228" y="98">Connection</text>
+    <text class="ttl" x="228" y="116">Manager</text>
+    <text class="sub" x="228" y="138">discovers + caches</text>
+    <text class="sub" x="228" y="156">tools, per server</text>
 
-  <text class="lbl" x="150" y="122">Tools you can grant come from your connected servers, already risk-classified.</text>
+    <rect class="node" x="412" y="70" width="160" height="104" rx="11"/>
+    <text class="ttl" x="426" y="98">Governance</text>
+    <text class="sub" x="426" y="118">classifies each tool</text>
+    <g transform="translate(426,132)">
+      <rect x="0" y="0" width="34" height="18" rx="4" fill="color-mix(in srgb,var(--low) 13%,var(--ink))"/><text x="17" y="13" text-anchor="middle" style="fill:var(--low);font:700 9px var(--body)">LOW</text>
+      <rect x="40" y="0" width="36" height="18" rx="4" fill="color-mix(in srgb,var(--med) 15%,var(--ink))"/><text x="58" y="13" text-anchor="middle" style="fill:var(--med);font:700 9px var(--body)">MED</text>
+      <rect x="82" y="0" width="40" height="18" rx="4" fill="color-mix(in srgb,var(--high) 13%,var(--ink))"/><text x="102" y="13" text-anchor="middle" style="fill:var(--high);font:700 9px var(--body)">HIGH</text>
+    </g>
 
-  <!-- save to store -->
-  <path class="wire" d="M453,102 L453,146"/><text class="lbl" x="461" y="128">save</text>
+    <rect class="node" x="610" y="70" width="160" height="104" rx="11"/>
+    <text class="ttl" x="624" y="98">Agent Runtime</text>
+    <text class="sub" x="624" y="118">perceive - decide - act</text>
+    <rect class="node soft" x="624" y="130" width="132" height="30" rx="7"/>
+    <text class="sub" x="690" y="149" text-anchor="middle" style="fill:var(--txt)">&#8646; Claude model</text>
 
-  <!-- ============ shared store ============ -->
-  <rect class="node soft" x="374" y="148" width="158" height="50" rx="10"/>
-  <text class="ttl" x="390" y="170" style="font-size:12.5px">&#128274; Encrypted store</text>
-  <text class="sub" x="390" y="188">agents &middot; tokens &middot; runs</text>
-
-  <line class="phase" x1="16" y1="214" x2="984" y2="214"/>
-
-  <!-- ============ phase 2: RUN ============ -->
-  <text class="phaselbl" x="18" y="238">2 · RUN &amp; INTERACT</text>
-  <rect class="node soft" x="16" y="256" width="96" height="72" rx="10"/>
-  <text class="ttl" x="64" y="288" text-anchor="middle">You</text>
-  <text class="sub" x="64" y="306" text-anchor="middle">operator</text>
-
-  <path class="wire dbl" d="M114,292 L146,292"/>
-  <text class="lbl" x="130" y="250" text-anchor="middle">ask / reply</text>
-
-  <rect class="node" x="150" y="252" width="172" height="92" rx="11"/>
-  <text class="ttl" x="166" y="278">Agent Runtime</text>
-  <text class="sub" x="166" y="297">perceive &#8594; decide &#8594; act</text>
-  <rect class="node soft" x="162" y="308" width="148" height="26" rx="7"/>
-  <text class="sub" x="236" y="325" text-anchor="middle" style="fill:var(--txt)">&#8646; Claude model</text>
-
-  <!-- store loads the agent into the runtime -->
-  <path class="wire" d="M430,198 L316,252"/><text class="lbl" x="360" y="224">loads agent</text>
-
-  <path class="flow" d="M322,298 L354,298"/>
-  <rect class="node" x="356" y="258" width="140" height="80" rx="11"/>
-  <text class="ttl" x="370" y="284">Governance</text>
-  <text class="sub" x="370" y="303">risk-checks each call</text>
-  <g transform="translate(370,314)">
-    <rect x="0" y="0" width="30" height="16" rx="4" fill="color-mix(in srgb,var(--low) 13%,var(--ink))"/><text x="15" y="12" text-anchor="middle" style="fill:var(--low);font:700 8px var(--body)">LOW</text>
-    <rect x="35" y="0" width="32" height="16" rx="4" fill="color-mix(in srgb,var(--med) 15%,var(--ink))"/><text x="51" y="12" text-anchor="middle" style="fill:var(--med);font:700 8px var(--body)">MED</text>
-    <rect x="72" y="0" width="35" height="16" rx="4" fill="color-mix(in srgb,var(--high) 13%,var(--ink))"/><text x="89" y="12" text-anchor="middle" style="fill:var(--high);font:700 8px var(--body)">HIGH</text>
+    <rect class="node gate" x="808" y="70" width="160" height="104" rx="11"/>
+    <text class="ttl" x="822" y="98" style="fill:var(--high)">Approval Gate</text>
+    <text class="sub" x="822" y="120">HIGH-risk actions</text>
+    <text class="sub" x="822" y="138">held for a human.</text>
+    <text class="sub" x="822" y="156">LOW / MED run on</text>
   </g>
 
-  <path class="flow" d="M496,298 L528,298"/><text class="lbl" x="512" y="288" text-anchor="middle">HIGH</text>
-  <rect class="node gate" x="530" y="252" width="150" height="92" rx="11"/>
-  <text class="ttl" x="546" y="280" style="fill:var(--high)">Approval Gate</text>
-  <text class="sub" x="546" y="300">HIGH-risk actions</text>
-  <text class="sub" x="546" y="318">held for a human</text>
+  <!-- pipeline flow arrows -->
+  <path class="flow" d="M176,122 L212,122"/><text class="lbl" x="194" y="112" text-anchor="middle">discover</text>
+  <path class="flow" d="M374,122 L410,122"/><text class="lbl" x="392" y="112" text-anchor="middle">each tool</text>
+  <path class="flow" d="M572,122 L608,122"/><text class="lbl" x="590" y="112" text-anchor="middle">tools + risk</text>
+  <path class="flow" d="M770,122 L806,122"/><text class="lbl" x="788" y="112" text-anchor="middle">tool call</text>
 
-  <rect class="node soft" x="530" y="372" width="150" height="52" rx="10"/>
-  <text class="ttl" x="546" y="394">Human</text>
-  <text class="sub" x="546" y="412">approve / deny</text>
-  <path class="wire dbl" d="M605,344 L605,372"/>
+  <!-- satellites -->
+  <rect class="node soft" x="214" y="206" width="160" height="60" rx="10"/>
+  <text class="ttl" x="228" y="230" style="font-size:12.5px">&#128274; Encrypted store</text>
+  <text class="sub" x="228" y="250">agents - tokens - runs (disk)</text>
+  <path class="wire dbl" d="M294,174 L294,206"/>
 
-  <rect class="node" x="704" y="252" width="150" height="92" rx="11"/>
-  <text class="ttl" x="720" y="280">Connection</text>
-  <text class="ttl" x="720" y="298">Manager</text>
-  <text class="sub" x="720" y="318">&#8594; MCP servers</text>
-  <text class="sub" x="720" y="335">runs the tool</text>
+  <rect class="node soft" x="808" y="206" width="160" height="60" rx="10"/>
+  <text class="ttl" x="822" y="230" style="font-size:13px">Human operator</text>
+  <text class="sub" x="822" y="250">approve / deny</text>
+  <path class="wire dbl" d="M888,174 L888,206"/>
 
-  <path class="flow" d="M680,298 L700,298"/><text class="lbl" x="690" y="288" text-anchor="middle">on approve</text>
-  <!-- LOW/MED skip the gate -->
-  <path class="arc" d="M426,338 C 426,362 704,362 728,346"/>
-  <text class="lbl" x="565" y="360" text-anchor="middle">LOW / MED run without a gate</text>
-
-  <!-- ============ audit bus ============ -->
-  <rect class="node" x="16" y="440" width="838" height="50" rx="11"/>
-  <text class="ttl" x="34" y="463">Audit Log</text>
-  <text class="sub" x="34" y="480">append-only record of every step &middot; source for observability &amp; OTLP export</text>
-  <path class="wire" d="M236,344 L236,438"/><text class="lbl" x="244" y="428">steps</text>
-  <path class="wire" d="M400,338 L400,438"/><text class="lbl" x="408" y="428">risk</text>
-  <path class="wire" d="M605,424 L605,438"/><text class="lbl" x="613" y="418">decisions</text>
-  <path class="wire" d="M779,344 L779,438"/><text class="lbl" x="787" y="428">results</text>
+  <!-- audit bus -->
+  <rect class="node" x="16" y="316" width="952" height="60" rx="11"/>
+  <text class="ttl" x="34" y="343">Audit Log</text>
+  <text class="sub" x="34" y="361">append-only record of every thought, tool result, and decision</text>
+  <path class="wire" d="M492,174 L492,314"/><text class="lbl" x="500" y="300">classifications</text>
+  <path class="wire" d="M690,174 L690,314"/><text class="lbl" x="698" y="300">tool results</text>
+  <path class="wire" d="M888,266 L888,314"/><text class="lbl" x="896" y="300">decisions</text>
 </svg>
 </div>
 <div class="legend">
   <span><i style="border-color:var(--brass)"></i> agent &amp; tool flow</span>
   <span><i style="border-color:var(--mut)"></i> supporting wire</span>
-  <span><i style="border-color:var(--brass);border-top-style:dashed"></i> low-risk auto-run</span>
+  <span><i style="border-color:var(--brass);border-top-style:dashed"></i> executes on approval</span>
 </div>
 
+<!-- risk model -->
 <div class="section-h"><span class="lbl">The risk model</span></div>
 <div class="grid g3">
   <div class="card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="stamp LOW">LOW</span><b>Reads, auto-run</b></div>
@@ -140,6 +117,7 @@
 </div>
 <p class="sub" style="margin-top:14px">Unrecognized tools default to HIGH. A tool from a server Warden has never seen is gated until a human decides otherwise, rather than trusted by default.</p>
 
+<!-- run lifecycle -->
 <div class="section-h"><span class="lbl">A run&rsquo;s life</span></div>
 <div class="ledger">
   <div class="ev" style="grid-template-columns:170px 1fr"><span class="kind" style="color:var(--mut)">running</span><span class="detail">the agent is reading and calling low/medium tools</span></div>
@@ -147,6 +125,7 @@
   <div class="ev" style="grid-template-columns:170px 1fr"><span class="kind k-final">done</span><span class="detail">the agent finished; the full trace is in the audit log</span></div>
 </div>
 
+<!-- current state -->
 <div class="section-h"><span class="lbl">Right now</span></div>
 <div class="card">
   <div style="color:var(--mut);font-size:13.5px"><b style="color:var(--txt)">{{ servers|length }}</b> server(s) connected exposing <b style="color:var(--txt)">{{ tools|length }}</b> governed tools:</div>
