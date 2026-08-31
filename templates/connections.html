@@ -132,6 +132,21 @@
 </div>
 
 <div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
+{% set gated = tools|selectattr('gate','equalto','approval')|list %}
+{% set auto = tools|rejectattr('gate','equalto','approval')|list %}
+{% if tools %}
+<div class="card" style="margin-bottom:16px">
+  <div class="ebar" title="run freely / need approval">
+    {% if auto|length %}<span class="eseg a" style="flex:{{ auto|length }}"></span>{% endif %}
+    {% if gated|length %}<span class="eseg g" style="flex:{{ gated|length }}"></span>{% endif %}
+  </div>
+  <div class="esum">
+    <span><b class="a">{{ auto|length }}</b> run freely <span style="color:var(--dim)">(reads &amp; reversible)</span></span>
+    <span><b class="g">{{ gated|length }}</b> need approval <span style="color:var(--dim)">(writes &amp; unrecognized)</span></span>
+  </div>
+  <div style="color:var(--dim);font-size:11.5px;margin-top:8px">This is the default posture across every connected server. Each agent draws a subset; override any tool&rsquo;s tier below.</div>
+</div>
+{% endif %}
 {% for server_name, group in tools|groupby('server_name') %}
 {% set gtools = group|list %}
 <details class="gsec" {{ 'open' if gtools|length <= 6 }}>

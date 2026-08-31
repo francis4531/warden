@@ -303,19 +303,22 @@ def create_agent():
 def agent(aid):
     ag = store.get_agent(aid)
     if not ag: abort(404)
-    idx = {t["key"]: t for t in connected_tools()}
-    skills = ag["skills"] or []
-    granted = [idx[k] for k in skills if k in idx]
-    groups = {}
-    for t in granted:
-        groups.setdefault(t["server_name"], []).append(t)
-    counts = {"total": len(granted), "servers": len(groups),
-              "gated": sum(1 for t in granted if t["gate"] == "approval"),
-              "auto": sum(1 for t in granted if t["gate"] != "approval")}
-    missing = [k for k in skills if k not in idx]
+    all_tools = connected_tools()
+    idx = {t["key"]: t for t in all_tools}
+    skills = set(ag["skills"] or [])
+    granted = [idx[k] for k in (ag["skills"] or []) if k in idx]
+    # governance tiers: what runs on its own, what asks first, and what is deliberately withheld
+    freely = sorted([t for t in granted if t["gate"] != "approval"], key=lambda t: t["tool"])
+    asks   = sorted([t for t in granted if t["gate"] == "approval"], key=lambda t: t["tool"])
+    agent_server_ids = {t["server_id"] for t in granted}
+    withheld = sorted([t for t in all_tools
+                       if t["server_id"] in agent_server_ids and t["key"] not in skills],
+                      key=lambda t: (t["gate"] != "approval", t["tool"]))
+    counts = {"total": len(granted), "freely": len(freely), "asks": len(asks), "withheld": len(withheld)}
+    missing = [k for k in (ag["skills"] or []) if k not in idx]
     runs = [r for r in store.list_runs(50) if r["agent_id"] == aid]
-    return render_template("agent.html", agent=ag, groups=groups, counts=counts,
-                           missing=missing, runs=runs)
+    return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
+                           counts=counts, missing=missing, runs=runs)
 
 def _advance_bg(rid):
     """Run the agent loop in the background so the browser isn't blocked."""

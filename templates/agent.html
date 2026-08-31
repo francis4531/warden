@@ -56,33 +56,46 @@
 {% endif %}
 
 <!-- reference: what it's allowed to touch (collapsed) -->
-<div class="section-h"><span class="lbl">Permissions</span><a class="btn ghost sm" href="{{ url_for('edit_agent', aid=agent.id) }}">Edit agent &amp; tools</a></div>
-<details class="tools">
-  <summary>
-    <span class="chev">&#9654;</span>
-    <span class="sm-title">{{ counts.total }} tool{{ '' if counts.total==1 else 's' }}</span>
-    <span class="sm-meta">across {{ counts.servers }} server{{ '' if counts.servers==1 else 's' }} &middot;
-      {{ counts.gated }} gated for approval &middot; {{ counts.auto }} auto-run{% if missing %} &middot; {{ missing|length }} unavailable{% endif %}</span>
-  </summary>
-  <div class="body">
-    {% for server, tools in groups.items() %}
-    <div class="tgroup">
-      <div class="gh">{{ server }} <span class="pill">{{ tools|length }}</span></div>
-      <div class="tgrid">
-        {% for t in tools %}
-        <div class="tmini" title="{{ t.description }}">
-          <span class="tn">{{ t.tool }}</span>
-          <span class="stamp {{ t.risk }}">{{ t.risk }}</span>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
-    {% if missing %}
-    <div class="tgroup"><div class="gh" style="color:var(--high)">Unavailable <span class="pill error">{{ missing|length }}</span></div>
-      <div class="hint" style="color:var(--mut);font-size:12.5px">Granted from a server that isn't connected right now. Reconnect it on the <a href="{{ url_for('connections') }}" style="color:var(--brass)">Connections</a> page.</div>
-    </div>
-    {% endif %}
+<div class="section-h"><span class="lbl">What this agent can do</span><a class="btn ghost sm" href="{{ url_for('edit_agent', aid=agent.id) }}">Edit agent &amp; tools</a></div>
+<div class="card">
+  <div class="ebar" title="runs freely / asks first / withheld">
+    {% if counts.freely %}<span class="eseg a" style="flex:{{ counts.freely }}"></span>{% endif %}
+    {% if counts.asks %}<span class="eseg g" style="flex:{{ counts.asks }}"></span>{% endif %}
+    {% if counts.withheld %}<span class="eseg o" style="flex:{{ counts.withheld }}"></span>{% endif %}
   </div>
-</details>
+  <div class="esum">
+    <span><b class="a">{{ counts.freely }}</b> run on their own</span>
+    <span><b class="g">{{ counts.asks }}</b> ask first</span>
+    {% if counts.withheld %}<span><b class="o">{{ counts.withheld }}</b> withheld</span>{% endif %}
+  </div>
+
+  <div class="etier first">
+    <div class="eh"><span class="edot a"></span>Runs freely<span class="etc">{{ freely|length }}</span><span class="etd">reads and reversible actions, no gate</span></div>
+    <div class="echips">
+      {% for t in freely %}<span class="echip" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>
+      {% else %}<span class="enone">nothing runs without a gate</span>{% endfor %}
+    </div>
+  </div>
+
+  <div class="etier">
+    <div class="eh"><span class="edot g"></span>Asks first<span class="etc">{{ asks|length }}</span><span class="etd">held for your approval before it runs</span></div>
+    <div class="echips">
+      {% for t in asks %}<span class="echip g" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>
+      {% else %}<span class="enone">nothing high-risk is granted</span>{% endfor %}
+    </div>
+  </div>
+
+  {% if withheld %}
+  <div class="etier">
+    <div class="eh"><span class="edot o"></span>Withheld<span class="etc">{{ withheld|length }}</span><span class="etd">available on these servers, deliberately not granted</span></div>
+    <div class="echips">
+      {% for t in withheld %}<span class="echip o" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if missing %}
+  <div style="color:var(--mut);font-size:12px;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">{{ missing|length }} granted tool{{ '' if missing|length==1 else 's' }} come from a server that isn't connected right now. Reconnect on <a href="{{ url_for('connections') }}" style="color:var(--brass)">Connections</a>.</div>
+  {% endif %}
+</div>
 {% endblock %}
