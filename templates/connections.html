@@ -53,7 +53,7 @@
 
 <div class="disco">
   <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
-  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect and Warden searches the official MCP Registry live. Add the best match and it drops into the catalog below to connect.</div>
+  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>verified publishers</b>, first-party vendors and maintained connector platforms, never unvetted personal repos. Add the best match and it drops into the catalog below to connect.</div>
   <form method="get" action="{{ url_for('connections') }}">
     <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar" autofocus>
     <button class="btn brass">Search registry</button>
@@ -62,13 +62,15 @@
     {% if not discover.ok %}
       <div class="hint">Couldn't reach the registry just now ({{ discover.error }}). Try again in a moment.</div>
     {% elif not discover.results %}
-      <div class="hint">No servers found for &ldquo;{{ discover_q }}&rdquo;. Try a different term.</div>
+      <div class="hint">No servers from verified publishers matched &ldquo;{{ discover_q }}&rdquo;. The registry may only have community entries for this term; try a related service, or connect a server manually below.</div>
     {% else %}
     <div class="dres">
       {% for r in discover.results %}
       <div class="dcard">
         <div>
-          <div><span class="dn">{{ r.display }}</span><span class="dt {{ 'remote' if r.transport=='remote' else 'stdio' }}">{{ 'remote HTTP' if r.transport=='remote' else 'local package' }}</span></div>
+          <div><span class="dn">{{ r.display }}</span>
+            <span class="dt {{ 'remote' if r.transport=='remote' else 'stdio' }}">{{ 'remote HTTP' if r.transport=='remote' else 'local package' }}</span>
+            <span class="dt" style="color:var(--brass-b);border:1px solid color-mix(in srgb,var(--brass-b) 35%,var(--line2))">&#10003; {{ r.publisher }}</span></div>
           {% if r.description %}<div class="dd">{{ r.description }}</div>{% endif %}
           {% if r.run_hint %}<div class="dr">{{ r.run_hint }}</div>{% endif %}
         </div>
