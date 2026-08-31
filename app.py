@@ -324,8 +324,11 @@ def agent(aid):
     counts = {"total": len(granted), "freely": len(freely), "asks": len(asks), "withheld": len(withheld)}
     missing = [k for k in (ag["skills"] or []) if k not in idx]
     runs = [r for r in store.list_runs(50) if r["agent_id"] == aid]
+    est_rate = rt.rate_for(ag["model"])
+    est_base = max(200, len(ag["instructions"] or "") // 4 + len(granted) * 80 + 350)
     return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
-                           counts=counts, missing=missing, runs=runs)
+                           counts=counts, missing=missing, runs=runs,
+                           est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"))
 
 def _advance_bg(rid):
     """Run the agent loop in the background so the browser isn't blocked."""
@@ -461,12 +464,20 @@ def run_events(rid):
     r = store.get_run(rid)
     if not r: abort(404)
     audit = store.audit_for_run(rid)
+    mc = []
+    for e in audit:
+        if e["kind"] == "model_call" and e["detail"]:
+            d = e["detail"] if isinstance(e["detail"], dict) else _json.loads(e["detail"])
+            mc.append(d)
+    cost = round(sum(d.get("cost", 0) or 0 for d in mc), 6)
+    tokens = sum((d.get("input_tokens", 0) or 0) + (d.get("output_tokens", 0) or 0) for d in mc)
     pend = [{"id": a["id"], "tool": (a["skill"] or "").split("__")[-1], "risk": a["risk"],
              "parts": format_args(a["arguments"].get("input")),
              "approve": url_for("approval", apid=a["id"])}
             for a in store.approvals_for_run(rid) if a["status"] == "pending"]
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
-            "pending": pend, "back": url_for("run_view", rid=rid)}
+            "pending": pend, "back": url_for("run_view", rid=rid),
+            "cost": cost, "tokens": tokens, "calls": len(mc), "live": rt.mode() == "live"}
 
 @app.route("/run/<rid>/say", methods=["POST"])
 def run_say(rid):

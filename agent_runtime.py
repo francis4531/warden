@@ -27,6 +27,13 @@ def _cost(model, inp, out):
             rate = v; break
     return round(inp / 1e6 * rate[0] + out / 1e6 * rate[1], 6)
 
+def rate_for(model):
+    m = (model or MODEL_DEFAULT).lower()
+    for k, v in PRICES.items():
+        if k in m:
+            return v
+    return (3.0, 15.0)
+
 def mode():
     return "sandbox" if SANDBOX else "live"
 

@@ -34,12 +34,27 @@
   <div class="lab">Start a conversation</div>
   <form method="post" action="{{ url_for('run') }}">
     <input type="hidden" name="agent_id" value="{{ agent.id }}">
-    <textarea name="input" placeholder="Ask the agent to do something…" required autofocus></textarea>
+    <textarea name="input" id="runmsg" placeholder="Ask the agent to do something…" required autofocus></textarea>
+    <div id="estline" style="color:var(--dim);font-size:11.5px;margin-top:8px"></div>
     <div class="go">
       <button class="btn brass" type="submit">Run agent &rarr;</button>
       <span class="hint">The agent works in a conversation, reply to it, and approve anything it wants to run.</span>
     </div>
   </form>
+  <script>
+    (function(){
+      const RATE={{ est_in_rate }}, BASE={{ est_base }}, LIVE={{ 'true' if live else 'false' }};
+      const inp=document.getElementById('runmsg'), el=document.getElementById('estline');
+      function est(){
+        const tok=BASE+Math.ceil((inp.value.length||0)/4);
+        const c=tok/1e6*RATE;
+        el.innerHTML = LIVE
+          ? 'Estimated first step: <b style="color:var(--txt)">~$'+c.toFixed(4)+'</b> input ('+tok.toLocaleString()+' tokens). Total depends on the work; you\u2019ll see the running cost live.'
+          : 'Sandbox is free. Live, the first step would be <b style="color:var(--txt)">~$'+c.toFixed(4)+'</b> input ('+tok.toLocaleString()+' tokens).';
+      }
+      inp.addEventListener('input', est); est();
+    })();
+  </script>
 </div>
 
 {% if runs %}
