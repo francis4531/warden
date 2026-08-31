@@ -226,6 +226,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
       </div>
       <span class="mode {{ mode }}"><span class="dot"></span>{{ 'live model' if mode=='live' else 'sandbox' }}</span>
       {% if mode=='sandbox' %}<div class="note">Set ANTHROPIC_API_KEY to run agents against a live model. Governance and audit are fully live either way.</div>{% endif %}
+      {% if not auth_on %}<div class="note" style="color:var(--high)">Unprotected: set WARDEN_PASSWORD to require sign-in.</div>{% endif %}
+      {% if auth_on %}<a href="{{ url_for('logout') }}" class="note" style="text-decoration:none;color:var(--mut)">&#8631; Sign out{% if user_email and user_email != 'operator' %} &middot; {{ user_email }}{% endif %}</a>{% endif %}
     </div>
   </aside>
   <main class="main">

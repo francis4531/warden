@@ -64,7 +64,109 @@ except Exception:
 DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M %Z")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("WARDEN_SECRET_KEY", "dev-insecure-change-me")
 store.init()
+
+# ---- authentication ----
+# Sign in with Google (OAuth 2.0), optionally restricted to an email allow-list.
+# A single operator password is kept as a fallback. The landing page and /healthz stay
+# public; everything else requires sign-in. If neither method is configured the app runs
+# open, for local development only.
+import hmac, secrets, urllib.parse, urllib.request, json as _authjson
+from flask import session
+AUTH_PASSWORD = os.environ.get("WARDEN_PASSWORD", "")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_ON = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAILS", "").split(",") if e.strip()}
+AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
+_PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
+
+def _authed():
+    return (not AUTH_ON) or bool(session.get("auth"))
+
+def _redirect_uri():
+    base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
+    return (base + "/auth/google/callback") if base else url_for("google_callback", _external=True)
+
+@app.before_request
+def _require_auth():
+    if not AUTH_ON:
+        return
+    if (request.endpoint or "") in _PUBLIC_ENDPOINTS:
+        return
+    if not session.get("auth"):
+        return redirect(url_for("login", next=request.path))
+
+def _login_ctx(**kw):
+    return dict(google_on=GOOGLE_ON, has_password=bool(AUTH_PASSWORD),
+                next=request.args.get("next", ""), **kw)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not AUTH_ON or session.get("auth"):
+        return redirect(url_for("home"))
+    error = None
+    if request.method == "POST":
+        if AUTH_PASSWORD and hmac.compare_digest(request.form.get("password", ""), AUTH_PASSWORD):
+            session["auth"] = True; session["email"] = "operator"; session.permanent = True
+            nxt = request.form.get("next") or url_for("home")
+            return redirect(nxt if nxt.startswith("/") else url_for("home"))
+        error = "Incorrect password."
+    return render_template("login.html", error=error, **_login_ctx())
+
+@app.route("/auth/google")
+def google_login():
+    if not GOOGLE_ON:
+        abort(404)
+    state = secrets.token_urlsafe(16)
+    session["oauth_state"] = state
+    session["oauth_next"] = request.args.get("next", "")
+    params = {"client_id": GOOGLE_CLIENT_ID, "redirect_uri": _redirect_uri(),
+              "response_type": "code", "scope": "openid email profile",
+              "state": state, "access_type": "online", "prompt": "select_account"}
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params))
+
+@app.route("/auth/google/callback")
+def google_callback():
+    if not GOOGLE_ON:
+        abort(404)
+    if not request.args.get("state") or request.args.get("state") != session.pop("oauth_state", None):
+        return render_template("login.html", error="Sign-in expired. Please try again.", **_login_ctx()), 400
+    code = request.args.get("code")
+    if not code:
+        return render_template("login.html", error="Google sign-in was cancelled.", **_login_ctx())
+    try:
+        data = urllib.parse.urlencode({"code": code, "client_id": GOOGLE_CLIENT_ID,
+                                       "client_secret": GOOGLE_CLIENT_SECRET,
+                                       "redirect_uri": _redirect_uri(),
+                                       "grant_type": "authorization_code"}).encode()
+        tok = _authjson.loads(urllib.request.urlopen(
+            urllib.request.Request("https://oauth2.googleapis.com/token", data=data), timeout=10).read())
+        info = _authjson.loads(urllib.request.urlopen(urllib.request.Request(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            headers={"Authorization": "Bearer " + tok.get("access_token", "")}), timeout=10).read())
+    except Exception:
+        return render_template("login.html", error="Could not complete Google sign-in. Try again.", **_login_ctx())
+    email = (info.get("email") or "").lower()
+    if not email or info.get("email_verified") is False:
+        return render_template("login.html", error="Your Google email could not be verified.", **_login_ctx())
+    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        return render_template("login.html", error="%s is not authorized for this studio." % email, **_login_ctx()), 403
+    session["auth"] = True; session["email"] = email; session["name"] = info.get("name") or email
+    session.permanent = True
+    nxt = session.pop("oauth_next", "") or url_for("home")
+    return redirect(nxt if nxt.startswith("/") else url_for("home"))
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("landing"))
+
+@app.context_processor
+def _auth_ctx():
+    return {"auth_on": AUTH_ON, "authed": _authed(), "user_email": session.get("email")}
+
 
 def _env_specs():
     """Servers to auto-connect on boot, from WARDEN_AUTOCONNECT (comma-separated catalog ids).

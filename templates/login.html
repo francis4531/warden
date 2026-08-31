@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in &middot; Warden</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#0d0f15;--ink2:#141824;--line:#232a3a;--line2:#313a4f;--txt:#eef1f7;--mut:#9aa4bb;--dim:#5f6a82;
+    --accent:#6f8dff;--accent2:#8a7dff;--high:#ff6b6b;--body:'Inter',-apple-system,sans-serif;--mono:'JetBrains Mono',monospace}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--ink);color:var(--txt);font-family:var(--body);min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background-image:radial-gradient(ellipse 60% 50% at 50% 0%,rgba(111,141,255,0.16),transparent 60%);padding:24px}
+  .card{width:100%;max-width:400px;background:var(--ink2);border:1px solid var(--line);border-radius:18px;padding:36px 34px;text-align:center}
+  .logo{width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#0b0d13;font-weight:800;font-size:22px;margin:0 auto 18px}
+  h1{font-size:22px;font-weight:700;letter-spacing:-.01em;margin-bottom:4px}
+  .sub{color:var(--mut);font-size:13.5px;margin-bottom:24px}
+  form{display:flex;flex-direction:column;gap:12px}
+  input{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--txt);font-family:var(--body);font-size:15px;padding:13px 15px}
+  input:focus{outline:none;border-color:var(--accent)}
+  button{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0d13;font-weight:600;font-size:15px;border:none;border-radius:10px;padding:13px;cursor:pointer;transition:filter .15s}
+  button:hover{filter:brightness(1.08)}
+  .gbtn{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;background:#fff;color:#1f232b;font-weight:600;font-size:15px;border:none;border-radius:10px;padding:12px;cursor:pointer;text-decoration:none;transition:filter .15s}
+  .gbtn:hover{filter:brightness(0.96)}
+  .gbtn svg{width:19px;height:19px}
+  .or{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;margin:6px 0}
+  .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line2)}
+  .err{color:var(--high);font-size:13px;margin-top:2px}
+  .back{display:inline-block;margin-top:18px;color:var(--dim);font-size:12.5px;text-decoration:none}
+  .back:hover{color:var(--mut)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">W</div>
+    <h1>Warden</h1>
+    <div class="sub">This studio is protected. Sign in to continue.</div>
+
+    {% if error %}<div class="err" style="margin-bottom:14px">{{ error }}</div>{% endif %}
+
+    {% if google_on %}
+    <a class="gbtn" href="{{ url_for('google_login') }}{% if next %}?next={{ next }}{% endif %}">
+      <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.8 6.1C12.2 13.6 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7c4.3-4 6.7-9.9 6.7-17.4z"/><path fill="#FBBC05" d="M10.3 28.4c-.5-1.5-.8-3-.8-4.4s.3-3 .8-4.4l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.5l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.3-5.7c-2 1.4-4.7 2.3-7.9 2.3-6.4 0-11.8-4.1-13.7-9.9l-7.8 6.1C6.4 42.6 14.6 48 24 48z"/></svg>
+      Sign in with Google
+    </a>
+    {% endif %}
+
+    {% if google_on and has_password %}<div class="or">or</div>{% endif %}
+
+    {% if has_password %}
+    <form method="post" action="{{ url_for('login') }}">
+      <input type="password" name="password" placeholder="Operator password" {% if not google_on %}autofocus{% endif %} required>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Sign in</button>
+    </form>
+    {% endif %}
+
+    <a class="back" href="{{ url_for('landing') }}">&larr; back to home</a>
+  </div>
+</body>
+</html>
