@@ -53,7 +53,7 @@
 
 <div class="disco">
   <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
-  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>verified publishers</b>, first-party vendors and maintained connector platforms, never unvetted personal repos. Add the best match and it drops into the catalog below to connect.</div>
+  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
   <form method="get" action="{{ url_for('connections') }}">
     <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar" autofocus>
     <button class="btn brass">Search registry</button>
@@ -62,7 +62,7 @@
     {% if not discover.ok %}
       <div class="hint">Couldn't reach the registry just now ({{ discover.error }}). Try again in a moment.</div>
     {% elif not discover.results %}
-      <div class="hint">No servers from verified publishers matched &ldquo;{{ discover_q }}&rdquo;. The registry may only have community entries for this term; try a related service, or connect a server manually below.</div>
+      <div class="hint">No official first-party server for &ldquo;{{ discover_q }}&rdquo; is in the registry yet. Check the catalog below, its owner may already be listed there.</div>
     {% else %}
     <div class="dres">
       {% for r in discover.results %}

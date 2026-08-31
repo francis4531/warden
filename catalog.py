@@ -96,6 +96,23 @@ CATALOG = [
    "run":"https://mcp.vercel.com","auth":"oauth","status":"remote",
    "desc":"Read projects and deployments; trigger and promote deploys. Ship behind a human gate."},
 
+  # --- Google Workspace: official, first-party Google servers (one per product, OAuth) ---
+  {"id":"google_gmail","env":"GOOGLE_OAUTH","name":"Gmail (Google official)","category":"Comms","maintainer":"vendor","transport":"http",
+   "run":"https://gmailmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
+   "desc":"Google's own Gmail MCP server. Search threads, read messages, draft, and manage labels. OAuth via a Google Cloud project."},
+  {"id":"google_drive","env":"GOOGLE_OAUTH","name":"Google Drive (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+   "run":"https://drivemcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
+   "desc":"Google's own Drive MCP server. Search, read, copy, and create files; manage permissions. OAuth via a Google Cloud project."},
+  {"id":"google_calendar","env":"GOOGLE_OAUTH","name":"Google Calendar (official)","category":"Productivity","maintainer":"vendor","transport":"http",
+   "run":"https://calendarmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
+   "desc":"Google's own Calendar MCP server. List and search events, check free/busy, create and update events. OAuth via a Google Cloud project."},
+  {"id":"google_docs","env":"GOOGLE_OAUTH","name":"Google Docs (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+   "run":"https://docsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
+   "desc":"Google's own Docs MCP server. Read and update documents. OAuth via a Google Cloud project."},
+  {"id":"google_sheets","env":"GOOGLE_OAUTH","name":"Google Sheets (official)","category":"Data","maintainer":"vendor","transport":"http",
+   "run":"https://sheetsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
+   "desc":"Google's own Sheets MCP server. Read values, update cells and formulas, insert rows. OAuth via a Google Cloud project."},
+
   # --- data (archived reference, still functional) ---
   {"id":"postgres","name":"PostgreSQL","category":"Data","maintainer":"community","transport":"stdio_node",
    "run":"npx -y @modelcontextprotocol/server-postgres postgresql://<conn>","auth":"conn_string",

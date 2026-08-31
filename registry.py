@@ -15,7 +15,8 @@ TIMEOUT = 6
 
 TRUSTED_PUBLISHERS = {
     "modelcontextprotocol", "anthropic",
-    "waystation", "mintmcp", "composio", "pipedream", "zapier", "klavis",
+    # FIRST-PARTY VENDORS ONLY. The company that owns the service publishes its own server.
+    # No connector platforms, aggregators, or community re-hosts. Credibility over coverage.
     "cloudflare", "hashicorp", "terraform", "vercel", "netlify", "aws", "amazon",
     "microsoft", "azure", "google", "gcp", "digitalocean", "heroku", "render",
     "supabase", "neon", "mongodb", "elastic", "redis", "snowflake", "databricks",
