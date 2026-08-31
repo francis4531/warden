@@ -2,6 +2,7 @@
 {% set st = status.get(e.id) %}
 <div class="mconn" data-id="{{ e.id }}">
   <span class="nm">{{ e.name }}</span>
+  {% if e.custom %}<span class="mini" style="font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--brass-b);border:1px solid color-mix(in srgb,var(--brass-b) 35%,var(--line));border-radius:5px;padding:1px 6px">discovered</span>{% endif %}
   <span class="mini" style="font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px">{{ slabel[e.status] }}</span>
   <span class="cstatus">{% if e.id in enabled and st and st.status=='connected' %}<span style="color:var(--low-t,var(--brass-b))">connected &middot; {{ st.tool_count }} tools</span>{% elif st and st.status=='error' %}<span style="color:var(--high)">error</span>{% endif %}</span>
   <div class="act">

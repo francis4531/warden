@@ -176,6 +176,10 @@ def cat_by_id(cid):
             return c
     return None
 
+@app.route("/discover.json")
+def discover_json():
+    return registry.search(request.args.get("q", ""))
+
 @app.route("/discover/add", methods=["POST"])
 def discover_add():
     import re as _re
@@ -189,6 +193,8 @@ def discover_add():
         store.add_custom_server(sid, name, "Discovered", "http", url=endpoint, description=desc, repo=repo)
     else:
         store.add_custom_server(sid, name, "Discovered", "stdio_node", command=endpoint, description=desc, repo=repo)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "id": sid}
     return redirect(url_for("connections") + "#" + sid)
 
 @app.route("/discover/remove", methods=["POST"])
