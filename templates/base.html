@@ -241,5 +241,10 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
   apply(document.documentElement.getAttribute('data-theme')||'light');
 })();
 </script>
+<script>
+// visit beacon: report Warden page visits to the same 453 Labs telemetry as the hub,
+// so Warden shows up in the operator's visits view alongside CompletionLoop and OfferWise.
+(function(){try{var u="https://demo.completionloop.ai/api/track?page="+encodeURIComponent(location.href);var i=new Image();i.src=u+"&t="+Date.now();}catch(e){}})();
+</script>
 </body>
 </html>
