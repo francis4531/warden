@@ -34,6 +34,13 @@ def rate_for(model):
             return v
     return (3.0, 15.0)
 
+def _run_cost(run_id):
+    total = 0.0
+    for e in store.audit_for_run(run_id):
+        if e["kind"] == "model_call" and isinstance(e["detail"], dict):
+            total += e["detail"].get("cost", 0) or 0
+    return round(total, 6)
+
 def mode():
     return "sandbox" if SANDBOX else "live"
 
@@ -248,11 +255,21 @@ def _advance_once(run_id):
     if not messages:
         messages = [{"role":"user","content":run["input"]}]
         store.audit(run_id, agent["id"], "run_started", detail={"input":run["input"],"mode":mode()})
+    budget = float(agent.get("budget_usd") or 0)
     for _ in range(12):
         last = messages[-1] if messages else None
         if last and last["role"]=="assistant" and _has_tool_use(last):
             if _execute_tool_turn(run_id, agent, last, messages, idx) == "paused":
                 store.update_run(run_id, status="awaiting_approval", transcript=messages)
+                return store.get_run(run_id)
+        if budget > 0:
+            spent = _run_cost(run_id)
+            if spent >= budget:
+                store.audit(run_id, agent["id"], "budget_stop",
+                            detail={"text": "Run stopped: it reached its budget of $%.2f (spent $%.4f). "
+                                            "Nothing further ran. Raise the agent's budget to continue."
+                                            % (budget, spent), "budget": budget, "spent": spent})
+                store.update_run(run_id, status="done", transcript=messages)
                 return store.get_run(run_id)
         _repair(messages)   # never send an unanswered tool_use to the API
         try:

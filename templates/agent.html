@@ -24,9 +24,15 @@
 </style>
 
 <div class="page-h" style="margin-bottom:20px">
-  <div class="eyebrow">Agent</div>
+  <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Agent</span>
+    <form method="post" action="{{ url_for('delete_agent', aid=agent.id) }}" onsubmit="return confirm('Delete {{ agent.name|e }}? Its runs and pending approvals are removed. The audit trail of what it did is kept.');" style="margin:0">
+      <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete agent</button>
+    </form>
+  </div>
   <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}</h1>
   <p class="sub">{{ agent.instructions }}</p>
+  {% if agent.budget_usd %}<div style="font-family:var(--mono);font-size:12px;color:var(--mut);margin-top:6px">&#9209; run budget: <b style="color:var(--txt)">${{ '%.2f'|format(agent.budget_usd) }}</b> per run &middot; stops before the next model call if reached</div>{% endif %}
 </div>
 
 <!-- primary action: talk to the agent -->

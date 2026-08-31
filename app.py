@@ -294,8 +294,15 @@ def update_agent(aid):
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
-    store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""))
+    store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""),
+                       budget_usd=request.form.get("budget_usd") or 0)
     return redirect(url_for("agent", aid=aid))
+
+@app.route("/agent/<aid>/delete", methods=["POST"])
+def delete_agent(aid):
+    if store.get_agent(aid):
+        store.delete_agent(aid)
+    return redirect(url_for("home"))
 
 @app.route("/agents", methods=["POST"])
 def create_agent():
@@ -303,7 +310,8 @@ def create_agent():
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
-    aid = store.create_agent(name, instructions, model, skills, icon=request.form.get("icon", ""))
+    aid = store.create_agent(name, instructions, model, skills, icon=request.form.get("icon", ""),
+                             budget_usd=request.form.get("budget_usd") or 0)
     return redirect(url_for("agent", aid=aid))
 
 @app.route("/agent/<aid>")
@@ -365,7 +373,7 @@ def _fmt_event(e):
     kind = e["kind"]
     if kind in ("run_started", "user_message"):
         text = d.get("input") or d.get("text") or ""
-    elif kind in ("final", "thought", "error"):
+    elif kind in ("final", "thought", "error", "budget_stop"):
         text = d.get("text", "")
     elif "result" in d:
         res = d["result"]

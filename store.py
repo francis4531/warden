@@ -67,23 +67,37 @@ def init():
     acols = [r["name"] for r in c.execute("PRAGMA table_info(agents)").fetchall()]
     if "icon" not in acols:
         c.execute("ALTER TABLE agents ADD COLUMN icon TEXT")
+    if "budget_usd" not in acols:
+        c.execute("ALTER TABLE agents ADD COLUMN budget_usd REAL")
     c.commit(); c.close()
 
 # ---- agents ----
-def create_agent(name, instructions, model, skills, icon=""):
+def create_agent(name, instructions, model, skills, icon="", budget_usd=0):
     c = _conn(); aid = _id("ag")
-    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon) VALUES(?,?,?,?,?,?,?)",
-              (aid, name, instructions, model, json.dumps(skills), now(), icon or ""))
+    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd) VALUES(?,?,?,?,?,?,?,?)",
+              (aid, name, instructions, model, json.dumps(skills), now(), icon or "", float(budget_usd or 0)))
     c.commit(); c.close(); return aid
 
-def update_agent(aid, name, instructions, model, skills, icon=None):
+def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=None):
     c = _conn()
-    if icon is None:
-        c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=? WHERE id=?",
-                  (name, instructions, model, json.dumps(skills), aid))
-    else:
-        c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=?, icon=? WHERE id=?",
-                  (name, instructions, model, json.dumps(skills), icon or "", aid))
+    sets = ["name=?", "instructions=?", "model=?", "skills=?"]
+    vals = [name, instructions, model, json.dumps(skills)]
+    if icon is not None:
+        sets.append("icon=?"); vals.append(icon or "")
+    if budget_usd is not None:
+        sets.append("budget_usd=?"); vals.append(float(budget_usd or 0))
+    vals.append(aid)
+    c.execute("UPDATE agents SET " + ", ".join(sets) + " WHERE id=?", vals)
+    c.commit(); c.close()
+
+def delete_agent(aid):
+    """Remove the agent, its runs, and any pending approvals. The append-only, hash-chained
+    audit log is deliberately left intact: erasing what an agent did would break the chain
+    and defeat the tamper-evidence. History outlives the agent."""
+    c = _conn()
+    c.execute("DELETE FROM approvals WHERE agent_id=? AND status='pending'", (aid,))
+    c.execute("DELETE FROM runs WHERE agent_id=?", (aid,))
+    c.execute("DELETE FROM agents WHERE id=?", (aid,))
     c.commit(); c.close()
 
 def get_agent(aid):

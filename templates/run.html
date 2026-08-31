@@ -10,6 +10,7 @@
 .msg.user{margin-left:auto;background:var(--ink3);border:1px solid var(--line2)}
 .msg.agent{background:var(--ink2);border:1px solid var(--line);border-left:2px solid var(--brass)}
 .msg.err{border-left-color:var(--high);color:var(--high)}
+.msg.budget{background:color-mix(in srgb,var(--med) 8%,var(--ink2));border:1px solid color-mix(in srgb,var(--med) 40%,var(--line));border-left:2px solid var(--med);color:var(--med);max-width:100%}
 /* markdown inside agent messages */
 .md>*:first-child{margin-top:0}.md>*:last-child{margin-bottom:0}
 .md h1,.md h2,.md h3,.md h4{font-family:var(--disp);font-weight:650;line-height:1.25;margin:14px 0 6px}
@@ -112,6 +113,8 @@ function renderChat(events){
       flush(); html+=`<div class="msg agent"><div class="who">${'{{ agent.name }}'}</div><div class="md">${md(e.text)}</div></div>`;
     } else if(e.kind==='error'){
       flush(); html+=`<div class="msg agent err"><div class="who">error</div>${esc(e.text)}</div>`;
+    } else if(e.kind==='budget_stop'){
+      flush(); html+=`<div class="msg budget"><div class="who">&#9209; budget reached</div>${esc(e.text)}</div>`;
     } else if(e.kind==='tool_result' || e.kind==='tool_result_gated'){
       chips+=`<span class="chip">used <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){

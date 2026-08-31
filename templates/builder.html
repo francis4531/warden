@@ -80,6 +80,9 @@
     <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval.">{{ edit_agent.instructions if edit_agent }}</textarea>
     <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
     <input type="text" id="model" name="model" placeholder="claude-sonnet-4-6" value="{{ edit_agent.model if edit_agent and edit_agent.model }}">
+    <label class="f" for="budget_usd">Run budget <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional, USD per run)</span></label>
+    <input type="number" step="0.01" min="0" id="budget_usd" name="budget_usd" placeholder="e.g. 0.50 &mdash; blank means no cap" value="{{ edit_agent.budget_usd if edit_agent and edit_agent.budget_usd }}">
+    <div style="color:var(--dim);font-size:11.5px;margin-top:6px">If a run reaches this spend, it stops before the next model call. Blank means unlimited.</div>
 
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 4px">
       <label class="f" style="margin:0">Granted tools</label>
