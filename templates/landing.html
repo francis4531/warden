@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warden &middot; enterprise AI agent studio, governed by default</title>
+<meta name="description" content="Warden is an enterprise AI agent studio where every agent is governed by default. Build agents over MCP, gate risky actions for a human, and keep a tamper-evident audit of every step.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0d0f15;--ink2:#141824;--ink3:#1b2130;--line:#232a3a;--line2:#313a4f;
+    --txt:#eef1f7;--mut:#9aa4bb;--dim:#5f6a82;
+    --accent:#6f8dff;--accent2:#8a7dff;--low:#43d18b;--high:#ff6b6b;--med:#ffb454;
+    --body:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--ink);color:var(--txt);font-family:var(--body);line-height:1.6;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(ellipse 70% 55% at 50% -10%,rgba(111,141,255,0.16),transparent 60%);min-height:100vh}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+  .top{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:17px;letter-spacing:-.01em}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex;align-items:center;justify-content:center;color:#0b0d13;font-weight:800;font-size:17px}
+  .brand small{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--mut);text-transform:uppercase;font-weight:500;margin-top:-2px}
+  .top .enter{font-size:13.5px;font-weight:600;color:var(--txt);text-decoration:none;border:1px solid var(--line2);border-radius:9px;padding:9px 16px;transition:border-color .15s}
+  .top .enter:hover{border-color:var(--accent)}
+
+  .hero{padding:70px 0 30px;text-align:center}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--line2);border-radius:20px;padding:6px 14px;margin-bottom:24px}
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--low);box-shadow:0 0 8px var(--low)}
+  h1{font-size:clamp(38px,6.4vw,66px);line-height:1.04;letter-spacing:-.03em;font-weight:800;margin-bottom:20px}
+  h1 .g{background:linear-gradient(120deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lede{color:var(--mut);font-size:clamp(16px,2.2vw,19px);max-width:60ch;margin:0 auto 34px;line-height:1.6}
+  .lede b{color:var(--txt);font-weight:600}
+  .ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;text-decoration:none;padding:13px 24px;border-radius:11px;transition:transform .12s,filter .15s,border-color .15s}
+  .btn.pri{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0d13}
+  .btn.pri:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .btn.gho{border:1px solid var(--line2);color:var(--txt)}
+  .btn.gho:hover{border-color:var(--accent)}
+
+  .flow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:52px 0 8px;font-family:var(--mono);font-size:12.5px;color:var(--mut)}
+  .flow .n{background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px 13px;color:var(--txt)}
+  .flow .n b{color:var(--accent)}
+  .flow .ar{color:var(--dim)}
+  .flow .gate{border-color:color-mix(in srgb,var(--high) 45%,var(--line));color:var(--high)}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:56px 0 20px}
+  .card{background:var(--ink2);border:1px solid var(--line);border-radius:14px;padding:22px 20px}
+  .card .h{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;margin-bottom:8px}
+  .card .h .d{width:8px;height:8px;border-radius:50%;flex:none}
+  .card p{color:var(--mut);font-size:13.5px;line-height:1.6}
+  .card .d.a{background:var(--low)}.card .d.g{background:var(--high)}.card .d.m{background:var(--med)}.card .d.b{background:var(--accent)}
+
+  .strip{margin:40px 0 10px;padding:26px 28px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(120deg,rgba(111,141,255,0.08),rgba(138,125,255,0.03));
+    display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .strip .t{font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .strip .s{color:var(--mut);font-size:13.5px;margin-top:3px}
+
+  footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0 50px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer .b{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  footer a{color:var(--mut);text-decoration:none;font-size:13px}
+  footer a:hover{color:var(--txt)}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}.hero{padding:44px 0 20px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <a class="brand" href="{{ url_for('landing') }}" style="text-decoration:none;color:inherit">
+      <span class="logo">W</span><span>Warden<small>Agent Studio</small></span>
+    </a>
+    <a class="enter" href="{{ url_for('home') }}">Enter the studio &rarr;</a>
+  </div>
+
+  <section class="hero">
+    <div class="eyebrow"><span class="dot"></span>{{ 'Live model' if mode=='live' else 'Sandbox' }} &middot; running now</div>
+    <h1>Build AI agents you can<br><span class="g">actually trust</span> in production.</h1>
+    <p class="lede">Warden is an enterprise AI agent studio where <b>every agent is governed by default</b>. You give an agent instructions and grant it tools over MCP. Reads run on their own; anything that moves money or changes state is held for a human. Every step lands on a tamper-evident record.</p>
+    <div class="ctas">
+      <a class="btn pri" href="{{ url_for('home') }}">Enter the studio &rarr;</a>
+      <a class="btn gho" href="{{ url_for('architecture') }}">See the architecture</a>
+    </div>
+  </section>
+
+  <div class="flow">
+    <span class="n"><b>You</b> define &amp; grant</span>
+    <span class="ar">&rarr;</span>
+    <span class="n">Agent runs over MCP</span>
+    <span class="ar">&rarr;</span>
+    <span class="n">Governance risk-checks each call</span>
+    <span class="ar">&rarr;</span>
+    <span class="n gate">Human approves high-risk</span>
+    <span class="ar">&rarr;</span>
+    <span class="n">Audited, every step</span>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="h"><span class="d b"></span>Governed by default</div><p>Every tool is risk-classified the moment a server connects. A policy engine adds spend caps, rate limits, and time windows that decide allow, gate, or deny per call.</p></div>
+    <div class="card"><div class="h"><span class="d g"></span>Human in the loop</div><p>High-risk actions pause for approval, with a full diff view for proposed code changes. Nothing irreversible runs without a person saying yes.</p></div>
+    <div class="card"><div class="h"><span class="d a"></span>Tamper-evident audit</div><p>Every step is hash-chained, so any edit, deletion, or reorder is detectable. The record of what an agent did outlives the agent itself.</p></div>
+    <div class="card"><div class="h"><span class="d m"></span>Cost governance</div><p>Estimate a run before it starts, watch the cost meter live as it works, and cap spend per run. Visible, then enforceable.</p></div>
+    <div class="card"><div class="h"><span class="d b"></span>MCP-native</div><p>A first-party server catalog plus live discovery from the official MCP Registry, official vendor servers only, never third-party middlemen.</p></div>
+    <div class="card"><div class="h"><span class="d a"></span>Observability built in</div><p>Each run is an OpenTelemetry trace, each step a span. Sensitive fields are redacted before export to Datadog or Grafana.</p></div>
+  </div>
+
+  <div class="strip">
+    <div>
+      <div class="t">See it run.</div>
+      <div class="s">Build a governed agent in a minute, then watch it stop and ask before it does anything that matters.</div>
+    </div>
+    <a class="btn pri" href="{{ url_for('new_agent') }}">Build an agent &rarr;</a>
+  </div>
+
+  <footer>
+    <span class="b">Warden v{{ version }} &middot; governed by default &middot; built by Francis Kurupacheril</span>
+    <span><a href="{{ url_for('home') }}">Dashboard</a> &nbsp;&middot;&nbsp; <a href="{{ url_for('architecture') }}">Architecture</a></span>
+  </footer>
+
+</div>
+<script>(function(){try{var u="https://demo.completionloop.ai/api/track?page="+encodeURIComponent(location.href);var i=new Image();i.src=u+"&t="+Date.now();}catch(e){}})();</script>
+</body>
+</html>

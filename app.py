@@ -117,6 +117,10 @@ def arg_summary(inp):
 app.jinja_env.globals["arg_summary"] = arg_summary
 
 @app.route("/")
+def landing():
+    return render_template("landing.html")
+
+@app.route("/app")
 def home():
     servers = cm().connected_servers()
     return render_template("dashboard.html", agents=store.list_agents(), runs=store.list_runs(12),
