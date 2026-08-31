@@ -14,6 +14,7 @@ import catalog as cat
 import telemetry
 import policy
 import registry
+import icons
 
 WARDEN_VERSION = "0.3"
 
@@ -287,7 +288,7 @@ def update_agent(aid):
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
-    store.update_agent(aid, name, instructions, model, skills)
+    store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""))
     return redirect(url_for("agent", aid=aid))
 
 @app.route("/agents", methods=["POST"])
@@ -296,7 +297,7 @@ def create_agent():
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
-    aid = store.create_agent(name, instructions, model, skills)
+    aid = store.create_agent(name, instructions, model, skills, icon=request.form.get("icon", ""))
     return redirect(url_for("agent", aid=aid))
 
 @app.route("/agent/<aid>")
@@ -446,6 +447,8 @@ def format_args(inp):
 
 app.jinja_env.globals["fmt_args"] = format_args
 app.jinja_env.globals["describe_policy"] = policy.describe
+app.jinja_env.globals["agent_icon"] = icons.svg
+app.jinja_env.globals["ICON_SET"] = icons.PLANETS
 
 @app.route("/run/<rid>/events")
 def run_events(rid):

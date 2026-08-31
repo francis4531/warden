@@ -64,19 +64,26 @@ def init():
         c.execute("ALTER TABLE audit ADD COLUMN prev_hash TEXT")
     if "hash" not in cols:
         c.execute("ALTER TABLE audit ADD COLUMN hash TEXT")
+    acols = [r["name"] for r in c.execute("PRAGMA table_info(agents)").fetchall()]
+    if "icon" not in acols:
+        c.execute("ALTER TABLE agents ADD COLUMN icon TEXT")
     c.commit(); c.close()
 
 # ---- agents ----
-def create_agent(name, instructions, model, skills):
+def create_agent(name, instructions, model, skills, icon=""):
     c = _conn(); aid = _id("ag")
-    c.execute("INSERT INTO agents VALUES(?,?,?,?,?,?)",
-              (aid, name, instructions, model, json.dumps(skills), now()))
+    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon) VALUES(?,?,?,?,?,?,?)",
+              (aid, name, instructions, model, json.dumps(skills), now(), icon or ""))
     c.commit(); c.close(); return aid
 
-def update_agent(aid, name, instructions, model, skills):
+def update_agent(aid, name, instructions, model, skills, icon=None):
     c = _conn()
-    c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=? WHERE id=?",
-              (name, instructions, model, json.dumps(skills), aid))
+    if icon is None:
+        c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=? WHERE id=?",
+                  (name, instructions, model, json.dumps(skills), aid))
+    else:
+        c.execute("UPDATE agents SET name=?, instructions=?, model=?, skills=?, icon=? WHERE id=?",
+                  (name, instructions, model, json.dumps(skills), icon or "", aid))
     c.commit(); c.close()
 
 def get_agent(aid):

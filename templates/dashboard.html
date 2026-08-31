@@ -41,7 +41,8 @@
 <div class="list">
   {% for a in agents %}
   <a class="row" href="{{ url_for('agent', aid=a.id) }}">
-    <div class="r-main">
+    <span class="aico" style="width:30px;height:30px;margin-right:12px">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
+    <div class="r-main" style="flex:1">
       <div class="r-title">{{ a.name }}</div>
       <div class="r-meta">{{ a.skills|length }} skill{{ '' if a.skills|length==1 else 's' }} &middot; {{ a.model }}</div>
     </div>

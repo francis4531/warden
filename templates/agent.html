@@ -25,7 +25,7 @@
 
 <div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow">Agent</div>
-  <h1>{{ agent.name }}</h1>
+  <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}</h1>
   <p class="sub">{{ agent.instructions }}</p>
 </div>
 
@@ -66,7 +66,7 @@
   <div class="esum">
     <span><b class="a">{{ counts.freely }}</b> run on their own</span>
     <span><b class="g">{{ counts.asks }}</b> ask first</span>
-    {% if counts.withheld %}<span><b class="o">{{ counts.withheld }}</b> withheld</span>{% endif %}
+    {% if counts.withheld %}<span><b class="o">{{ counts.withheld }}</b> not granted</span>{% endif %}
   </div>
 
   <div class="etier first">
@@ -87,7 +87,7 @@
 
   {% if withheld %}
   <div class="etier">
-    <div class="eh"><span class="edot o"></span>Withheld<span class="etc">{{ withheld|length }}</span><span class="etd">available on these servers, deliberately not granted</span></div>
+    <div class="eh"><span class="edot o"></span>Not granted<span class="etc">{{ withheld|length }}</span><span class="etd">available on these servers, but this agent can&rsquo;t use them</span></div>
     <div class="echips">
       {% for t in withheld %}<span class="echip o" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>{% endfor %}
     </div>
