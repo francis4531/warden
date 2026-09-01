@@ -86,7 +86,7 @@
 
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 4px">
       <label class="f" style="margin:0">Granted tools</label>
-      <button type="button" class="btn ghost sm" onclick="openConn()">+ Connect a server</button>
+      {% if is_admin %}<button type="button" class="btn ghost sm" onclick="openConn()">+ Connect a server</button>{% endif %}
     </div>
     <div id="toolsections">
     {% for sid, g in groups.items() %}

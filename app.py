@@ -79,8 +79,44 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_ON = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAILS", "").split(",") if e.strip()}
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
 _PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
+
+def current_owner():
+    """The signed-in user's identity, used to scope their workspace. Falls back to a
+    single 'operator' bucket when auth is off (local/dev, everything is one user's)."""
+    return session.get("email") or "operator"
+
+def is_admin():
+    """Admins manage shared infrastructure (connections, policies, tokens). Regular users
+    only build and run their own agents. With auth off, the single local user is admin."""
+    if not AUTH_ON:
+        return True
+    e = (session.get("email") or "").lower()
+    if ADMIN_EMAILS:
+        return e in ADMIN_EMAILS
+    return e in ALLOWED_EMAILS if ALLOWED_EMAILS else False
+
+def _scope():
+    """Owner to filter lists by. None means no filter (single-user / auth off)."""
+    return current_owner() if AUTH_ON else None
+
+def _owned_agent(aid):
+    ag = store.get_agent(aid)
+    if not ag:
+        abort(404)
+    if AUTH_ON and (ag.get("owner") or "") != current_owner():
+        abort(404)   # not yours -> as if it doesn't exist
+    return ag
+
+def _owned_run(rid):
+    r = store.get_run(rid)
+    if not r:
+        abort(404)
+    if AUTH_ON and (r.get("owner") or "") != current_owner():
+        abort(404)
+    return r
 
 def _authed():
     return (not AUTH_ON) or bool(session.get("auth"))
@@ -158,6 +194,13 @@ def google_callback():
     nxt = session.pop("oauth_next", "") or url_for("home")
     return redirect(nxt if nxt.startswith("/") else url_for("home"))
 
+@app.route("/admin/cleanup-orphans", methods=["POST"])
+def cleanup_orphans():
+    if not is_admin():
+        abort(403)
+    n = store.delete_orphan_agents()
+    return {"deleted": n}
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -166,7 +209,19 @@ def logout():
 @app.context_processor
 def _auth_ctx():
     return {"auth_on": AUTH_ON, "authed": _authed(), "user_email": session.get("email"),
+            "is_admin": is_admin(),
             "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
+
+_ADMIN_ENDPOINTS = {"connections", "enable_connection", "disable_connection", "tool_risk",
+                    "discover", "discover_add", "discover_remove", "discover_json",
+                    "policies", "create_policy", "toggle_policy", "delete_policy"}
+
+@app.before_request
+def _require_admin():
+    if (request.endpoint or "") in _ADMIN_ENDPOINTS and not is_admin():
+        if request.method == "GET":
+            return redirect(url_for("home"))
+        abort(403)
 
 
 def _env_specs():
@@ -182,7 +237,7 @@ def cm():
 
 @app.context_processor
 def inject_globals():
-    return {"pending": store.pending_approvals(), "mode": rt.mode(),
+    return {"pending": store.pending_approvals(_scope()), "mode": rt.mode(),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
 def connected_tools():
@@ -226,8 +281,8 @@ def landing():
 @app.route("/app")
 def home():
     servers = cm().connected_servers()
-    return render_template("dashboard.html", agents=store.list_agents(), runs=store.list_runs(12),
-                           pending=store.pending_approvals(), servers=servers,
+    return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
+                           pending=store.pending_approvals(_scope()), servers=servers,
                            tool_count=len(connected_tools()))
 
 @app.route("/connections")
@@ -389,14 +444,12 @@ def new_agent():
 
 @app.route("/agent/<aid>/edit")
 def edit_agent(aid):
-    ag = store.get_agent(aid)
-    if not ag: abort(404)
+    ag = _owned_agent(aid)
     return render_template("builder.html", **_builder_ctx(ag))
 
 @app.route("/agent/<aid>/update", methods=["POST"])
 def update_agent(aid):
-    ag = store.get_agent(aid)
-    if not ag: abort(404)
+    ag = _owned_agent(aid)
     name = request.form.get("name", "").strip() or ag["name"]
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
@@ -407,8 +460,8 @@ def update_agent(aid):
 
 @app.route("/agent/<aid>/delete", methods=["POST"])
 def delete_agent(aid):
-    if store.get_agent(aid):
-        store.delete_agent(aid)
+    _owned_agent(aid)
+    store.delete_agent(aid)
     return redirect(url_for("home"))
 
 @app.route("/agents", methods=["POST"])
@@ -417,14 +470,13 @@ def create_agent():
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
-    aid = store.create_agent(name, instructions, model, skills, icon=request.form.get("icon", ""),
+    aid = store.create_agent(name, instructions, model, skills, owner=current_owner(), icon=request.form.get("icon", ""),
                              budget_usd=request.form.get("budget_usd") or 0)
     return redirect(url_for("agent", aid=aid))
 
 @app.route("/agent/<aid>")
 def agent(aid):
-    ag = store.get_agent(aid)
-    if not ag: abort(404)
+    ag = _owned_agent(aid)
     all_tools = connected_tools()
     idx = {t["key"]: t for t in all_tools}
     skills = set(ag["skills"] or [])
@@ -462,15 +514,15 @@ def _advance_bg(rid):
 @app.route("/run", methods=["POST"])
 def run():
     aid = request.form.get("agent_id"); user_input = request.form.get("input", "").strip()
-    if not store.get_agent(aid) or not user_input: abort(400)
+    if not user_input: abort(400)
+    _owned_agent(aid)
     rid = store.create_run(aid, user_input)
     _advance_bg(rid)
     return redirect(url_for("run_view", rid=rid))
 
 @app.route("/run/<rid>")
 def run_view(rid):
-    r = store.get_run(rid)
-    if not r: abort(404)
+    r = _owned_run(rid)
     ag = store.get_agent(r["agent_id"])
     return render_template("run.html", run=r, agent=ag, audit=store.audit_for_run(rid),
                            approvals=store.approvals_for_run(rid))
@@ -576,8 +628,7 @@ app.jinja_env.globals["ICON_SET"] = icons.PLANETS
 
 @app.route("/run/<rid>/events")
 def run_events(rid):
-    r = store.get_run(rid)
-    if not r: abort(404)
+    r = _owned_run(rid)
     audit = store.audit_for_run(rid)
     mc = []
     for e in audit:
@@ -596,8 +647,7 @@ def run_events(rid):
 
 @app.route("/run/<rid>/say", methods=["POST"])
 def run_say(rid):
-    r = store.get_run(rid)
-    if not r: abort(404)
+    r = _owned_run(rid)
     if r["status"] in ("running", "awaiting_approval"):
         return {"error": "busy"}, 409
     text = request.form.get("input", "").strip()
@@ -614,9 +664,13 @@ def run_say(rid):
 def approval(apid):
     ap = store.get_approval(apid)
     if not ap: abort(404)
+    if AUTH_ON:
+        ag = store.get_agent(ap["agent_id"])
+        if not ag or (ag.get("owner") or "") != current_owner():
+            abort(404)
     decision = request.form.get("decision")
     if decision in ("approved", "denied"):
-        store.decide_approval(apid, decision, by="operator"); _advance_bg(ap["run_id"])
+        store.decide_approval(apid, decision, by=current_owner()); _advance_bg(ap["run_id"])
     # AJAX callers get JSON; form callers get a redirect
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}
@@ -624,7 +678,7 @@ def approval(apid):
 
 @app.route("/approvals")
 def approvals():
-    return render_template("approvals.html", pending=store.pending_approvals())
+    return render_template("approvals.html", pending=store.pending_approvals(_scope()))
 
 @app.route("/architecture")
 def architecture():
@@ -633,7 +687,7 @@ def architecture():
 
 @app.route("/audit")
 def audit():
-    return render_template("audit.html", events=store.audit_all(300), integrity=store.verify_audit())
+    return render_template("audit.html", events=(store.audit_for_owner(_scope(),300) if _scope() else store.audit_all(300)), integrity=store.verify_audit())
 
 @app.route("/policies")
 def policies():
@@ -669,9 +723,9 @@ def delete_policy(pid):
 @app.route("/observability")
 def observability():
     from collections import Counter, defaultdict
-    events = store.audit_all(4000)
-    runs = store.list_runs(500)
-    agents = {a["id"]: a["name"] for a in store.list_agents()}
+    events = store.audit_for_owner(_scope(), 4000) if _scope() else store.audit_all(4000)
+    runs = store.list_runs(500, _scope())
+    agents = {a["id"]: a["name"] for a in store.list_agents(_scope())}
 
     model_calls = [e for e in events if e["kind"] == "model_call"]
     tool_calls = [e for e in events if e["kind"] in ("tool_result", "tool_result_gated")]
@@ -767,6 +821,14 @@ def healthz():
     return {"ok": True, "mode": rt.mode(),
             "servers": len(cm().connected_servers()),
             "version": VERSION_FULL, "commit": BUILD_COMMIT,
+            "auth": {
+                "on": AUTH_ON,
+                "google": GOOGLE_ON,
+                "password": bool(AUTH_PASSWORD),
+                "admins_set": bool(ADMIN_EMAILS),
+                "allowlist_set": bool(ALLOWED_EMAILS),
+                "multi_tenant": AUTH_ON,
+            },
             "persistence": {
                 "WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
                 "requested_dir": paths.REQUESTED,
@@ -776,6 +838,7 @@ def healthz():
                 "writable": os.access(dd, os.W_OK),
                 "build_json_exists": os.path.exists(os.path.join(dd, "build.json")),
                 "agents_saved": len(store.list_agents()),
+                "orphaned_agents": sum(1 for a in store.list_agents() if not (a.get("owner") or "")),
             }}
 
 if __name__ == "__main__":

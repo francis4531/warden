@@ -69,13 +69,20 @@ def init():
         c.execute("ALTER TABLE agents ADD COLUMN icon TEXT")
     if "budget_usd" not in acols:
         c.execute("ALTER TABLE agents ADD COLUMN budget_usd REAL")
+    if "owner" not in acols:
+        c.execute("ALTER TABLE agents ADD COLUMN owner TEXT")
+    rcols = [r["name"] for r in c.execute("PRAGMA table_info(runs)").fetchall()]
+    if "owner" not in rcols:
+        c.execute("ALTER TABLE runs ADD COLUMN owner TEXT")
     c.commit(); c.close()
 
 # ---- agents ----
-def create_agent(name, instructions, model, skills, icon="", budget_usd=0):
+def create_agent(name, instructions, model, skills, icon="", budget_usd=0, owner=""):
     c = _conn(); aid = _id("ag")
-    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd) VALUES(?,?,?,?,?,?,?,?)",
-              (aid, name, instructions, model, json.dumps(skills), now(), icon or "", float(budget_usd or 0)))
+    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd,owner) "
+              "VALUES(?,?,?,?,?,?,?,?,?)",
+              (aid, name, instructions, model, json.dumps(skills), now(), icon or "",
+               float(budget_usd or 0), owner or ""))
     c.commit(); c.close(); return aid
 
 def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=None):
@@ -105,8 +112,13 @@ def get_agent(aid):
     if not r: return None
     d = dict(r); d["skills"] = json.loads(d["skills"] or "[]"); return d
 
-def list_agents():
-    c = _conn(); rows = c.execute("SELECT * FROM agents ORDER BY created_at DESC").fetchall(); c.close()
+def list_agents(owner=None):
+    c = _conn()
+    if owner is None:
+        rows = c.execute("SELECT * FROM agents ORDER BY created_at DESC").fetchall()
+    else:
+        rows = c.execute("SELECT * FROM agents WHERE owner=? ORDER BY created_at DESC", (owner,)).fetchall()
+    c.close()
     out = []
     for r in rows:
         d = dict(r); d["skills"] = json.loads(d["skills"] or "[]"); out.append(d)
@@ -115,8 +127,11 @@ def list_agents():
 # ---- runs ----
 def create_run(agent_id, user_input):
     c = _conn(); rid = _id("run")
-    c.execute("INSERT INTO runs VALUES(?,?,?,?,?,?,?)",
-              (rid, agent_id, user_input, "running", json.dumps([]), now(), now()))
+    ag = c.execute("SELECT owner FROM agents WHERE id=?", (agent_id,)).fetchone()
+    owner = ag["owner"] if ag else ""
+    c.execute("INSERT INTO runs(id,agent_id,input,status,transcript,created_at,updated_at,owner) "
+              "VALUES(?,?,?,?,?,?,?,?)",
+              (rid, agent_id, user_input, "running", json.dumps([]), now(), now(), owner or ""))
     c.commit(); c.close(); return rid
 
 def update_run(rid, status=None, transcript=None):
@@ -133,9 +148,31 @@ def get_run(rid):
     if not r: return None
     d = dict(r); d["transcript"] = json.loads(d["transcript"] or "[]"); return d
 
-def list_runs(limit=50):
-    c = _conn(); rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall(); c.close()
+def list_runs(limit=50, owner=None):
+    c = _conn()
+    if owner is None:
+        rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM runs WHERE owner=? ORDER BY created_at DESC LIMIT ?",
+                         (owner, limit)).fetchall()
+    c.close()
     return [dict(r) for r in rows]
+
+def owned_agent_ids(owner):
+    c = _conn(); rows = c.execute("SELECT id FROM agents WHERE owner=?", (owner,)).fetchall(); c.close()
+    return {r["id"] for r in rows}
+
+def audit_for_owner(owner, limit=300):
+    ids = owned_agent_ids(owner)
+    if not ids:
+        return []
+    c = _conn()
+    q = "SELECT * FROM audit WHERE agent_id IN (%s) ORDER BY ts DESC LIMIT ?" % ",".join("?" * len(ids))
+    rows = c.execute(q, (*ids, limit)).fetchall(); c.close()
+    out = []
+    for r in rows:
+        d = dict(r); d["detail"] = json.loads(d["detail"]) if d["detail"] else None; out.append(d)
+    return out
 
 # ---- audit (hash-chained, tamper-evident) ----
 def _audit_payload(eid, run_id, agent_id, ts, kind, skill, risk, detail_s):
@@ -221,8 +258,18 @@ def decide_approval(apid, status, by="operator"):
               (status, now(), by, apid))
     c.commit(); c.close()
 
-def pending_approvals():
-    c = _conn(); rows = c.execute("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at").fetchall(); c.close()
+def pending_approvals(owner=None):
+    c = _conn()
+    if owner is None:
+        rows = c.execute("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at").fetchall()
+    else:
+        ids = owned_agent_ids(owner)
+        if not ids:
+            c.close(); return []
+        q = ("SELECT * FROM approvals WHERE status='pending' AND agent_id IN (%s) ORDER BY created_at"
+             % ",".join("?" * len(ids)))
+        rows = c.execute(q, tuple(ids)).fetchall()
+    c.close()
     out = []
     for r in rows:
         d = dict(r); d["arguments"] = json.loads(d["arguments"] or "{}"); out.append(d)
@@ -328,3 +375,15 @@ def get_custom_server(sid):
 
 def delete_custom_server(sid):
     c = _conn(); c.execute("DELETE FROM custom_servers WHERE id=?", (sid,)); c.commit(); c.close()
+
+def delete_orphan_agents():
+    """Delete agents with no owner (created before per-user isolation existed). Their runs
+    and pending approvals go too; the hash-chained audit trail is preserved."""
+    c = _conn()
+    ids = [r["id"] for r in c.execute("SELECT id FROM agents WHERE owner IS NULL OR owner=''").fetchall()]
+    for aid in ids:
+        c.execute("DELETE FROM approvals WHERE agent_id=? AND status='pending'", (aid,))
+        c.execute("DELETE FROM runs WHERE agent_id=?", (aid,))
+        c.execute("DELETE FROM agents WHERE id=?", (aid,))
+    c.commit(); c.close()
+    return len(ids)
