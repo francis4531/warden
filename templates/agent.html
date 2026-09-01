@@ -21,6 +21,18 @@
 .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:7px}
 .tmini{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--ink)}
 .tmini .tn{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:4px}
+.member{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ink);color:var(--txt);text-decoration:none;transition:border-color .12s}
+.member:hover{border-color:var(--brass-dim)}
+.member .aico{width:32px;height:32px;flex:none}
+.member .mn{font-weight:600;font-size:13.5px}
+.member .mm{font-size:12px;color:var(--mut);margin-top:3px;line-height:1.5}
+.member .mm b.a{color:var(--low);font-weight:600}.member .mm b.g{color:var(--high);font-weight:600}
+.teamsum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--mut);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.teamsum b{color:var(--txt);font-weight:600}
+.teamsum b.g{color:var(--high)}
+.leadchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);border:1px solid var(--line2);border-radius:20px;padding:3px 10px;text-decoration:none}
+.leadchip:hover{border-color:var(--brass-dim);color:var(--txt)}
 </style>
 
 <div class="page-h" style="margin-bottom:20px">
@@ -30,9 +42,10 @@
       <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete agent</button>
     </form>
   </div>
-  <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}</h1>
+  <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}{% if team and team.members %}<span class="pill" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent)">team lead</span>{% endif %}</h1>
   <p class="sub">{{ agent.instructions }}</p>
-  {% if agent.budget_usd %}<div style="font-family:var(--mono);font-size:12px;color:var(--mut);margin-top:6px">&#9209; run budget: <b style="color:var(--txt)">${{ '%.2f'|format(agent.budget_usd) }}</b> per run &middot; stops before the next model call if reached</div>{% endif %}
+  {% if leads %}<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;font-size:12px;color:var(--dim)">Member of {% for l in leads %}<a class="leadchip" href="{{ url_for('agent', aid=l.id) }}"><span class="aico" style="width:16px;height:16px">{{ agent_icon(l.icon, seed=l.id)|safe }}</span>{{ l.name }}</a>{% endfor %}</div>{% endif %}
+  {% if agent.budget_usd %}<div style="font-family:var(--mono);font-size:12px;color:var(--mut);margin-top:6px">&#9209; run budget: <b style="color:var(--txt)">${{ '%.2f'|format(agent.budget_usd) }}</b> per run{% if team and team.members %}, covering every member&rsquo;s work{% endif %} &middot; stops before the next model call if reached</div>{% endif %}
 </div>
 
 <!-- primary action: talk to the agent -->
@@ -73,6 +86,29 @@
     <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
   </a>
   {% endfor %}
+</div>
+{% endif %}
+
+{% if team and team.members %}
+<div class="section-h"><span class="lbl">The team</span><span style="font-size:12px;color:var(--dim)">{{ team.members|length }} member{{ '' if team.members|length==1 else 's' }}</span></div>
+<div class="card">
+  <div style="color:var(--mut);font-size:13px;margin-bottom:12px">This agent leads a team. It hands tasks to members with one tool, <span style="font-family:var(--mono)">delegate</span> <span class="stamp {{ team.delegate_risk }}">{{ team.delegate_risk }}</span>{{ ', held for approval on every hand-off' if team.delegate_gate=='approval' else ', logged on every hand-off' }}. Each member works under its own grants; the lead never gets a member&rsquo;s tools, and a member&rsquo;s approval pauses the whole team.</div>
+  <div class="roster">
+    {% for m in team.members %}
+    <a class="member" href="{{ url_for('agent', aid=m.agent.id) }}">
+      <span class="aico">{{ agent_icon(m.agent.icon, seed=m.agent.id)|safe }}</span>
+      <span style="min-width:0">
+        <div class="mn">{{ m.agent.name }}</div>
+        <div class="mm"><b class="a">{{ m.freely }}</b> run freely &middot; <b class="g">{{ m.asks }}</b> ask first{% if m.ask_names %} ({{ m.ask_names|join(', ') }}){% endif %}{% if m.budget %} &middot; ${{ '%.2f'|format(m.budget) }}/run{% endif %}</div>
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="teamsum">
+    <span>Team ceiling: <b>{{ team.ceiling_free }}</b> tools run freely</span>
+    <span><b class="g">{{ team.ceiling_ask }}</b> ask a human first{% if team.ceiling_ask_names %} ({{ team.ceiling_ask_names|join(', ') }}){% endif %}</span>
+    <span>at most <b>{{ team.max_delegations }}</b> hand-offs per run</span>
+  </div>
 </div>
 {% endif %}
 

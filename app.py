@@ -16,7 +16,7 @@ import policy
 import registry
 import icons
 
-WARDEN_VERSION = "0.3"
+WARDEN_VERSION = "0.4"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -120,6 +120,35 @@ def _owned_run(rid):
 
 def _authed():
     return (not AUTH_ON) or bool(session.get("auth"))
+
+def _member_ids(form, self_id=None):
+    """Member agent ids from the builder form, restricted to agents the current user owns.
+    A lead can never list itself."""
+    mine = {a["id"] for a in store.list_agents(_scope())}
+    out = []
+    for mid in form.getlist("members"):
+        if mid in mine and mid != self_id and mid not in out:
+            out.append(mid)
+    return out
+
+def _team_view(agent):
+    """Members of a lead with their governance counts, plus the team's combined ceiling:
+    every distinct tool any member can reach, split by whether it runs freely or asks first."""
+    idx = {t["key"]: t for t in connected_tools()}
+    members, seen_free, seen_ask = [], set(), set()
+    for m in rt.members_of(agent):
+        keys = [k for k in (m.get("skills") or []) if k in idx]
+        free = [idx[k] for k in keys if idx[k]["gate"] != "approval"]
+        ask = [idx[k] for k in keys if idx[k]["gate"] == "approval"]
+        seen_free.update(t["key"] for t in free); seen_ask.update(t["key"] for t in ask)
+        members.append({"agent": m, "freely": len(free), "asks": len(ask), "tools": len(keys),
+                        "ask_names": sorted(t["tool"] for t in ask),
+                        "budget": m.get("budget_usd") or 0, "is_lead": bool(m.get("members"))})
+    dmeta = rt.risk_for(rt.DELEGATE_KEY, rt.tool_index())
+    return {"members": members, "ceiling_free": len(seen_free), "ceiling_ask": len(seen_ask),
+            "ceiling_ask_names": sorted(idx[k]["tool"] for k in seen_ask),
+            "delegate_risk": dmeta["risk"], "delegate_gate": dmeta["gate"],
+            "max_delegations": rt.MAX_DELEGATIONS}
 
 def _redirect_uri():
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
@@ -282,7 +311,7 @@ def landing():
 def home():
     servers = cm().connected_servers()
     return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
-                           pending=store.pending_approvals(_scope()), servers=servers,
+                           pending=_with_team_context(store.pending_approvals(_scope())), servers=servers,
                            tool_count=len(connected_tools()))
 
 @app.route("/connections")
@@ -420,6 +449,10 @@ AGENT_TEMPLATES = [
     {"id": "warehouse", "name": "Warehouse Analyst",
      "instructions": "You answer questions from the data warehouse. Run read-only queries to investigate, and explain what the numbers mean in plain language. Anything that writes, updates, deletes, or changes schema is held for a human. Never guess at a number you did not query.",
      "servers": ["supabase", "postgres"], "tools": ["execute_sql", "apply_migration"]},
+    {"id": "billing_desk", "name": "Billing Desk (team)", "team": True,
+     "instructions": "You run the billing desk. For each customer issue, have the Refund Auditor verify the account and the charge against policy first, then hand the verified facts and exact amount to the Billing Resolver to make it right. Never issue a refund yourself; report exactly what each member did.",
+     "servers": ["builtin_enterprise"], "tools": ["lookup_customer"],
+     "members": ["refund_audit", "billing"]},
     {"id": "research", "name": "Web Research Analyst",
      "instructions": "You research questions using the web and public documentation. Search, fetch, and read sources, then synthesize an answer with citations to the sources you used. If the sources do not support a claim, say so plainly. This agent is read-only by design and never needs to write anything.",
      "servers": ["deepwiki", "firecrawl", "exa", "fetch"], "tools": ["ask_question", "read_wiki_contents", "search", "scrape", "fetch"]},
@@ -436,7 +469,11 @@ def _builder_ctx(edit_agent=None):
                 mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                 templates=AGENT_TEMPLATES, catalog_meta=catalog_meta,
                 edit_agent=edit_agent,
-                edit_skills=set(edit_agent["skills"]) if edit_agent else None)
+                edit_skills=set(edit_agent["skills"]) if edit_agent else None,
+                candidates=[a for a in store.list_agents(_scope())
+                            if not edit_agent or a["id"] != edit_agent["id"]],
+                edit_members=set(edit_agent.get("members") or []) if edit_agent else set(),
+                delegate_risk=rt.risk_for(rt.DELEGATE_KEY, rt.tool_index())["risk"])
 
 @app.route("/new")
 def new_agent():
@@ -455,7 +492,8 @@ def update_agent(aid):
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
     store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""),
-                       budget_usd=request.form.get("budget_usd") or 0)
+                       budget_usd=request.form.get("budget_usd") or 0,
+                       members=_member_ids(request.form, self_id=aid))
     return redirect(url_for("agent", aid=aid))
 
 @app.route("/agent/<aid>/delete", methods=["POST"])
@@ -470,9 +508,29 @@ def create_agent():
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or rt.MODEL_DEFAULT
     skills = request.form.getlist("skills")
+    members = _member_ids(request.form)
+    # a team template can bring its own members: create them for the user when none were picked
+    tpl = next((t for t in AGENT_TEMPLATES if t["id"] == request.form.get("template")), None)
+    if tpl and tpl.get("members") and not members:
+        members = _create_template_members(tpl)
     aid = store.create_agent(name, instructions, model, skills, owner=current_owner(), icon=request.form.get("icon", ""),
-                             budget_usd=request.form.get("budget_usd") or 0)
+                             budget_usd=request.form.get("budget_usd") or 0, members=members)
     return redirect(url_for("agent", aid=aid))
+
+def _create_template_members(tpl):
+    """Create the member agents a team template names (from their own templates), granting
+    each the template's tools that are connected right now. Returns the new ids."""
+    keys = {t["tool"]: t["key"] for t in connected_tools()}
+    by_id = {t["id"]: t for t in AGENT_TEMPLATES}
+    ids = []
+    for mid in tpl["members"]:
+        mt = by_id.get(mid)
+        if not mt:
+            continue
+        skills = [keys[n] for n in mt["tools"] if n in keys]
+        ids.append(store.create_agent(mt["name"], mt["instructions"], rt.MODEL_DEFAULT, skills,
+                                      owner=current_owner(), icon=mt.get("icon", "")))
+    return ids
 
 @app.route("/agent/<aid>")
 def agent(aid):
@@ -490,11 +548,19 @@ def agent(aid):
                       key=lambda t: (t["gate"] != "approval", t["tool"]))
     counts = {"total": len(granted), "freely": len(freely), "asks": len(asks), "withheld": len(withheld)}
     missing = [k for k in (ag["skills"] or []) if k not in idx]
+    team = _team_view(ag) if ag.get("members") else None
+    if team and team["members"]:
+        dm = rt.risk_for(rt.DELEGATE_KEY, rt.tool_index())
+        dtool = {"key": rt.DELEGATE_KEY, "tool": "delegate", "server_name": "Team", "risk": dm["risk"],
+                 "gate": dm["gate"], "description": "Hand a task to a team member agent."}
+        (asks if dm["gate"] == "approval" else freely).append(dtool)
+        counts["total"] += 1; counts["asks" if dm["gate"] == "approval" else "freely"] += 1
     runs = [r for r in store.list_runs(50) if r["agent_id"] == aid]
+    leads = store.leads_of(aid)
     est_rate = rt.rate_for(ag["model"])
     est_base = max(200, len(ag["instructions"] or "") // 4 + len(granted) * 80 + 350)
     return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
-                           counts=counts, missing=missing, runs=runs,
+                           counts=counts, missing=missing, runs=runs, team=team, leads=leads,
                            est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"))
 
 def _advance_bg(rid):
@@ -524,8 +590,11 @@ def run():
 def run_view(rid):
     r = _owned_run(rid)
     ag = store.get_agent(r["agent_id"])
+    parent = store.get_run(r["parent_run_id"]) if r.get("parent_run_id") else None
+    lead = store.get_agent(parent["agent_id"]) if parent else None
     return render_template("run.html", run=r, agent=ag, audit=store.audit_for_run(rid),
-                           approvals=store.approvals_for_run(rid))
+                           approvals=store.approvals_for_run(rid), parent=parent, lead=lead,
+                           is_team=bool(ag and ag.get("members")))
 
 def _fmt_event(e):
     d = e.get("detail") or {}
@@ -534,6 +603,8 @@ def _fmt_event(e):
         text = d.get("input") or d.get("text") or ""
     elif kind in ("final", "thought", "error", "budget_stop"):
         text = d.get("text", "")
+    elif kind in ("delegation", "delegation_result"):
+        text = d.get("task") or d.get("result") or ""
     elif "result" in d:
         res = d["result"]
         s = res if isinstance(res, str) else _json.dumps(res, ensure_ascii=False)
@@ -544,9 +615,14 @@ def _fmt_event(e):
         text = " ".join(s.split())[:200]
     else:
         text = ""
-    return {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"),
-            "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
-            "text": text}
+    out = {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"),
+           "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
+           "text": text}
+    if kind in ("delegation", "delegation_result"):
+        out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
+    if kind == "budget_stop" and d.get("scope"):
+        out["scope"] = d["scope"]
+    return out
 
 _CODE_FIELDS = ("new_content", "content", "patch", "diff", "code", "source", "body", "text")
 _PROSE_FIELDS = ("rationale", "reason", "note", "description", "summary", "explanation")
@@ -635,15 +711,35 @@ def run_events(rid):
         if e["kind"] == "model_call" and e["detail"]:
             d = e["detail"] if isinstance(e["detail"], dict) else _json.loads(e["detail"])
             mc.append(d)
-    cost = round(sum(d.get("cost", 0) or 0 for d in mc), 6)
-    tokens = sum((d.get("input_tokens", 0) or 0) + (d.get("output_tokens", 0) or 0) for d in mc)
+    usage = rt.tree_usage(rid)
     pend = [{"id": a["id"], "tool": (a["skill"] or "").split("__")[-1], "risk": a["risk"],
              "parts": format_args(a["arguments"].get("input")),
-             "approve": url_for("approval", apid=a["id"])}
+             "approve": url_for("approval", apid=a["id"]), "member": None}
             for a in store.approvals_for_run(rid) if a["status"] == "pending"]
+    # a lead's conversation also surfaces what its members are waiting on
+    delegations = []
+    for ch in store.child_runs(rid):
+        m = store.get_agent(ch["agent_id"]) or {"name": "member", "icon": "", "id": ch["agent_id"]}
+        cu = rt.tree_usage(ch["id"])
+        steps = [e for e in store.audit_for_run(ch["id"])
+                 if e["kind"] in ("tool_result", "tool_result_gated", "denied", "policy_denied")]
+        delegations.append({"tool_use_id": ch.get("parent_tool_use_id"), "run": ch["id"],
+                            "url": url_for("run_view", rid=ch["id"]), "member": m["name"],
+                            "icon": icons.svg(m.get("icon"), seed=m["id"]), "task": ch["input"],
+                            "status": ch["status"], "cost": cu["cost"], "calls": cu["calls"],
+                            "steps": [{"tool": (e["skill"] or "").split("__")[-1], "risk": e["risk"],
+                                       "kind": e["kind"]} for e in steps],
+                            "result": rt._final_text(ch) if ch["status"] in ("done", "error") else ""})
+        for a in store.approvals_for_run(ch["id"]):
+            if a["status"] == "pending":
+                pend.append({"id": a["id"], "tool": (a["skill"] or "").split("__")[-1], "risk": a["risk"],
+                             "parts": format_args(a["arguments"].get("input")),
+                             "approve": url_for("approval", apid=a["id"]), "member": m["name"]})
+    waiting_on = [dg["member"] for dg in delegations if dg["status"] in ("running", "awaiting_approval")]
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
-            "pending": pend, "back": url_for("run_view", rid=rid),
-            "cost": cost, "tokens": tokens, "calls": len(mc), "live": rt.mode() == "live"}
+            "pending": pend, "back": url_for("run_view", rid=rid), "delegations": delegations,
+            "waiting_on": waiting_on, "team": len(delegations) > 0,
+            "cost": usage["cost"], "tokens": usage["tokens"], "calls": usage["calls"], "live": rt.mode() == "live"}
 
 @app.route("/run/<rid>/say", methods=["POST"])
 def run_say(rid):
@@ -676,9 +772,27 @@ def approval(apid):
         return {"ok": True}
     return redirect(request.form.get("back") or url_for("run_view", rid=ap["run_id"]))
 
+def _with_team_context(pending):
+    """Label approvals raised inside a member run with the lead that delegated the work,
+    and point 'Open run' at the lead's conversation where the gate is shown in context."""
+    out = []
+    for ap in pending:
+        ap = dict(ap)
+        r = store.get_run(ap["run_id"])
+        ag = store.get_agent(ap["agent_id"])
+        ap["agent_name"] = ag["name"] if ag else ""
+        ap["lead_name"] = None; ap["lead_run"] = None
+        if r and r.get("parent_run_id"):
+            root = store.root_run(r)
+            lead = store.get_agent(root["agent_id"]) if root else None
+            if lead:
+                ap["lead_name"] = lead["name"]; ap["lead_run"] = root["id"]
+        out.append(ap)
+    return out
+
 @app.route("/approvals")
 def approvals():
-    return render_template("approvals.html", pending=store.pending_approvals(_scope()))
+    return render_template("approvals.html", pending=_with_team_context(store.pending_approvals(_scope())))
 
 @app.route("/architecture")
 def architecture():

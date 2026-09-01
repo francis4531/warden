@@ -35,10 +35,30 @@
 .costmeter .cm-lab{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .costmeter .cm-val{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--txt)}
 .costmeter .cm-sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
+/* team hand-offs */
+.deleg{margin:12px 0;border:1px solid var(--line2);border-left:3px solid var(--brass);border-radius:12px;background:var(--ink2);padding:12px 15px;max-width:92%}
+.deleg .dh{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.deleg .dh .aico{width:24px;height:24px;flex:none}
+.deleg .dh .eye{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.deleg .dh .nm{font-weight:600;font-size:13.5px}
+.deleg .dh .cost{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+.deleg .task{color:var(--mut);font-size:13px;margin:7px 0 4px;line-height:1.55}
+.deleg .task b{color:var(--txt);font-weight:600}
+.deleg .steps{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.deleg .st{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:2px 7px;background:var(--ink)}
+.deleg .st.g{border-left:2px solid var(--high)}
+.deleg .st.x{color:var(--high)}
+.deleg .res{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:13px;line-height:1.6}
+.deleg .res .who{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.deleg .open{font-size:12px;color:var(--brass);text-decoration:none}
+.deleg.wait{border-left-color:var(--med)}
+.deleg.err{border-left-color:var(--high)}
+.gate .g-member{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);margin-top:6px}
+.gate .g-member b{color:var(--txt);font-weight:600}
 </style>
 
 <div class="page-h" style="margin-bottom:12px">
-  <div class="eyebrow">Conversation &middot; {{ agent.name }}</div>
+  <div class="eyebrow">{{ 'Team conversation' if is_team else 'Conversation' }} &middot; {{ agent.name }}{% if parent %} <span style="color:var(--dim);letter-spacing:0;text-transform:none;font-weight:500">&middot; delegated by <a href="{{ url_for('run_view', rid=parent.id) }}" style="color:var(--brass)">{{ lead.name if lead else 'lead' }}</a></span>{% endif %}</div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
     <span id="statuspill" class="pill {{ run.status }}">{{ run.status.replace('_',' ') }}</span>
     <span style="color:var(--dim);font-family:var(--mono);font-size:11.5px">{{ run.id }}</span>
@@ -103,10 +123,35 @@ function md(src){
   return out.join('');
 }
 
+let DELEG={};
+function renderDeleg(d){
+  if(!d) return '';
+  const st = d.status==='awaiting_approval' ? 'wait' : (d.status==='error' ? 'err' : (d.status==='running' ? 'wait' : ''));
+  const label = {running:'working\u2026', awaiting_approval:'waiting for your approval', done:'done', error:'failed'}[d.status]||d.status;
+  const steps = (d.steps||[]).map(s=>`<span class="st ${s.kind==='tool_result_gated'?'g':''} ${(s.kind==='denied'||s.kind==='policy_denied')?'x':''}">${esc(s.tool)}${(s.kind==='denied'||s.kind==='policy_denied')?' denied':''}</span>`).join('');
+  const cost = d.calls>0 ? `<span class="cost">${d.cost>0?('$'+d.cost.toFixed(4)):'$0'} \u00b7 ${d.calls} call${d.calls===1?'':'s'}</span>` : '';
+  return `<div class="deleg ${st}">
+    <div class="dh"><span class="aico">${d.icon}</span><span class="eye">hand-off</span><span class="nm">${esc(d.member)}</span><span class="pill ${d.status}">${label}</span>${cost}</div>
+    <div class="task"><b>Task:</b> ${esc(d.task)}</div>
+    ${steps?`<div class="steps">${steps}</div>`:''}
+    ${d.result?`<div class="res"><div class="who">${esc(d.member)} reported</div><div class="md">${md(d.result)}</div></div>`:''}
+    <div style="margin-top:8px"><a class="open" href="${d.url}">Open ${esc(d.member)}\u2019s run &rarr;</a></div>
+  </div>`;
+}
 function renderChat(events){
   let html='', chips='';
   const flush=()=>{ if(chips){ html+=`<div>${chips}</div>`; chips=''; } };
+  const shown=new Set();
   for(const e of events){
+    if(e.kind==='delegation'){
+      flush();
+      if(e.child_run && !shown.has(e.child_run)){ shown.add(e.child_run); html+=renderDeleg(DELEG[e.child_run]); }
+      continue;
+    }
+    if(e.kind==='delegation_result' || e.kind==='policy_denied' && e.tool==='delegate'){
+      if(e.kind==='policy_denied'){ chips+=`<span class="chip">delegate ${stamp(e.risk)} <span style="color:var(--high)">denied by policy</span></span>`; }
+      continue;
+    }
     if(e.kind==='run_started' || e.kind==='user_message'){
       flush(); html+=`<div class="msg user"><div class="who">you</div>${esc(e.text)}</div>`;
     } else if(e.kind==='final'){
@@ -114,7 +159,7 @@ function renderChat(events){
     } else if(e.kind==='error'){
       flush(); html+=`<div class="msg agent err"><div class="who">error</div>${esc(e.text)}</div>`;
     } else if(e.kind==='budget_stop'){
-      flush(); html+=`<div class="msg budget"><div class="who">&#9209; budget reached</div>${esc(e.text)}</div>`;
+      flush(); html+=`<div class="msg budget"><div class="who">&#9209; ${e.scope==='team'?'team budget reached':'budget reached'}</div>${esc(e.text)}</div>`;
     } else if(e.kind==='tool_result' || e.kind==='tool_result_gated'){
       chips+=`<span class="chip">used <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){
@@ -137,8 +182,9 @@ function renderGate(pending, back){
   return pending.map(a=>`
     <div class="gate">
       <div class="g-eye"><span>&#9209; approval required</span> ${stamp(a.risk)}</div>
-      <div class="g-title">The agent wants to run <span style="font-family:var(--mono)">${esc(a.tool)}</span></div>
-      <div style="color:var(--mut);font-size:13px">This changes state and is held until you approve. Nothing has happened yet.</div>
+      <div class="g-title">${a.member?esc(a.member):'The agent'} wants to run <span style="font-family:var(--mono)">${esc(a.tool)}</span></div>
+      <div style="color:var(--mut);font-size:13px">This changes state and is held until you approve. Nothing has happened yet.${a.member?' The whole team is paused until you decide.':''}</div>
+      ${a.member?`<div class="g-member">team member <b>${esc(a.member)},</b> working on a task delegated by ${'{{ agent.name|e }}'}</div>`:''}
       <div class="args">${renderParts(a.parts)}</div>
       <div class="g-actions">
         <button class="btn brass" onclick="decide('${a.approve}','approved')">Approve &amp; run</button>
@@ -163,6 +209,7 @@ window.addEventListener('scroll',()=>{atBottom=(window.innerHeight+window.scroll
 
 async function poll(){
   let d; try{ d=await(await fetch(`/run/${RID}/events`)).json(); }catch(e){ setTimeout(poll,1500); return; }
+  DELEG={}; (d.delegations||[]).forEach(x=>{ DELEG[x.run]=x; });
   const chatHtml=renderChat(d.events);
   const chatChanged = chatHtml!==lastChat;
   if(chatChanged){ document.getElementById('chat').innerHTML=chatHtml; lastChat=chatHtml; }   // only re-render on real change
@@ -175,16 +222,19 @@ async function poll(){
     cm.classList.toggle('live', d.status==='running');
     const tk = d.tokens>=1000 ? (d.tokens/1000).toFixed(1)+'K' : d.tokens;
     document.getElementById('cm-val').textContent = d.live ? ('$'+d.cost.toFixed(4)) : '$0';
-    document.getElementById('cm-sub').textContent = (d.live?'':'sandbox \u00b7 ') + tk + ' tok \u00b7 ' + d.calls + ' call' + (d.calls===1?'':'s');
+    document.getElementById('cm-sub').textContent = (d.live?'':'sandbox \u00b7 ') + tk + ' tok \u00b7 ' + d.calls + ' call' + (d.calls===1?'':'s') + (d.team?' \u00b7 whole team':'');
   }
   const busy=(d.status==='running'||d.status==='awaiting_approval');
   const act=document.getElementById('activity');
   const last=d.events[d.events.length-1];
   act.style.display = d.status==='running' ? 'flex':'none';
-  if(d.status==='running') document.getElementById('activitytext').textContent = last&&last.tool?('running '+last.tool+'\u2026'):'thinking\u2026';
+  if(d.status==='running'){
+    const w=(d.waiting_on||[]);
+    document.getElementById('activitytext').textContent = w.length ? (w.join(', ')+' working\u2026') : (last&&last.tool&&last.tool!=='delegate'?('running '+last.tool+'\u2026'):'thinking\u2026');
+  }
   const inp=document.getElementById('msg'), btn=document.getElementById('sendbtn'), hint=document.getElementById('hint');
   inp.disabled=busy; btn.disabled=busy;
-  hint.textContent = d.status==='awaiting_approval' ? 'Resolve the approval above to continue.' : (d.status==='running' ? 'Agent is working\u2026' : '');
+  hint.textContent = d.status==='awaiting_approval' ? ((d.waiting_on||[]).length ? 'A team member is waiting on you. Resolve the approval above to continue.' : 'Resolve the approval above to continue.') : (d.status==='running' ? (d.team?'Team is working\u2026':'Agent is working\u2026') : '');
   if(atBottom && (chatChanged || busy)) window.scrollTo(0,document.body.scrollHeight);
   if(busy) setTimeout(poll, d.status==='running'?900:2500);
   else if(!inp.disabled){ inp.focus(); }

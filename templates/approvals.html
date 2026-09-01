@@ -12,7 +12,8 @@
 {% for ap in pending %}
 <div class="gate">
   <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
-  <div class="g-title">Run <span style="font-family:var(--mono)">{{ ap.skill.split('__')[-1] }}</span></div>
+  <div class="g-title">{{ ap.agent_name or 'Agent' }} wants to run <span style="font-family:var(--mono)">{{ ap.skill.split('__')[-1] }}</span></div>
+  {% if ap.lead_name %}<div style="color:var(--mut);font-size:12.5px">Team member working on a task delegated by <b style="color:var(--txt)">{{ ap.lead_name }}</b>. The whole team is paused until you decide.</div>{% endif %}
   {% set parts = fmt_args(ap.arguments.input) %}
   {% if ap.arguments.policy %}<div class="argprose" style="margin-top:8px"><span class="k">held by policy</span><span class="v">{{ ap.arguments.policy }}</span></div>{% endif %}
   <div class="args">
@@ -35,7 +36,7 @@
     <input type="hidden" name="back" value="{{ url_for('approvals') }}">
     <button class="btn brass" name="decision" value="approved">Approve &amp; run</button>
     <button class="btn deny" name="decision" value="denied">Deny</button>
-    <a class="btn ghost" href="{{ url_for('run_view', rid=ap.run_id) }}">Open run</a>
+    <a class="btn ghost" href="{{ url_for('run_view', rid=(ap.lead_run or ap.run_id)) }}">Open {{ 'team conversation' if ap.lead_run else 'run' }}</a>
   </form>
 </div>
 {% endfor %}
