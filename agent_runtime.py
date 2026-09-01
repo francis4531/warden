@@ -382,7 +382,7 @@ def _advance_once(run_id):
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if store.cost_since(today) >= daily_cap:
                 store.audit(run_id, agent["id"], "budget_stop",
-                            detail={"text": "Run stopped: this shared demo reached its daily budget of "
+                            detail={"text": "Run stopped: this studio reached its shared daily budget of "
                                             "$%.2f across all users. It resets tomorrow (UTC)."
                                             % daily_cap, "budget": daily_cap, "spent": store.cost_since(today),
                                             "scope": "daily"})

@@ -1,8 +1,8 @@
 """
 Persistence for Warden: agents, runs, the audit log, and the approvals queue.
 SQLite on disk. On a platform with an ephemeral filesystem (Render) this resets on
-redeploy, which is fine for a demo; the point is that within a session every agent
-action and every approval is durably recorded and queryable.
+redeploy unless WARDEN_DATA_DIR points at a persistent disk (see paths.py). Either way,
+every agent action and every approval is durably recorded and queryable.
 """
 import os
 import json

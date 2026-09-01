@@ -20,7 +20,7 @@ CATALOG = [
   # --- ships with Warden (always connectable) ---
   {"id":"builtin_enterprise","name":"Enterprise Tools (Warden)","category":"Reference",
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
-   "desc":"Customer lookup, knowledge search, ticketing, and refunds. The built-in demo server."},
+   "desc":"Customer lookup, knowledge search, ticketing, and refunds. Warden's built-in server."},
   {"id":"builtin_files","name":"Filesystem (Warden)","category":"Files & Docs",
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Read, list, and write files inside a sandboxed workspace. A working second server."},
