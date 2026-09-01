@@ -71,21 +71,36 @@ def init():
         c.execute("ALTER TABLE agents ADD COLUMN budget_usd REAL")
     if "owner" not in acols:
         c.execute("ALTER TABLE agents ADD COLUMN owner TEXT")
+    if "members" not in acols:
+        c.execute("ALTER TABLE agents ADD COLUMN members TEXT")
     rcols = [r["name"] for r in c.execute("PRAGMA table_info(runs)").fetchall()]
     if "owner" not in rcols:
         c.execute("ALTER TABLE runs ADD COLUMN owner TEXT")
+    # team runs: a lead's run delegates to member runs, linked back to the parent
+    if "parent_run_id" not in rcols:
+        c.execute("ALTER TABLE runs ADD COLUMN parent_run_id TEXT")
+    if "parent_tool_use_id" not in rcols:
+        c.execute("ALTER TABLE runs ADD COLUMN parent_tool_use_id TEXT")
+    if "depth" not in rcols:
+        c.execute("ALTER TABLE runs ADD COLUMN depth INTEGER DEFAULT 0")
     c.commit(); c.close()
 
+def _agent_row(r):
+    d = dict(r)
+    d["skills"] = json.loads(d["skills"] or "[]")
+    d["members"] = json.loads(d.get("members") or "[]")
+    return d
+
 # ---- agents ----
-def create_agent(name, instructions, model, skills, icon="", budget_usd=0, owner=""):
+def create_agent(name, instructions, model, skills, icon="", budget_usd=0, owner="", members=None):
     c = _conn(); aid = _id("ag")
-    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd,owner) "
-              "VALUES(?,?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd,owner,members) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?)",
               (aid, name, instructions, model, json.dumps(skills), now(), icon or "",
-               float(budget_usd or 0), owner or ""))
+               float(budget_usd or 0), owner or "", json.dumps(list(members or []))))
     c.commit(); c.close(); return aid
 
-def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=None):
+def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=None, members=None):
     c = _conn()
     sets = ["name=?", "instructions=?", "model=?", "skills=?"]
     vals = [name, instructions, model, json.dumps(skills)]
@@ -93,6 +108,8 @@ def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=N
         sets.append("icon=?"); vals.append(icon or "")
     if budget_usd is not None:
         sets.append("budget_usd=?"); vals.append(float(budget_usd or 0))
+    if members is not None:
+        sets.append("members=?"); vals.append(json.dumps(list(members)))
     vals.append(aid)
     c.execute("UPDATE agents SET " + ", ".join(sets) + " WHERE id=?", vals)
     c.commit(); c.close()
@@ -110,7 +127,7 @@ def delete_agent(aid):
 def get_agent(aid):
     c = _conn(); r = c.execute("SELECT * FROM agents WHERE id=?", (aid,)).fetchone(); c.close()
     if not r: return None
-    d = dict(r); d["skills"] = json.loads(d["skills"] or "[]"); return d
+    return _agent_row(r)
 
 def list_agents(owner=None):
     c = _conn()
@@ -119,20 +136,48 @@ def list_agents(owner=None):
     else:
         rows = c.execute("SELECT * FROM agents WHERE owner=? ORDER BY created_at DESC", (owner,)).fetchall()
     c.close()
-    out = []
-    for r in rows:
-        d = dict(r); d["skills"] = json.loads(d["skills"] or "[]"); out.append(d)
-    return out
+    return [_agent_row(r) for r in rows]
+
+def leads_of(agent_id):
+    """Agents that list this agent as a team member."""
+    c = _conn(); rows = c.execute("SELECT * FROM agents WHERE members LIKE ?", ('%"' + agent_id + '"%',)).fetchall(); c.close()
+    return [_agent_row(r) for r in rows if agent_id in (json.loads(r["members"] or "[]"))]
 
 # ---- runs ----
-def create_run(agent_id, user_input):
+def create_run(agent_id, user_input, parent_run_id=None, parent_tool_use_id=None, depth=0):
     c = _conn(); rid = _id("run")
     ag = c.execute("SELECT owner FROM agents WHERE id=?", (agent_id,)).fetchone()
     owner = ag["owner"] if ag else ""
-    c.execute("INSERT INTO runs(id,agent_id,input,status,transcript,created_at,updated_at,owner) "
-              "VALUES(?,?,?,?,?,?,?,?)",
-              (rid, agent_id, user_input, "running", json.dumps([]), now(), now(), owner or ""))
+    c.execute("INSERT INTO runs(id,agent_id,input,status,transcript,created_at,updated_at,owner,"
+              "parent_run_id,parent_tool_use_id,depth) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+              (rid, agent_id, user_input, "running", json.dumps([]), now(), now(), owner or "",
+               parent_run_id, parent_tool_use_id, int(depth or 0)))
     c.commit(); c.close(); return rid
+
+def child_runs(rid):
+    """Member runs delegated from this run, oldest first."""
+    c = _conn(); rows = c.execute("SELECT * FROM runs WHERE parent_run_id=? ORDER BY created_at", (rid,)).fetchall(); c.close()
+    out = []
+    for r in rows:
+        d = dict(r); d["transcript"] = json.loads(d["transcript"] or "[]"); out.append(d)
+    return out
+
+def run_tree_ids(rid, _acc=None):
+    """This run plus every descendant run id."""
+    acc = _acc if _acc is not None else [rid]
+    for ch in child_runs(rid):
+        acc.append(ch["id"]); run_tree_ids(ch["id"], acc)
+    return acc
+
+def root_run(run):
+    """Walk up to the top-level run of a team tree."""
+    seen = set()
+    while run and run.get("parent_run_id") and run["id"] not in seen:
+        seen.add(run["id"])
+        p = get_run(run["parent_run_id"])
+        if not p: break
+        run = p
+    return run
 
 def update_run(rid, status=None, transcript=None):
     c = _conn()
@@ -148,13 +193,17 @@ def get_run(rid):
     if not r: return None
     d = dict(r); d["transcript"] = json.loads(d["transcript"] or "[]"); return d
 
-def list_runs(limit=50, owner=None):
+def list_runs(limit=50, owner=None, top_level=True):
+    """Runs newest first. Member runs (delegated by a lead) are hidden by default; they
+    are reached through the lead's conversation."""
     c = _conn()
-    if owner is None:
-        rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-    else:
-        rows = c.execute("SELECT * FROM runs WHERE owner=? ORDER BY created_at DESC LIMIT ?",
-                         (owner, limit)).fetchall()
+    where = ["(parent_run_id IS NULL OR parent_run_id='')"] if top_level else []
+    args = []
+    if owner is not None:
+        where.append("owner=?"); args.append(owner)
+    q = "SELECT * FROM runs" + ((" WHERE " + " AND ".join(where)) if where else "") + \
+        " ORDER BY created_at DESC LIMIT ?"
+    rows = c.execute(q, (*args, limit)).fetchall()
     c.close()
     return [dict(r) for r in rows]
 

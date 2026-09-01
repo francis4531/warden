@@ -22,6 +22,17 @@ really selling: not the model, but the governance around letting an agent act.
 - **Real audit.** Every thought, tool call, result, and approval decision is written to
   an append-only log, per-run and studio-wide, each stamped with its risk tier.
 
+## Teams
+
+Any agent can be given member agents in the builder; that makes it a team lead with one
+extra tool, `delegate(member, task)`. Each hand-off spawns a member run under the member's
+own tool grants, policies, and per-run budget; the lead never inherits a member's tools.
+Delegation is governed like any other tool: it has a risk tier (MED, auto by default;
+override it to HIGH to hold every hand-off), policies can gate or deny it (tool `delegate`,
+field `member`), and a hard cap limits hand-offs per run (`WARDEN_MAX_DELEGATIONS`, 8).
+A member's HIGH action pauses the whole team until a human decides. The lead's run budget
+covers the whole tree. Members cannot delegate further (`WARDEN_MAX_DELEGATION_DEPTH`, 1).
+
 ## Architecture
 
 | File | Role |
@@ -31,7 +42,7 @@ really selling: not the model, but the governance around letting an agent act.
 | `mcp_server.py` | Built-in MCP server: lookup_customer, search_knowledge, create_ticket, issue_refund |
 | `mcp_fs_server.py` | Built-in MCP server: sandboxed list_files, read_file, write_file |
 | `governance.py` | Risk registry + auto-classification of external tools + overrides |
-| `agent_runtime.py` | The agent loop, gating, and pause/resume on approval |
+| `agent_runtime.py` | The agent loop, gating, pause/resume on approval, and team delegation |
 | `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 

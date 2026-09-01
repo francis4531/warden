@@ -17,6 +17,9 @@ SKILLS = {
     "read_source":     {"risk":"LOW","gate":"auto","kind":"read"},
     "run_selfcheck":   {"risk":"LOW","gate":"auto","kind":"read"},
     "propose_patch":   {"risk":"HIGH","gate":"approval","kind":"write"},
+    # team hand-off: a lead delegating to a member. Auto by default (the member's own
+    # tools stay governed); override to HIGH to make every hand-off ask a human first.
+    "delegate":        {"risk":"MED","gate":"auto","kind":"delegate"},
 }
 
 READ_HINTS  = ("get","list","read","search","lookup","fetch","find","query","view",

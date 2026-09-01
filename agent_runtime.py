@@ -16,6 +16,15 @@ MODEL_DEFAULT = os.environ.get("WARDEN_MODEL", "claude-sonnet-4-5")
 MAX_TOKENS = int(os.environ.get("WARDEN_MAX_TOKENS", "4096"))
 SANDBOX = not bool(os.environ.get("ANTHROPIC_API_KEY"))
 
+# ---- teams ----
+# A lead agent (one with members) gets a single virtual tool, delegate(member, task). Each
+# call spawns a member run under the member's own grants, policies, and budget; the lead
+# never sees a member's tools. Delegation is governed like any other tool: it has a risk
+# tier, it can be gated or denied by policy, and every hand-off is on the audit record.
+DELEGATE_KEY = "team__delegate"
+MAX_DEPTH = int(os.environ.get("WARDEN_MAX_DELEGATION_DEPTH", "1"))      # lead -> member only
+MAX_DELEGATIONS = int(os.environ.get("WARDEN_MAX_DELEGATIONS", "8"))     # per lead run
+
 # Estimated USD price per 1M tokens (input, output). Approximate list prices, editable;
 # used only to estimate cost for the observability view. Matched by substring of model id.
 PRICES = {"opus": (15.0, 75.0), "sonnet": (3.0, 15.0), "haiku": (0.80, 4.0)}
@@ -34,12 +43,27 @@ def rate_for(model):
             return v
     return (3.0, 15.0)
 
-def _run_cost(run_id):
+def _run_cost(run_id, tree=True):
+    """Model spend for a run. With tree=True (the default) a lead's cost includes every
+    member run it delegated to, so a team budget covers the whole team's work."""
+    ids = store.run_tree_ids(run_id) if tree else [run_id]
     total = 0.0
-    for e in store.audit_for_run(run_id):
-        if e["kind"] == "model_call" and isinstance(e["detail"], dict):
-            total += e["detail"].get("cost", 0) or 0
+    for rid in ids:
+        for e in store.audit_for_run(rid):
+            if e["kind"] == "model_call" and isinstance(e["detail"], dict):
+                total += e["detail"].get("cost", 0) or 0
     return round(total, 6)
+
+def tree_usage(run_id):
+    """Cost, tokens, and model-call count across a run and all its member runs."""
+    cost = 0.0; tokens = 0; calls = 0
+    for rid in store.run_tree_ids(run_id):
+        for e in store.audit_for_run(rid):
+            if e["kind"] == "model_call" and isinstance(e["detail"], dict):
+                d = e["detail"]; calls += 1
+                cost += d.get("cost", 0) or 0
+                tokens += (d.get("input_tokens", 0) or 0) + (d.get("output_tokens", 0) or 0)
+    return {"cost": round(cost, 6), "tokens": tokens, "calls": calls}
 
 def mode():
     return "sandbox" if SANDBOX else "live"
@@ -50,11 +74,47 @@ def _cm():
     return cm
 
 def tool_index():
-    """model_key -> {tool, desc, server} across all connected servers."""
+    """model_key -> {tool, desc, server} across all connected servers, plus the team
+    delegate tool (virtual, served by the runtime rather than an MCP server)."""
     idx = {}
     for t in _cm().all_tools():
         idx[t["key"]] = {"tool": t["tool"], "desc": t["description"], "server": t["server_name"]}
+    idx[DELEGATE_KEY] = {"tool": "delegate", "desc": "Hand a task to a team member agent.", "server": "Team"}
     return idx
+
+def members_of(agent):
+    """Resolved member agents of a lead, in the order they were added. Members that no
+    longer exist are skipped; a lead never lists itself."""
+    out = []
+    for mid in (agent.get("members") or []):
+        if mid == agent["id"]:
+            continue
+        m = store.get_agent(mid)
+        if m and (m.get("owner") or "") == (agent.get("owner") or ""):
+            out.append(m)
+    return out
+
+def delegate_tool(agent):
+    """The delegate tool definition for this lead, with its members as the enum so the
+    model can only hand work to agents that are actually on the team."""
+    mem = members_of(agent)
+    if not mem:
+        return None
+    names = [m["name"] for m in mem]
+    lines = []
+    for m in mem:
+        n_ask = sum(1 for k in (m.get("skills") or []) if risk_for(k)["gate"] == "approval")
+        lines.append("- %s: %s (%d tools, %d need human approval)" % (
+            m["name"], (m.get("instructions") or "")[:140].replace("\n", " "), len(m.get("skills") or []), n_ask))
+    desc = ("Delegate a task to a member of your team. The member runs on its own with its own "
+            "tools and governance and returns a written result; you do not get its tools. Give a "
+            "complete, self-contained task with all the facts the member needs. Members:\n" + "\n".join(lines))
+    return {"name": DELEGATE_KEY, "description": desc,
+            "input_schema": {"type": "object", "required": ["member", "task"],
+                             "properties": {"member": {"type": "string", "enum": names,
+                                                       "description": "Which team member to hand this to."},
+                                            "task": {"type": "string",
+                                                     "description": "The task, with every fact the member needs."}}}}
 
 def risk_for(key, idx=None):
     idx = idx or tool_index()
@@ -67,7 +127,7 @@ def _pol_ctx(run_id, tool_key, risk):
     from datetime import datetime, timezone
     name = tool_key.split("__")[-1]
     count = sum(1 for e in store.audit_for_run(run_id)
-                if e["kind"] in ("tool_result", "tool_result_gated")
+                if e["kind"] in ("tool_result", "tool_result_gated", "delegation")
                 and (e["skill"] or "").split("__")[-1] == name)
     n = datetime.now(timezone.utc)
     return {"count": count, "hour": n.hour, "weekday": n.weekday(), "risk": risk}
@@ -88,13 +148,17 @@ def decide(run_id, agent_id, key, args, idx=None):
         return {"effect": "allow", "risk": m["risk"], "policy": pol["name"]}
     return {"effect": base, "risk": m["risk"], "policy": None}
 
-def tools_for(agent):
+def tools_for(agent, depth=0):
     allowed = set(agent.get("skills") or [])
     out = []
     for t in _cm().all_tools():
         if t["key"] in allowed:
             out.append({"name": t["key"], "description": t["description"],
                         "input_schema": t["input_schema"]})
+    if depth < MAX_DEPTH:
+        dt = delegate_tool(agent)
+        if dt:
+            out.append(dt)
     return out
 
 # ---- model dispatch ----
@@ -185,10 +249,10 @@ def _sandbox_model(messages, tools):
     text_in = json.dumps(messages).lower()
     # Intent comes from the user's actual request, not the accumulating transcript,
     # so a completed refund doesn't spuriously trigger a file-write gate.
-    user_text = ""
+    user_text = ""; user_raw = ""
     for m in messages:
         if m.get("role") == "user" and isinstance(m.get("content"), str):
-            user_text = m["content"].lower(); break
+            user_raw = m["content"]; user_text = user_raw.lower(); break
     called = set()
     for m in messages:
         for blk in (m.get("content") or []) if isinstance(m.get("content"), list) else []:
@@ -199,6 +263,31 @@ def _sandbox_model(messages, tools):
     money = any(w in user_text for w in ["refund","charged twice","double charge","duplicate","make it right","money back"])
     def tu(key, inp):
         return {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"sbx_"+key,"name":key,"input":inp}]}
+    # team lead: hand the request to each member in turn, then summarize what came back
+    k_del = _find_key(tools, "delegate")
+    if k_del:
+        dt = next(t for t in tools if t["name"] == k_del)
+        names = dt["input_schema"]["properties"]["member"]["enum"]
+        done = []
+        for m in messages:
+            for blk in (m.get("content") or []) if isinstance(m.get("content"), list) else []:
+                if isinstance(blk, dict) and blk.get("type") == "tool_use" and blk["name"] == k_del:
+                    done.append(blk["input"].get("member"))
+        for n in names:
+            if n not in done:
+                return {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"sbx_del_%d" % len(done),
+                        "name":k_del,"input":{"member":n,"task":user_raw.strip() or "Handle this request."}}]}
+        results = []
+        for m in messages:
+            for blk in (m.get("content") or []) if isinstance(m.get("content"), list) else []:
+                if isinstance(blk, dict) and blk.get("type") == "tool_result" and str(blk.get("tool_use_id","")).startswith("sbx_del_"):
+                    r = _safe(blk.get("content"))
+                    if isinstance(r, dict):
+                        results.append(r.get("result") if "result" in r else ("hand-off denied" if r.get("denied") else json.dumps(r)))
+                    else:
+                        results.append(str(r))
+        summary = "[sandbox] Team lead summary. " + " ".join("Member reported: %s" % (r or "")[:160] for r in results)
+        return {"stop_reason":"end_turn","content":[{"type":"text","text":summary}]}
     k_lookup=_find_key(tools,"lookup_customer"); k_kb=_find_key(tools,"search_knowledge")
     k_refund=_find_key(tools,"issue_refund")
     if k_lookup and k_lookup not in called and acct: return tu(k_lookup,{"account_id":acct})
@@ -244,18 +333,43 @@ def advance(run_id):
                     _rerun.discard(run_id)
                     continue            # a decision landed during the pass; go again
                 break
+    # a member run that finished (or failed) hands control back to the lead that delegated
+    # to it, unless the lead is the one driving this call right now (synchronous delegation)
+    parent = result.get("parent_run_id") if result else None
+    if parent and result.get("status") in ("done", "error") and not _driving.get(parent):
+        try:
+            advance(parent)
+        except Exception as ex:
+            store.audit(parent, None, "error", detail={"text": "Could not resume the lead after a member finished: " + str(ex)[:160]})
+            store.update_run(parent, status="error")
     return result
+
+_driving = {}   # parent run_id -> True while its own thread is running member runs
 
 def _advance_once(run_id):
     run = store.get_run(run_id); agent = store.get_agent(run["agent_id"])
+    depth = int(run.get("depth") or 0)
     system = (agent["instructions"] or "") + \
         "\n\nYou operate under Warden governance. High-impact actions may require human " \
         "approval before they execute; use the tools available and Warden gates what needs a human."
-    tools = tools_for(agent); idx = tool_index(); messages = run["transcript"]
+    tools = tools_for(agent, depth); idx = tool_index(); messages = run["transcript"]
+    if any(t["name"] == DELEGATE_KEY for t in tools):
+        system += ("\n\nYou lead a team. Use delegate to hand well-defined tasks to members; each member "
+                   "works under its own tool grants and approvals, and you only receive its written result. "
+                   "Delegate when a member is better placed to do the work, do the rest yourself, and finish "
+                   "with a clear summary of what was done and by whom.")
+    if depth > 0:
+        system += ("\n\nYou are working as a team member on a task delegated by your lead. Do the task with "
+                   "your own tools and reply with a complete, factual written result the lead can act on.")
     if not messages:
         messages = [{"role":"user","content":run["input"]}]
-        store.audit(run_id, agent["id"], "run_started", detail={"input":run["input"],"mode":mode()})
+        store.audit(run_id, agent["id"], "run_started", detail={"input":run["input"],"mode":mode(),
+                    **({"parent_run_id": run["parent_run_id"], "depth": depth} if run.get("parent_run_id") else {})})
     budget = float(agent.get("budget_usd") or 0)
+    # a member run also answers to its lead's budget: the lead's cap covers the whole tree
+    root = store.root_run(run) if run.get("parent_run_id") else None
+    root_agent = store.get_agent(root["agent_id"]) if root else None
+    root_budget = float(root_agent.get("budget_usd") or 0) if root_agent else 0.0
     daily_cap = float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)
     for _ in range(12):
         last = messages[-1] if messages else None
@@ -277,10 +391,21 @@ def _advance_once(run_id):
         if budget > 0:
             spent = _run_cost(run_id)
             if spent >= budget:
+                team = bool(store.child_runs(run_id))
                 store.audit(run_id, agent["id"], "budget_stop",
-                            detail={"text": "Run stopped: it reached its budget of $%.2f (spent $%.4f). "
+                            detail={"text": "Run stopped: it reached its budget of $%.2f (spent $%.4f%s). "
                                             "Nothing further ran. Raise the agent's budget to continue."
-                                            % (budget, spent), "budget": budget, "spent": spent})
+                                            % (budget, spent, " across the team" if team else ""),
+                                    "budget": budget, "spent": spent, "scope": "team" if team else "run"})
+                store.update_run(run_id, status="done", transcript=messages)
+                return store.get_run(run_id)
+        if root_budget > 0:
+            spent = _run_cost(root["id"])
+            if spent >= root_budget:
+                store.audit(run_id, agent["id"], "budget_stop",
+                            detail={"text": "Run stopped: the team reached its lead's budget of $%.2f (spent $%.4f "
+                                            "across the team). Nothing further ran." % (root_budget, spent),
+                                    "budget": root_budget, "spent": spent, "scope": "team"})
                 store.update_run(run_id, status="done", transcript=messages)
                 return store.get_run(run_id)
         _repair(messages)   # never send an unanswered tool_use to the API
@@ -311,7 +436,67 @@ def _advance_once(run_id):
 def _has_tool_use(msg):
     return any(isinstance(b,dict) and b.get("type")=="tool_use" for b in msg["content"])
 
+def _child_for(run_id, tool_use_id):
+    for ch in store.child_runs(run_id):
+        if ch.get("parent_tool_use_id") == tool_use_id:
+            return ch
+    return None
+
+def _final_text(child):
+    for e in reversed(store.audit_for_run(child["id"])):
+        if e["kind"] == "final" and isinstance(e["detail"], dict):
+            return e["detail"].get("text", "")
+        if e["kind"] in ("error", "budget_stop") and isinstance(e["detail"], dict):
+            return "[" + e["kind"].replace("_", " ") + "] " + e["detail"].get("text", "")
+    return ""
+
+def _start_delegation(run_id, agent, run, b, d):
+    """Create the member run for one delegate call. Returns (child, error_text)."""
+    inp = b["input"] if isinstance(b["input"], dict) else {}
+    want = str(inp.get("member") or "").strip()
+    task = str(inp.get("task") or "").strip()
+    mem = members_of(agent)
+    member = next((m for m in mem if m["name"] == want), None) or \
+             next((m for m in mem if m["id"] == want), None)
+    if member is None:
+        return None, json.dumps({"error": "unknown_member", "member": want,
+                                 "note": "Not on this team. Members: " + ", ".join(m["name"] for m in mem)})
+    if not task:
+        return None, json.dumps({"error": "empty_task", "note": "Give the member a complete task."})
+    n = len(store.child_runs(run_id))
+    if n >= MAX_DELEGATIONS:
+        store.audit(run_id, agent["id"], "policy_denied", skill=DELEGATE_KEY, risk=d["risk"],
+                    detail={"input": inp, "outcome": "denied",
+                            "policy": "team delegation cap (%d per run)" % MAX_DELEGATIONS})
+        return None, json.dumps({"denied": True, "by": "policy", "policy": "team delegation cap",
+                                 "note": "This run already delegated %d times, the cap. Finish with what you have." % n})
+    depth = int(run.get("depth") or 0) + 1
+    cid = store.create_run(member["id"], task, parent_run_id=run_id, parent_tool_use_id=b["id"], depth=depth)
+    store.audit(run_id, agent["id"], "delegation", skill=DELEGATE_KEY, risk=d["risk"],
+                detail={"member": member["name"], "member_id": member["id"], "task": task,
+                        "child_run": cid, "input": inp, **({"policy": d["policy"]} if d["policy"] else {})})
+    return store.get_run(cid), None
+
+def _run_children(run_id, children):
+    """Advance member runs that still have work, in parallel, and wait for them to either
+    finish or pause for a human. The lead's thread drives them, so a member finishing here
+    must not also try to resume the lead (see advance())."""
+    todo = [c for c in children if c["status"] == "running"]
+    if not todo:
+        return
+    _driving[run_id] = True
+    try:
+        if len(todo) == 1:
+            advance(todo[0]["id"])
+        else:
+            ths = [threading.Thread(target=advance, args=(c["id"],), daemon=True) for c in todo]
+            for t in ths: t.start()
+            for t in ths: t.join()
+    finally:
+        _driving.pop(run_id, None)
+
 def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
+    run = store.get_run(run_id)
     blocks=[b for b in assistant_msg["content"] if b.get("type")=="tool_use"]
     for b in blocks:
         d = decide(run_id, agent["id"], b["name"], b["input"], idx)
@@ -327,6 +512,31 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
             ap=_approval_for(run_id,b["id"])
             if ap and ap["status"]=="pending":
                 return "paused"
+    # delegations: start member runs for every delegate call that is allowed (or approved),
+    # drive them together, and pause the lead if any member is now waiting on a human
+    deleg_err = {}
+    children = []
+    for b in blocks:
+        if b["name"] != DELEGATE_KEY:
+            continue
+        d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        if d["effect"] == "deny":
+            continue
+        if d["effect"] == "gate":
+            ap = _approval_for(run_id, b["id"])
+            if not ap or ap["status"] != "approved":
+                continue
+        ch = _child_for(run_id, b["id"])
+        if ch is None:
+            ch, err = _start_delegation(run_id, agent, run, b, d)
+            if err:
+                deleg_err[b["id"]] = err; continue
+        children.append(ch)
+    if children:
+        _run_children(run_id, children)
+        for ch in children:
+            if store.get_run(ch["id"])["status"] in ("awaiting_approval", "running"):
+                return "paused"
     results=[]
     for b in blocks:
         d=decide(run_id, agent["id"], b["name"], b["input"], idx)
@@ -341,6 +551,21 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
             rtext=json.dumps({"denied":True,"note":"A human approver denied this action. Do not retry; explain and stop."})
             store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied"})
+        elif b["name"] == DELEGATE_KEY:
+            if b["id"] in deleg_err:
+                rtext = deleg_err[b["id"]]
+            else:
+                ch = store.get_run(_child_for(run_id, b["id"])["id"])
+                member = store.get_agent(ch["agent_id"]) or {"name": "member"}
+                text = _final_text(ch)
+                cost = _run_cost(ch["id"])
+                status = "done" if ch["status"] == "done" else "failed"
+                store.audit(run_id, agent["id"], "delegation_result", skill=DELEGATE_KEY, risk=d["risk"],
+                            detail={"member": member["name"], "member_id": ch["agent_id"], "child_run": ch["id"],
+                                    "input": b["input"], "result": text[:2000], "outcome": "ok" if status == "done" else "error",
+                                    "cost": cost, "steps": sum(1 for e in store.audit_for_run(ch["id"])
+                                                               if e["kind"] in ("tool_result", "tool_result_gated", "denied", "policy_denied"))})
+                rtext = json.dumps({"member": member["name"], "status": status, "result": text})
         else:
             t0=time.time()
             try:

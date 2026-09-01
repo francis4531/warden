@@ -47,6 +47,17 @@
 .tsec[open]>summary .chev{transform:rotate(90deg)}
 .tsec .tbody{padding:4px 12px 12px}
 .tsec .skill-row{background:var(--ink)}
+.members{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:8px}
+.mem{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--ink);cursor:pointer;transition:border-color .12s}
+.mem:hover{border-color:var(--brass-dim)}
+.mem.on{border-color:var(--brass);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 22%,transparent)}
+.mem input{margin:0}
+.mem .aico{width:28px;height:28px;flex:none}
+.mem .mn{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mem .mm{font-size:11.5px;color:var(--mut)}
+.mem .mm b{color:var(--high);font-weight:600}
+.teamnote{margin-top:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--ink);color:var(--mut);font-size:12.5px;line-height:1.55}
+.teamnote .stamp{vertical-align:1px}
 </style>
 
 <div class="page-h">
@@ -64,6 +75,7 @@
       {% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
     </select>
     <div id="tplnote" style="color:var(--med);font-size:12px;margin-top:6px"></div>
+    <input type="hidden" name="template" id="tplid" value="">
     {% endif %}
     <label class="f" for="name">Agent name</label>
     <input type="text" id="name" name="name" placeholder="Name your agent" value="{{ edit_agent.name if edit_agent }}" required>
@@ -107,6 +119,30 @@
     </details>
     {% endfor %}
     </div>
+
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:26px 0 2px">
+      <label class="f" style="margin:0">Team members <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
+      <span style="font-size:12px;color:var(--dim)"><span id="memcount">{{ edit_members|length }}</span> on the team</span>
+    </div>
+    <div style="color:var(--mut);font-size:12.5px;margin-top:4px">Pick agents this one can hand tasks to. It becomes a team lead with one extra tool, <span style="font-family:var(--mono)">delegate</span>.</div>
+    {% if candidates %}
+    <div class="members" id="members">
+      {% for a in candidates %}
+      <label class="mem {{ 'on' if a.id in edit_members }}">
+        <input type="checkbox" name="members" value="{{ a.id }}" {{ 'checked' if a.id in edit_members }}>
+        <span class="aico">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
+        <span style="min-width:0">
+          <div class="mn">{{ a.name }}</div>
+          <div class="mm">{{ a.skills|length }} tool{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads {{ a.members|length }}{% endif %}{% if a.budget_usd %} &middot; ${{ '%.2f'|format(a.budget_usd) }}/run{% endif %}</div>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <div id="tplmembers" class="teamnote" style="display:none"></div>
+    {% else %}
+    <div id="tplmembers" class="teamnote">No other agents yet. Build the members first, then come back and put them on a team; or pick the <b>Billing Desk (team)</b> template, which creates its two members for you.</div>
+    {% endif %}
+    <div class="teamnote">How a team is governed: each hand-off is a <span class="stamp {{ delegate_risk }}">{{ delegate_risk }}</span> action on the record, and a policy can gate or deny it (match tool <span style="font-family:var(--mono)">delegate</span>, field <span style="font-family:var(--mono)">member</span>). Members keep their own tool grants and approvals; the lead never gets a member&rsquo;s tools. A member&rsquo;s approval pauses the whole team. This agent&rsquo;s run budget covers every member&rsquo;s work.</div>
 
     <div style="margin-top:20px;display:flex;gap:10px">
       <button class="btn brass" type="submit">{{ 'Save changes' if edit_agent else 'Create agent' }}</button>
@@ -176,8 +212,21 @@ if (tplEl) tplEl.addEventListener('change', e=>{
   const name=document.getElementById('name'), instr=document.getElementById('instructions');
   name.value = t ? t.name : '';
   instr.value = t ? t.instructions : '';
+  document.getElementById('tplid').value = t ? t.id : '';
   applyGrants(new Set(t ? t.tools : []));
   renderTplPrompt(t);
+  const tm=document.getElementById('tplmembers');
+  if(tm && t && (t.members||[]).length){
+    const names=t.members.map(id=>{const m=TEMPLATES.find(x=>x.id===id); return m?m.name:id;});
+    tm.style.display='block';
+    tm.innerHTML='This template is a team. If you pick no members above, creating it also creates <b>'+names.map(esc).join('</b> and <b>')+'</b> as members, each with its own tool grants.';
+  } else if(tm && document.getElementById('members')){ tm.style.display='none'; }
+});
+const memBox=document.getElementById('members');
+if(memBox) memBox.addEventListener('change', e=>{
+  if(!e.target.matches('input[name=members]')) return;
+  e.target.closest('.mem').classList.toggle('on', e.target.checked);
+  document.getElementById('memcount').textContent = memBox.querySelectorAll('input[name=members]:checked').length;
 });
 // open the connect modal and highlight the specific server(s) the template needs
 function openConnFor(ids){
