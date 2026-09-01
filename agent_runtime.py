@@ -256,11 +256,23 @@ def _advance_once(run_id):
         messages = [{"role":"user","content":run["input"]}]
         store.audit(run_id, agent["id"], "run_started", detail={"input":run["input"],"mode":mode()})
     budget = float(agent.get("budget_usd") or 0)
+    daily_cap = float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)
     for _ in range(12):
         last = messages[-1] if messages else None
         if last and last["role"]=="assistant" and _has_tool_use(last):
             if _execute_tool_turn(run_id, agent, last, messages, idx) == "paused":
                 store.update_run(run_id, status="awaiting_approval", transcript=messages)
+                return store.get_run(run_id)
+        if daily_cap > 0:
+            from datetime import datetime, timezone
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if store.cost_since(today) >= daily_cap:
+                store.audit(run_id, agent["id"], "budget_stop",
+                            detail={"text": "Run stopped: this shared demo reached its daily budget of "
+                                            "$%.2f across all users. It resets tomorrow (UTC)."
+                                            % daily_cap, "budget": daily_cap, "spent": store.cost_since(today),
+                                            "scope": "daily"})
+                store.update_run(run_id, status="done", transcript=messages)
                 return store.get_run(run_id)
         if budget > 0:
             spent = _run_cost(run_id)

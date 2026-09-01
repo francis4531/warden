@@ -187,6 +187,21 @@ def audit_all(limit=200):
         d = dict(r); d["detail"] = json.loads(d["detail"]) if d["detail"] else None; out.append(d)
     return out
 
+def cost_since(iso_prefix):
+    """Total model-call cost across ALL runs whose audit ts starts with iso_prefix
+    (e.g. '2026-08-31' for today, UTC). Powers the global daily spend cap."""
+    c = _conn()
+    rows = c.execute("SELECT detail FROM audit WHERE kind='model_call' AND ts LIKE ?",
+                     (iso_prefix + "%",)).fetchall()
+    c.close()
+    total = 0.0
+    for r in rows:
+        try:
+            total += (json.loads(r["detail"]) or {}).get("cost", 0) or 0
+        except Exception:
+            pass
+    return round(total, 6)
+
 # ---- approvals ----
 def create_approval(run_id, agent_id, skill, risk, arguments):
     c = _conn(); apid = _id("ap")

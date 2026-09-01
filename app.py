@@ -165,7 +165,8 @@ def logout():
 
 @app.context_processor
 def _auth_ctx():
-    return {"auth_on": AUTH_ON, "authed": _authed(), "user_email": session.get("email")}
+    return {"auth_on": AUTH_ON, "authed": _authed(), "user_email": session.get("email"),
+            "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
 
 
 def _env_specs():
