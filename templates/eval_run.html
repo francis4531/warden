@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% set active='evals' %}
+{% block title %}{{ er.label or 'Eval run' }} · {{ suite.name }} · Warden{% endblock %}
+{% block body %}
+<style>
+.score{font-family:var(--mono);font-weight:600}
+.score.g{color:var(--low)}.score.m{color:var(--med)}.score.b{color:var(--high)}.score.n{color:var(--dim)}
+.bigscore{font-family:var(--mono);font-size:34px;font-weight:600;line-height:1}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.chk{border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:var(--ink)}
+.chk .nm{font-size:13px;font-weight:600;line-height:1.35}
+.chk .kt{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.chk .rate{display:flex;align-items:baseline;gap:8px;margin-top:6px}
+.chk .rate .score{font-size:18px}
+.chk .rate .sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
+.bar{height:5px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;background:var(--low)}.bar.m i{background:var(--med)}.bar.b i{background:var(--high)}
+.matrix{width:100%;border-collapse:collapse;font-size:12.5px}
+.matrix th{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:bottom;font-weight:500}
+.matrix td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.matrix td.case{min-width:280px;max-width:420px}
+.matrix td.case a{color:var(--txt);text-decoration:none}
+.matrix td.case a:hover{color:var(--brass)}
+.matrix .meta{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:3px}
+.cell{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:3px 7px;border-radius:6px;white-space:nowrap;cursor:default}
+.cell.p{color:var(--low);background:color-mix(in srgb,var(--low) 12%,var(--ink))}
+.cell.f{color:var(--high);background:color-mix(in srgb,var(--high) 12%,var(--ink))}
+.cell.s{color:var(--dim);background:var(--ink3)}
+.jl{display:inline-flex;gap:3px;margin-left:5px}
+.jl button{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--line2);background:transparent;color:var(--mut);cursor:pointer}
+.jl button.on{color:var(--txt);border-color:var(--brass)}
+.cmp{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 16px;font-size:13px;align-items:center}
+.cmp .h{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.delta.up{color:var(--low)}.delta.down{color:var(--high)}.delta.flat{color:var(--dim)}
+.snap{font-family:var(--mono);font-size:12px;color:var(--mut);line-height:1.7}
+.snap b{color:var(--txt);font-weight:600}
+.alert{border:1px solid color-mix(in srgb,var(--high) 45%,var(--line));background:color-mix(in srgb,var(--high) 7%,var(--ink2));border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:12px}
+.ok{border:1px solid color-mix(in srgb,var(--low) 45%,var(--line));background:color-mix(in srgb,var(--low) 7%,var(--ink2));border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:12px}
+</style>
+
+{% set sc = (er.summary or {}).get('score') %}
+<div class="page-h" style="margin-bottom:18px">
+  <div class="eyebrow"><a href="{{ url_for('evals_home') }}" style="color:var(--brass)">Evals</a> &middot; <a href="{{ url_for('suite', sid=suite.id) }}" style="color:var(--brass)">{{ suite.name }}</a> &middot; run</div>
+  <div style="display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap">
+    <div>
+      <h1 style="margin-bottom:4px">{{ er.label or 'Eval run' }}</h1>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--dim)">{{ er.id }} &middot; {{ er.created_at[:16].replace('T',' ') }} &middot; {{ er.snapshot.model }} &middot; {{ er.snapshot.mode }}</div>
+    </div>
+    <div style="margin-left:auto;text-align:right">
+      {% if er.status=='running' %}<span id="statuspill" class="pill running">running</span>
+      {% elif sc is not none %}<div class="bigscore score {{ 'g' if sc>=0.9 else ('m' if sc>=0.6 else 'b') }}">{{ (sc*100)|round|int }}%</div><div style="font-size:11.5px;color:var(--dim)">checks passed across {{ er.summary.cases }} case{{ '' if er.summary.cases==1 else 's' }}{% if er.summary.cost %} &middot; ${{ '%.4f'|format(er.summary.cost) }}{% endif %}</div>
+      {% else %}<span class="score n">no scorable checks</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if er.status=='running' %}
+<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:10px"><span class="livedot" style="width:8px;height:8px;border-radius:50%;background:var(--brass-b);display:inline-block"></span><span id="progress">running cases&hellip;</span></div>
+<script>
+(async function poll(){
+  let d; try{ d=await(await fetch('/evals/run/{{ er.id }}/status')).json(); }catch(e){ setTimeout(poll,2000); return; }
+  document.getElementById('progress').textContent = d.cases_done+' of '+d.cases+' cases scored…';
+  if(d.status!=='running'){ location.reload(); return; }
+  setTimeout(poll,1500);
+})();
+</script>
+{% endif %}
+{% if er.status=='error' %}<div class="alert">This run hit an error: {{ (er.summary or {}).get('error') }}</div>{% endif %}
+
+{% if others %}
+<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <form method="get" style="display:flex;gap:8px;align-items:center;margin:0">
+    <span style="font-size:13px;color:var(--mut)">Compare with</span>
+    <select name="compare" onchange="this.form.submit()" style="margin:0;width:auto">
+      <option value="">another run…</option>
+      {% for o in others %}<option value="{{ o.id }}" {{ 'selected' if cmp and cmp.run.id==o.id }}>{{ o.label or 'run' }} &middot; {{ o.created_at[:16].replace('T',' ') }}{% if o.summary and o.summary.score is not none %} &middot; {{ (o.summary.score*100)|round|int }}%{% endif %}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+{% endif %}
+
+{% if cmp %}
+<div class="section-h"><span class="lbl">This run vs {{ cmp.run.label or 'run' }}</span></div>
+<div class="card" style="margin-bottom:18px">
+  {% if cmp.regressions %}<div class="alert"><b>{{ cmp.regressions|length }} check{{ '' if cmp.regressions|length==1 else 's' }} got worse.</b> A change that helps one check can hurt another; look at all of them before keeping this variant.</div>
+  {% else %}<div class="ok"><b>No regressions.</b> Nothing scored lower than in {{ cmp.run.label or 'the other run' }}.</div>{% endif %}
+  <div class="cmp">
+    <span class="h">check</span><span class="h">{{ cmp.run.label or 'then' }}</span><span class="h">this run</span><span class="h">change</span>
+    {% for d in cmp.deltas %}
+    <span>{{ d.check.name }}</span>
+    <span class="score n">{{ (d.then*100)|round|int ~ '%' if d.then is not none else 'n/a' }}</span>
+    <span class="score {{ 'n' if d.now is none else ('g' if d.now>=0.9 else ('m' if d.now>=0.6 else 'b')) }}">{{ (d.now*100)|round|int ~ '%' if d.now is not none else 'n/a' }}</span>
+    <span class="delta {{ 'flat' if d.delta is none or d.delta==0 else ('up' if d.delta>0 else 'down') }}">{% if d.delta is none %}n/a{% elif d.delta==0 %}same{% else %}{{ '+' if d.delta>0 }}{{ (d.delta*100)|round|int }} pts{% endif %}</span>
+    {% endfor %}
+  </div>
+  <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+    <div style="font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:8px">What changed in the agent</div>
+    {% if cmp.changed %}<div class="snap">{% for k,(a,b) in cmp.changed.items() %}<b>{{ k }}</b>: {{ a }} &rarr; {{ b }}<br>{% endfor %}</div>{% endif %}
+    {% if cmp.diff %}
+    <div class="argcode" style="margin-top:8px"><div class="argcode-h"><span class="fn">instructions</span><span class="diffstat"><span class="a">+{{ cmp.added }}</span> <span class="d">&minus;{{ cmp.removed }}</span></span></div>
+      <div class="diffbody">{% for ln in cmp.diff %}<div class="dl {{ 'add' if ln.sign=='+' else 'del' if ln.sign=='-' else 'hunk' if ln.sign=='@' else 'ctx' }}">{{ (ln.sign + ' ' if ln.sign in '+-' else ('' if ln.sign=='@' else '  ')) ~ ln.text }}</div>{% endfor %}</div></div>
+    {% elif not cmp.changed %}<div style="color:var(--mut);font-size:13px">Same instructions, model, tools, and budget. Any difference here is run-to-run variance, which is worth knowing too.</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="section-h"><span class="lbl">By check</span></div>
+<div class="card" style="margin-bottom:18px">
+  <div class="checks">
+    {% for c in cols %}
+    <div class="chk">
+      <div class="kt">{{ c.kind }}</div>
+      <div class="nm">{{ c.name }}</div>
+      <div class="rate">
+        {% if c.rate is none %}<span class="score n" style="font-size:14px">{{ 'not scored' if c.skip else 'n/a' }}</span><span class="sub">{% if c.skip %}{{ c.skip }} skipped{% endif %}</span>
+        {% else %}<span class="score {{ 'g' if c.rate>=0.9 else ('m' if c.rate>=0.6 else 'b') }}">{{ (c.rate*100)|round|int }}%</span><span class="sub">{{ c.pass }}/{{ c.pass+c.fail }} pass{% if c.skip %} &middot; {{ c.skip }} skipped{% endif %}</span>{% endif %}
+      </div>
+      {% if c.rate is not none %}<div class="bar {{ 'g' if c.rate>=0.9 else ('m' if c.rate>=0.6 else 'b') }}"><i style="width:{{ (c.rate*100)|round }}%"></i></div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if align.labeled or cols|selectattr('kind','equalto','judge')|list %}
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)">
+    Judge alignment: {% if align.labeled %}<b style="color:var(--txt)">{{ align.agree }}</b> agree, <b style="color:var(--high)">{{ align.disagree }}</b> disagree across {{ align.labeled }} labeled verdict{{ '' if align.labeled==1 else 's' }}, judge error rate <b style="color:var(--txt)">{{ (align.error_rate*100)|round|int }}%</b>. Read judge scores with that error in mind.{% else %}mark judge verdicts below as Agree or Disagree to measure how often the judge is wrong.{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="section-h"><span class="lbl">By case</span><span style="font-size:12px;color:var(--dim)">hover a cell for the reason; click a case to open its conversation</span></div>
+<div class="card" style="overflow-x:auto">
+  <table class="matrix">
+    <thead><tr><th>case</th>{% for c in cols %}<th>{{ c.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="case">{% if r.run_id %}<a href="{{ url_for('run_view', rid=r.run_id) }}">{{ r.case.input[:140] }}{{ '…' if r.case.input|length>140 }}</a>{% else %}{{ r.case.input[:140] }}{% endif %}
+        {% if r.facts %}<div class="meta">{{ r.facts.calls }} tool call{{ '' if r.facts.calls==1 else 's' }}{% if r.facts.held %} &middot; held: {{ r.facts.held|join(', ') }}{% endif %}{% if r.facts.cost %} &middot; ${{ '%.4f'|format(r.facts.cost) }}{% endif %} &middot; {{ r.facts.ended or 'running' }}</div>{% endif %}</td>
+      {% for cell in r.cells %}
+      <td>{% if cell %}
+        {% set why = (cell.detail or {}).get('why','') %}
+        <span class="cell {{ 'p' if cell.passed==1 else ('f' if cell.passed==0 else 's') }}" title="{{ why }}">{{ 'pass' if cell.passed==1 else ('fail' if cell.passed==0 else 'skip') }}</span>
+        {% if cols[loop.index0].kind=='judge' and cell.passed is not none %}
+        <span class="jl" data-id="{{ cell.id }}"><button class="{{ 'on' if cell.human_label=='agree' }}" onclick="label('{{ cell.id }}','agree',this)">agree</button><button class="{{ 'on' if cell.human_label=='disagree' }}" onclick="label('{{ cell.id }}','disagree',this)">disagree</button></span>
+        {% endif %}
+        {% else %}<span class="cell s">pending</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+async function label(id, lab, btn){
+  const wrap=btn.parentElement; const already=btn.classList.contains('on');
+  await fetch('/evals/result/'+id+'/label',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'fetch'},body:'label='+(already?'':lab)});
+  wrap.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+  if(!already) btn.classList.add('on');
+}
+</script>
+{% endblock %}

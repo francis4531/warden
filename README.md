@@ -33,6 +33,20 @@ field `member`), and a hard cap limits hand-offs per run (`WARDEN_MAX_DELEGATION
 A member's HIGH action pauses the whole team until a human decides. The lead's run budget
 covers the whole tree. Members cannot delegate further (`WARDEN_MAX_DELEGATION_DEPTH`, 1).
 
+## Evals
+
+An eval suite belongs to one agent and holds cases (inputs, optionally with an expected
+output) and checks. Running a suite creates a real run per case in evaluation mode: reads
+run, and anything that would need human approval is recorded as held and never executed.
+Checks come in three kinds, cheapest first: code assertions (answer contains / regex,
+red-flag words, tool called or not, held for approval, max tool calls, cost under N, no tool
+errors, quotes grounded in tool results), golden comparisons against an expected output,
+and LLM-as-a-judge checks that ask one binary question; humans mark each verdict agree or
+disagree so the suite reports judge error rather than hiding it. Every eval run snapshots
+the agent, so two runs compare check by check with the instructions diff between them.
+Error analysis feeds the suites: any conversation can be marked Good or Wrong with a
+category, and any conversation becomes a case with one click.
+
 ## Architecture
 
 | File | Role |
@@ -43,7 +57,8 @@ covers the whole tree. Members cannot delegate further (`WARDEN_MAX_DELEGATION_D
 | `mcp_fs_server.py` | Built-in MCP server: sandboxed list_files, read_file, write_file |
 | `governance.py` | Risk registry + auto-classification of external tools + overrides |
 | `agent_runtime.py` | The agent loop, gating, pause/resume on approval, and team delegation |
-| `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides |
+| `evals.py` | Eval suites: code assertions, golden comparisons, LLM-as-a-judge, run snapshots and comparison |
+| `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides, eval suites, annotations |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 
 ## Connections

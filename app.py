@@ -15,8 +15,9 @@ import telemetry
 import policy
 import registry
 import icons
+import evals
 
-WARDEN_VERSION = "0.4"
+WARDEN_VERSION = "0.5"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -592,9 +593,13 @@ def run_view(rid):
     ag = store.get_agent(r["agent_id"])
     parent = store.get_run(r["parent_run_id"]) if r.get("parent_run_id") else None
     lead = store.get_agent(parent["agent_id"]) if parent else None
+    ev = store.get_eval_run(r["eval_run_id"]) if r.get("eval_run_id") else None
     return render_template("run.html", run=r, agent=ag, audit=store.audit_for_run(rid),
                            approvals=store.approvals_for_run(rid), parent=parent, lead=lead,
-                           is_team=bool(ag and ag.get("members")))
+                           is_team=bool(ag and ag.get("members")),
+                           annotations=store.annotations_for_run(rid),
+                           suites=store.list_suites(_scope(), agent_id=r["agent_id"]),
+                           eval_run=ev, categories=_categories())
 
 def _fmt_event(e):
     d = e.get("detail") or {}
@@ -620,6 +625,8 @@ def _fmt_event(e):
            "text": text}
     if kind in ("delegation", "delegation_result"):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
+    if kind == "eval_held":
+        out["text"] = " ".join(_json.dumps(d.get("input"), ensure_ascii=False).split())[:200]
     if kind == "budget_stop" and d.get("scope"):
         out["scope"] = d["scope"]
     return out
@@ -927,6 +934,223 @@ def run_export(rid):
     import telemetry
     if not store.get_run(rid): abort(404)
     return telemetry.export(rid)
+
+# ---------------- evals ----------------
+DEFAULT_CATEGORIES = ["wrong facts", "hallucinated detail", "missed a step", "took a risky action",
+                      "wrong tone", "too long", "did not finish", "other"]
+
+def _categories():
+    seen = list(DEFAULT_CATEGORIES)
+    for a in store.list_annotations(_scope(), 500):
+        if a["category"] and a["category"] not in seen:
+            seen.append(a["category"])
+    return seen
+
+def _owned_suite(sid):
+    su = store.get_suite(sid)
+    if not su: abort(404)
+    if AUTH_ON and (su.get("owner") or "") != current_owner(): abort(404)
+    return su
+
+def _suite_rows(suites):
+    out = []
+    for su in suites:
+        ag = store.get_agent(su["agent_id"])
+        runs = store.list_eval_runs(su["id"], 20)
+        last = runs[0] if runs else None
+        out.append({**su, "agent": ag, "cases": len(store.list_cases(su["id"])), "checks": len(store.list_checks(su["id"])),
+                    "runs": len(runs), "last": last,
+                    "score": (last["summary"] or {}).get("score") if last and last["summary"] else None})
+    return out
+
+@app.route("/evals")
+def evals_home():
+    from collections import Counter
+    suites = _suite_rows(store.list_suites(_scope()))
+    agents = store.list_agents(_scope())
+    ann = store.list_annotations(_scope(), 500)
+    cats = Counter(a["category"] or "uncategorized" for a in ann if a["verdict"] == "down" or a["category"])
+    by_cat = {}
+    for a in ann:
+        if a["verdict"] == "down" or a["category"]:
+            by_cat.setdefault(a["category"] or "uncategorized", []).append(a)
+    cat_rows = [{"category": c, "n": n, "examples": by_cat[c][:6]} for c, n in cats.most_common()]
+    up = sum(1 for a in ann if a["verdict"] == "up"); down = sum(1 for a in ann if a["verdict"] == "down")
+    ap = store.approval_stats_by_agent([a["id"] for a in agents])
+    feedback = []
+    for a in agents:
+        st = ap.get(a["id"], {}); apn = st.get("approved", 0); dn = st.get("denied", 0)
+        aup = sum(1 for x in ann if x["agent_id"] == a["id"] and x["verdict"] == "up")
+        adn = sum(1 for x in ann if x["agent_id"] == a["id"] and x["verdict"] == "down")
+        if apn or dn or aup or adn:
+            feedback.append({"agent": a, "approved": apn, "denied": dn, "up": aup, "down": adn,
+                             "denial_rate": (dn / (apn + dn)) if (apn + dn) else None})
+    return render_template("evals.html", suites=suites, agents=agents, cat_rows=cat_rows, up=up, down=down,
+                           feedback=feedback, total_ann=len(ann))
+
+@app.route("/evals/new", methods=["POST"])
+def create_suite():
+    aid = request.form.get("agent_id"); ag = _owned_agent(aid)
+    name = (request.form.get("name") or "").strip() or (ag["name"] + " suite")
+    sid = store.create_suite(aid, current_owner(), name)
+    if request.form.get("starter"):
+        for kind, nm, cfg in evals.starter_checks(ag):
+            store.add_check(sid, kind, nm, cfg)
+    src = request.form.get("source_run_id")
+    if src:
+        r = store.get_run(src)
+        if r and r["agent_id"] == aid:
+            store.add_case(sid, r["input"], source_run_id=src)
+    return redirect(url_for("suite", sid=sid))
+
+@app.route("/evals/<sid>")
+def suite(sid):
+    su = _owned_suite(sid); ag = store.get_agent(su["agent_id"])
+    runs = store.list_eval_runs(sid, 50)
+    idx = {t["key"]: t for t in connected_tools()}
+    tools = sorted({idx[k]["tool"] for k in (ag.get("skills") or []) if k in idx} | ({"delegate"} if ag.get("members") else set()))
+    checks = store.list_checks(sid)
+    for c in checks:
+        c["desc"] = evals.describe(c) if hasattr(evals, "describe") else ""
+    recent = [r for r in store.list_runs(30, _scope()) if r["agent_id"] == ag["id"]]
+    have = {c["source_run_id"] for c in store.list_cases(sid) if c["source_run_id"]}
+    return render_template("eval_suite.html", suite=su, agent=ag, cases=store.list_cases(sid), checks=checks,
+                           runs=runs, code_kinds=evals.CODE_KINDS, tools=tools, recent=[r for r in recent if r["id"] not in have],
+                           live=(rt.mode() == "live"))
+
+@app.route("/evals/<sid>/delete", methods=["POST"])
+def delete_suite(sid):
+    _owned_suite(sid); store.delete_suite(sid)
+    return redirect(url_for("evals_home"))
+
+@app.route("/evals/<sid>/case", methods=["POST"])
+def add_case(sid):
+    _owned_suite(sid)
+    if request.form.get("source_run_id"):
+        r = store.get_run(request.form["source_run_id"])
+        if r: store.add_case(sid, r["input"], source_run_id=r["id"])
+    else:
+        text = (request.form.get("input") or "").strip()
+        if text: store.add_case(sid, text, expected=(request.form.get("expected") or "").strip())
+    return redirect(url_for("suite", sid=sid) + "#cases")
+
+@app.route("/evals/<sid>/case/<cid>/delete", methods=["POST"])
+def delete_case(sid, cid):
+    _owned_suite(sid); store.delete_case(cid)
+    return redirect(url_for("suite", sid=sid) + "#cases")
+
+@app.route("/evals/<sid>/check", methods=["POST"])
+def add_check(sid):
+    _owned_suite(sid); f = request.form
+    kind = f.get("kind")
+    if kind == "code":
+        ck = f.get("check")
+        if ck not in evals.CODE_BY_KIND: abort(400)
+        label = evals.CODE_BY_KIND[ck][1]; val = (f.get("value") or "").strip()
+        name = (f.get("name") or "").strip() or (label + (": " + val if val else ""))
+        store.add_check(sid, "code", name, {"check": ck, "value": val})
+    elif kind == "golden":
+        store.add_check(sid, "golden", (f.get("name") or "").strip() or "Matches expected output",
+                        {"mode": f.get("mode") if f.get("mode") in ("exact", "contains") else "contains"})
+    elif kind == "judge":
+        q = (f.get("question") or "").strip()
+        if not q: abort(400)
+        store.add_check(sid, "judge", (f.get("name") or "").strip() or q[:70],
+                        {"question": q, "context": f.get("context") if f.get("context") in ("final", "final+tools") else "final"})
+    else:
+        abort(400)
+    return redirect(url_for("suite", sid=sid) + "#checks")
+
+@app.route("/evals/<sid>/check/<kid>/delete", methods=["POST"])
+def delete_check(sid, kid):
+    _owned_suite(sid); store.delete_check(kid)
+    return redirect(url_for("suite", sid=sid) + "#checks")
+
+@app.route("/evals/<sid>/run", methods=["POST"])
+def run_suite(sid):
+    su = _owned_suite(sid)
+    if not store.list_cases(sid) or not store.list_checks(sid):
+        return redirect(url_for("suite", sid=sid))
+    label = (request.form.get("label") or "").strip() or ("baseline" if not store.list_eval_runs(sid, 1) else "experiment")
+    erid = evals.start(sid, label)
+    return redirect(url_for("eval_run_view", erid=erid))
+
+def _eval_matrix(er):
+    su = store.get_suite(er["suite_id"])
+    cases = store.list_cases(su["id"]); checks = store.list_checks(su["id"])
+    results = store.list_results(er["id"])
+    cell = {}; run_of = {}
+    for r in results:
+        cell[(r["case_id"], r["check_id"])] = r; run_of[r["case_id"]] = r["run_id"]
+    rows = []
+    for c in cases:
+        rows.append({"case": c, "run_id": run_of.get(c["id"]), "cells": [cell.get((c["id"], k["id"])) for k in checks],
+                     "facts": evals.facts(run_of[c["id"]]) if run_of.get(c["id"]) else None})
+    per = (er["summary"] or {}).get("per_check", {})
+    cols = []
+    for k in checks:
+        p = per.get(k["id"], {"pass": 0, "fail": 0, "skip": 0})
+        n = p["pass"] + p["fail"]
+        cols.append({**k, "pass": p["pass"], "fail": p["fail"], "skip": p["skip"], "rate": (p["pass"] / n) if n else None})
+    return su, cases, cols, rows, results
+
+@app.route("/evals/run/<erid>")
+def eval_run_view(erid):
+    er = store.get_eval_run(erid)
+    if not er: abort(404)
+    su, cases, cols, rows, results = _eval_matrix(er)
+    _owned_suite(su["id"])
+    others = [r for r in store.list_eval_runs(su["id"], 50) if r["id"] != erid and r["status"] == "done"]
+    cmp_id = request.args.get("compare"); cmp = None
+    if cmp_id:
+        o = store.get_eval_run(cmp_id)
+        if o and o["suite_id"] == su["id"]:
+            _, _, ocols, _, _ = _eval_matrix(o)
+            orate = {c["id"]: c for c in ocols}
+            deltas = []
+            for c in cols:
+                oc = orate.get(c["id"])
+                deltas.append({"check": c, "then": oc["rate"] if oc else None, "now": c["rate"],
+                               "delta": ((c["rate"] or 0) - (oc["rate"] or 0)) if (oc and oc["rate"] is not None and c["rate"] is not None) else None})
+            a = o["snapshot"].get("instructions", ""); b = er["snapshot"].get("instructions", "")
+            lines, add, rem = _diff_lines(a, b) if a != b else ([], 0, 0)
+            changed = {k: (o["snapshot"].get(k), er["snapshot"].get(k)) for k in ("model", "tools", "budget_usd", "members")
+                       if o["snapshot"].get(k) != er["snapshot"].get(k)}
+            cmp = {"run": o, "deltas": deltas, "diff": lines, "added": add, "removed": rem, "changed": changed,
+                   "regressions": [d for d in deltas if d["delta"] is not None and d["delta"] < 0]}
+    judged = [r for r in results if store.get_check(r["check_id"]) and store.get_check(r["check_id"])["kind"] == "judge"]
+    return render_template("eval_run.html", er=er, suite=su, agent=store.get_agent(su["agent_id"]), cols=cols, rows=rows,
+                           others=others, cmp=cmp, align=evals.alignment(judged), live=(rt.mode() == "live"))
+
+@app.route("/evals/run/<erid>/status")
+def eval_run_status(erid):
+    er = store.get_eval_run(erid)
+    if not er: abort(404)
+    done = len({r["case_id"] for r in store.list_results(erid)})
+    return {"status": er["status"], "cases_done": done, "cases": len(store.list_cases(er["suite_id"]))}
+
+@app.route("/evals/result/<rid>/label", methods=["POST"])
+def label_result(rid):
+    r = store.get_result(rid)
+    if not r: abort(404)
+    er = store.get_eval_run(r["eval_run_id"]); _owned_suite(er["suite_id"])
+    lab = request.form.get("label")
+    store.label_result(rid, lab if lab in ("agree", "disagree") else None)
+    if request.headers.get("X-Requested-With") == "fetch": return {"ok": True}
+    return redirect(url_for("eval_run_view", erid=er["id"]))
+
+@app.route("/run/<rid>/annotate", methods=["POST"])
+def annotate_run(rid):
+    r = _owned_run(rid)
+    v = request.form.get("verdict"); v = v if v in ("up", "down") else ""
+    store.annotate(rid, r["agent_id"], current_owner(), v, request.form.get("category", ""), request.form.get("note", ""))
+    if request.headers.get("X-Requested-With") == "fetch": return {"ok": True}
+    return redirect(url_for("run_view", rid=rid))
+
+@app.route("/annotation/<aid>/delete", methods=["POST"])
+def delete_annotation(aid):
+    store.delete_annotation(aid)
+    return redirect(request.form.get("back") or url_for("evals_home"))
 
 @app.route("/healthz")
 def healthz():
