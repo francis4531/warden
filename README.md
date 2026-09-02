@@ -4,8 +4,8 @@
 
 Connect MCP servers, build an agent from their tools, run it against a live model, and
 gate high-risk actions behind human approval, with a full audit trail behind every
-step. Warden is a working demonstration of the thing every enterprise agent platform is
-really selling: not the model, but the governance around letting an agent act.
+step. Warden is built on the thing every enterprise agent platform is really selling: not
+the model, but the governance around letting an agent act.
 
 ## What's real here
 
@@ -65,7 +65,7 @@ reference servers, and more). Each entry shows who maintains it and how it conne
     python app.py            # http://localhost:8000
 
 No key -> sandbox mode: a deterministic planner drives the same governance flow so
-everything is demonstrable offline. For live model calls:
+the whole governance flow works offline. For live model calls:
 
     export ANTHROPIC_API_KEY=sk-...
     export WARDEN_MODEL=claude-sonnet-4-6   # optional; a model on your account

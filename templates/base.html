@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Warden{% endblock %}</title>
-<script>(function(){try{var t=localStorage.getItem('warden-theme');if(t!=='dark'&&t!=='light')t='light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
+<script>(function(){try{var t=localStorage.getItem('warden-theme');if(t!=='dark'&&t!=='light')t='dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -228,7 +228,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
       {% if mode=='sandbox' %}<div class="note">Set ANTHROPIC_API_KEY to run agents against a live model. Governance and audit are fully live either way.</div>{% endif %}
       {% if not auth_on %}<div class="note" style="color:var(--high)">Unprotected: set WARDEN_PASSWORD to require sign-in.</div>{% endif %}
       {% if auth_on %}<a href="{{ url_for('logout') }}" class="note" style="text-decoration:none;color:var(--mut)">&#8631; Sign out{% if user_email and user_email != 'operator' %} &middot; {{ user_email }}{% endif %}</a>{% endif %}
-      {% if daily_cap %}<div class="note" style="color:var(--mut)">Shared demo &middot; ${{ '%.2f'|format(daily_cap) }}/day spend cap</div>{% endif %}
+      {% if daily_cap %}<div class="note" style="color:var(--mut)">Shared studio &middot; ${{ '%.2f'|format(daily_cap) }}/day spend cap</div>{% endif %}
     </div>
   </aside>
   <main class="main">
@@ -241,7 +241,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
     try{localStorage.setItem('warden-theme',t);}catch(e){}
     document.querySelectorAll('[data-theme-set]').forEach(b=>b.classList.toggle('on',b.dataset.themeSet===t));}
   document.querySelectorAll('[data-theme-set]').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.themeSet)));
-  apply(document.documentElement.getAttribute('data-theme')||'light');
+  apply(document.documentElement.getAttribute('data-theme')||'dark');
 })();
 </script>
 <script>

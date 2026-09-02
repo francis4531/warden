@@ -1,6 +1,6 @@
 """
 Warden's built-in Filesystem MCP server. A real second MCP server (local, Python) so
-multi-server connection and routing is demonstrable without needing Node. All access
+multi-server connection and routing works without needing Node. All access
 is confined to a sandbox workspace directory.
 """
 import os
