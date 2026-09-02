@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% set active='evals' %}
+{% block title %}{{ suite.name }} · Evals · Warden{% endblock %}
+{% block body %}
+<style>
+.score{font-family:var(--mono);font-weight:600;font-size:13px}
+.score.g{color:var(--low)}.score.m{color:var(--med)}.score.b{color:var(--high)}.score.n{color:var(--dim)}
+.kindtag{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line2);border-radius:5px;padding:1px 6px;color:var(--mut);white-space:nowrap}
+.kindtag.code{color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))}
+.kindtag.judge{color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,var(--line2))}
+.kindtag.golden{color:var(--med);border-color:color-mix(in srgb,var(--med) 40%,var(--line2))}
+.item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:none;padding-top:0}
+.item .t{font-size:13.5px;line-height:1.5;flex:1;min-width:0}
+.item .m{font-size:12px;color:var(--dim);margin-top:3px}
+.item form{margin:0}
+.x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;padding:2px 6px}
+.x:hover{color:var(--high)}
+.adder{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.adder .lab{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+.adder textarea{min-height:60px}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs button{font-family:var(--body);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid var(--line2);background:var(--ink);color:var(--mut);cursor:pointer}
+.tabs button.on{color:var(--txt);border-color:var(--brass)}
+.pane{display:none}.pane.on{display:block}
+.rowi{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rowi select,.rowi input{margin:0}
+.rowi select{width:auto}
+.runlab{display:flex;gap:8px;align-items:center}
+.runlab input{margin:0;width:260px}
+.hint{color:var(--dim);font-size:12px;margin-top:6px;line-height:1.5}
+</style>
+
+<div class="page-h" style="margin-bottom:18px">
+  <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between">
+    <span><a href="{{ url_for('evals_home') }}" style="color:var(--brass)">Evals</a> &middot; suite</span>
+    <form method="post" action="{{ url_for('delete_suite', sid=suite.id) }}" onsubmit="return confirm('Delete this suite and its eval runs? The agent conversations and audit trail are kept.');" style="margin:0">
+      <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete suite</button>
+    </form>
+  </div>
+  <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:34px;height:34px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ suite.name }}</h1>
+  <p class="sub">Evaluates <a href="{{ url_for('agent', aid=agent.id) }}" style="color:var(--brass)">{{ agent.name }}</a>. Each run sends every case to the agent in evaluation mode (gated actions are held, never executed), then scores it with every check. Label runs so you can compare an experiment with its baseline.</p>
+</div>
+
+<div class="card" style="margin-bottom:18px">
+  <form method="post" action="{{ url_for('run_suite', sid=suite.id) }}" class="runlab">
+    <input type="text" name="label" placeholder="{{ 'baseline' if not runs else 'what changed, e.g. shorter prompt' }}">
+    <button class="btn brass" type="submit" {{ 'disabled' if not cases or not checks }}>Run suite &rarr;</button>
+    <span class="hint" style="margin:0">{{ cases|length }} case{{ '' if cases|length==1 else 's' }} &times; {{ checks|length }} check{{ '' if checks|length==1 else 's' }}{% if not cases or not checks %} &middot; add at least one case and one check{% endif %}{% if not live %} &middot; sandbox: code and golden checks run, judge checks wait for a live model{% endif %}</span>
+  </form>
+</div>
+
+{% if runs %}
+<div class="section-h"><span class="lbl">Runs</span></div>
+<div class="list" style="margin-bottom:22px">
+  {% for r in runs %}
+  <a class="row" href="{{ url_for('eval_run_view', erid=r.id) }}">
+    <div class="r-main" style="flex:1">
+      <div class="r-title">{{ r.label or 'run' }} <span style="color:var(--dim);font-weight:400;font-size:12px;font-family:var(--mono)">{{ r.id }}</span></div>
+      <div class="r-meta">{{ r.created_at[:16].replace('T',' ') }} &middot; {{ r.snapshot.model }}{% if r.summary %} &middot; {{ r.summary.cases }} cases{% if r.summary.cost %} &middot; ${{ '%.4f'|format(r.summary.cost) }}{% endif %}{% endif %}</div>
+    </div>
+    {% if r.status=='running' %}<span class="pill running">running</span>
+    {% elif r.status=='error' %}<span class="pill error">error</span>
+    {% elif r.summary and r.summary.score is not none %}{% set sc=r.summary.score %}<span class="score {{ 'g' if sc>=0.9 else ('m' if sc>=0.6 else 'b') }}">{{ (sc*100)|round|int }}%</span>
+    {% else %}<span class="score n">no scorable checks</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid g2">
+  <div id="cases">
+    <div class="section-h"><span class="lbl">Cases</span><span style="font-size:12px;color:var(--dim)">{{ cases|length }}</span></div>
+    <div class="card">
+      {% for c in cases %}
+      <div class="item">
+        <div class="t">{{ c.input }}
+          {% if c.expected %}<div class="m">expected: {{ c.expected[:160] }}</div>{% endif %}
+          {% if c.source_run_id %}<div class="m">from conversation <a href="{{ url_for('run_view', rid=c.source_run_id) }}" style="color:var(--brass)">{{ c.source_run_id }}</a></div>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('delete_case', sid=suite.id, cid=c.id) }}"><button class="x" title="remove">&times;</button></form>
+      </div>
+      {% else %}
+      <div style="color:var(--mut);font-size:13px">No cases yet. The best cases come from real conversations, especially ones you marked Wrong.</div>
+      {% endfor %}
+      <div class="adder">
+        <div class="lab">Add a case</div>
+        {% if recent %}
+        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}" class="rowi" style="margin-bottom:10px">
+          <select name="source_run_id" style="flex:1;min-width:200px">
+            <option value="">From a recent conversation…</option>
+            {% for r in recent %}<option value="{{ r.id }}">{{ r.input[:80] }}{{ '…' if r.input|length>80 }}</option>{% endfor %}
+          </select>
+          <button class="btn sm" type="submit">Add</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}">
+          <textarea name="input" placeholder="Or type an input the agent should handle…" required></textarea>
+          <input type="text" name="expected" placeholder="Expected output (optional, used by a golden check)" style="margin-top:8px">
+          <button class="btn sm" type="submit" style="margin-top:8px">Add case</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="checks">
+    <div class="section-h"><span class="lbl">Checks</span><span style="font-size:12px;color:var(--dim)">{{ checks|length }}</span></div>
+    <div class="card">
+      {% for k in checks %}
+      <div class="item">
+        <span class="kindtag {{ k.kind }}" style="margin-top:3px">{{ k.kind }}</span>
+        <div class="t">{{ k.name }}<div class="m">{{ k.desc }}</div></div>
+        <form method="post" action="{{ url_for('delete_check', sid=suite.id, kid=k.id) }}"><button class="x" title="remove">&times;</button></form>
+      </div>
+      {% else %}
+      <div style="color:var(--mut);font-size:13px">No checks yet.</div>
+      {% endfor %}
+      <div class="adder">
+        <div class="lab">Add a check</div>
+        <div class="tabs">
+          <button type="button" class="on" onclick="tab('code')">Code assertion</button>
+          <button type="button" onclick="tab('judge')">LLM as a judge</button>
+          <button type="button" onclick="tab('golden')">Golden</button>
+        </div>
+        <div class="pane on" id="pane-code">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+            <input type="hidden" name="kind" value="code">
+            <div class="rowi">
+              <select name="check" id="ck" onchange="ckChange()" style="flex:1">
+                {% for id, label, arg, desc in code_kinds %}<option value="{{ id }}" data-arg="{{ arg }}" data-desc="{{ desc }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="ckarg" style="margin-top:8px">
+              <input type="text" name="value" id="ckval" placeholder="value">
+              <select id="cktool" style="display:none;width:100%">{% for t in tools %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select>
+            </div>
+            <div class="hint" id="ckdesc"></div>
+            <button class="btn sm" type="submit" style="margin-top:8px">Add check</button>
+          </form>
+          <div class="hint">Deterministic, cheap, and right every time. Try one of these before reaching for a judge.</div>
+        </div>
+        <div class="pane" id="pane-judge">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+            <input type="hidden" name="kind" value="judge">
+            <textarea name="question" placeholder="One yes/no question, e.g. Does the answer state the exact refund amount and the policy it relies on?" required></textarea>
+            <div class="rowi" style="margin-top:8px">
+              <select name="context"><option value="final">Judge sees the final answer</option><option value="final+tools">Judge sees the answer and the tool results</option></select>
+            </div>
+            <button class="btn sm" type="submit" style="margin-top:8px">Add judge</button>
+          </form>
+          <div class="hint">Binary questions only. The judge gets a simpler job than the agent. Mark its verdicts Agree or Disagree on the results page so the suite reports judge error instead of hiding it.{% if not live %} Needs a live model.{% endif %}</div>
+        </div>
+        <div class="pane" id="pane-golden">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+            <input type="hidden" name="kind" value="golden">
+            <div class="rowi">
+              <select name="mode"><option value="contains">Answer contains the expected output</option><option value="exact">Answer equals the expected output</option></select>
+              <button class="btn sm" type="submit">Add golden check</button>
+            </div>
+          </form>
+          <div class="hint">Scores only cases that have an expected output. Best for small inputs with one right answer.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function tab(n){document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('on',['code','judge','golden'][i]===n));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='pane-'+n));}
+function ckChange(){
+  const o=document.getElementById('ck').selectedOptions[0], arg=o.dataset.arg;
+  const v=document.getElementById('ckval'), t=document.getElementById('cktool');
+  document.getElementById('ckdesc').textContent=o.dataset.desc;
+  v.style.display = (arg==='text'||arg==='number') ? '' : 'none';
+  v.type = arg==='number' ? 'number' : 'text'; v.step='0.01';
+  v.placeholder = arg==='number' ? 'number' : 'text';
+  t.style.display = arg==='tool' ? '' : 'none';
+  v.name = arg==='tool' ? 'ignored' : 'value'; t.name = arg==='tool' ? 'value' : 'ignored';
+  v.required = (arg==='text'||arg==='number');
+}
+ckChange();
+</script>
+{% endblock %}

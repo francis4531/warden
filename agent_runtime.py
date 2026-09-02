@@ -305,7 +305,16 @@ def _sandbox_model(messages, tools):
         return tu(k_write,{"path":name,"content":"Written by a Warden agent after human approval."})
     final="[sandbox] Done. "
     was_gated = any(("issue_refund" in c or "write_file" in c) for c in called)
-    final += "Gated action executed after human approval; every step is in the audit log." if was_gated else "Reviewed and no gated action was required."
+    was_held = '"held": true' in text_in or '"held":true' in text_in
+    was_denied = '"denied": true' in text_in or '"denied":true' in text_in
+    if was_denied:
+        final += "The high-risk action was denied by a human approver and was not executed. I have stopped there."
+    elif was_held:
+        final += "The high-risk action is held for human approval and has not been executed; nothing further happens until a person decides."
+    elif was_gated:
+        final += "Gated action executed after human approval; every step is in the audit log."
+    else:
+        final += "Reviewed and no gated action was required."
     return {"stop_reason":"end_turn","content":[{"type":"text","text":final}]}
 
 # ---- the loop ----
@@ -471,7 +480,8 @@ def _start_delegation(run_id, agent, run, b, d):
         return None, json.dumps({"denied": True, "by": "policy", "policy": "team delegation cap",
                                  "note": "This run already delegated %d times, the cap. Finish with what you have." % n})
     depth = int(run.get("depth") or 0) + 1
-    cid = store.create_run(member["id"], task, parent_run_id=run_id, parent_tool_use_id=b["id"], depth=depth)
+    cid = store.create_run(member["id"], task, parent_run_id=run_id, parent_tool_use_id=b["id"], depth=depth,
+                           eval_run_id=run.get("eval_run_id"))
     store.audit(run_id, agent["id"], "delegation", skill=DELEGATE_KEY, risk=d["risk"],
                 detail={"member": member["name"], "member_id": member["id"], "task": task,
                         "child_run": cid, "input": inp, **({"policy": d["policy"]} if d["policy"] else {})})
@@ -495,11 +505,18 @@ def _run_children(run_id, children):
     finally:
         _driving.pop(run_id, None)
 
+EVAL_HOLD_NOTE = ("This action requires human approval. This is an evaluation run, so it was recorded "
+                  "as held and NOT executed. Continue as you would if it were pending review: do not "
+                  "claim it happened, and finish with what you would tell the requester.")
+
 def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
     run = store.get_run(run_id)
+    in_eval = bool(run.get("eval_run_id"))
     blocks=[b for b in assistant_msg["content"] if b.get("type")=="tool_use"]
     for b in blocks:
         d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        if d["effect"]=="gate" and in_eval:
+            continue                      # evals never execute or queue gated actions
         if d["effect"]=="gate":
             ap=_approval_for(run_id,b["id"])
             if ap is None:
@@ -508,7 +525,7 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                 store.audit(run_id, agent["id"], "approval_request", skill=b["name"],
                             risk=d["risk"], detail={"input":b["input"], "policy":d["policy"]})
     for b in blocks:
-        if decide(run_id, agent["id"], b["name"], b["input"], idx)["effect"]=="gate":
+        if not in_eval and decide(run_id, agent["id"], b["name"], b["input"], idx)["effect"]=="gate":
             ap=_approval_for(run_id,b["id"])
             if ap and ap["status"]=="pending":
                 return "paused"
@@ -523,6 +540,8 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
         if d["effect"] == "deny":
             continue
         if d["effect"] == "gate":
+            if in_eval:
+                continue                  # a gated hand-off is held like any other gated action
             ap = _approval_for(run_id, b["id"])
             if not ap or ap["status"] != "approved":
                 continue
@@ -547,11 +566,15 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                               "note":"A governance policy blocked this action. Do not retry; explain that it is not permitted."})
             store.audit(run_id, agent["id"], "policy_denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied","policy":d["policy"]})
+        elif gated and in_eval:
+            rtext=json.dumps({"held":True,"by":"evaluation","note":EVAL_HOLD_NOTE})
+            store.audit(run_id, agent["id"], "eval_held", skill=b["name"], risk=d["risk"],
+                        detail={"input":b["input"],"outcome":"held","policy":d["policy"]})
         elif gated and ap and ap["status"]=="denied":
             rtext=json.dumps({"denied":True,"note":"A human approver denied this action. Do not retry; explain and stop."})
             store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied"})
-        elif b["name"] == DELEGATE_KEY:
+        elif b["name"] == DELEGATE_KEY and not (gated and in_eval):
             if b["id"] in deleg_err:
                 rtext = deleg_err[b["id"]]
             else:

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% set active='evals' %}
+{% block title %}Evals · Warden{% endblock %}
+{% block body %}
+<style>
+.score{font-family:var(--mono);font-weight:600;font-size:13px}
+.score.g{color:var(--low)}.score.m{color:var(--med)}.score.b{color:var(--high)}.score.n{color:var(--dim)}
+.bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;min-width:90px}
+.bar i{display:block;height:100%;background:var(--low)}
+.bar.m i{background:var(--med)}.bar.b i{background:var(--high)}
+.cat{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+.cat:first-child{border-top:none;padding-top:0}
+.cat .cn{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--high);min-width:34px;line-height:1}
+.cat .ct{font-weight:600;font-size:13.5px}
+.cat .ci{font-size:12.5px;color:var(--mut);margin-top:4px;line-height:1.55}
+.cat .ci a{color:var(--brass)}
+.newsuite{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.newsuite select,.newsuite input{margin:0}
+.newsuite select{width:auto;min-width:200px}
+.newsuite input[type=text]{width:220px}
+.fb{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 18px;font-size:13px;align-items:center}
+.fb .h{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.fb b.g{color:var(--low)}.fb b.r{color:var(--high)}
+</style>
+
+<div class="page-h">
+  <div class="eyebrow">Evals</div>
+  <h1>Know whether an agent works, on your terms.</h1>
+  <p class="sub">Agents are probabilistic, so Warden measures rates, not pass/fail. Annotate what goes wrong in real conversations, turn those into eval cases, score them with cheap code checks first and a judge only where judgment is needed, then change one thing and compare against the baseline. Eval runs never execute gated actions.</p>
+</div>
+
+<div class="section-h"><span class="lbl">Suites</span></div>
+<div class="card" style="margin-bottom:12px">
+  <form method="post" action="{{ url_for('create_suite') }}" class="newsuite">
+    <select name="agent_id" required>
+      <option value="">Agent to evaluate…</option>
+      {% for a in agents %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+    </select>
+    <input type="text" name="name" placeholder="Suite name (optional)">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut);margin:0"><input type="checkbox" name="starter" value="1" checked style="margin:0"> add starter checks</label>
+    <button class="btn brass sm" type="submit">New suite</button>
+  </form>
+  <div style="color:var(--dim);font-size:12px;margin-top:8px">Starter checks: finished cleanly, no tool errors, quotes grounded, every high-risk tool the agent holds must reach the gate, and cost under budget when one is set.</div>
+</div>
+{% if suites %}
+<div class="list">
+  {% for s in suites %}
+  <a class="row" href="{{ url_for('suite', sid=s.id) }}">
+    <span class="aico" style="width:28px;height:28px;margin-right:12px">{{ agent_icon(s.agent.icon if s.agent else '', seed=s.agent_id)|safe }}</span>
+    <div class="r-main" style="flex:1">
+      <div class="r-title">{{ s.name }} <span style="color:var(--dim);font-weight:400;font-size:12.5px">&middot; {{ s.agent.name if s.agent else 'deleted agent' }}</span></div>
+      <div class="r-meta">{{ s.cases }} case{{ '' if s.cases==1 else 's' }} &middot; {{ s.checks }} check{{ '' if s.checks==1 else 's' }} &middot; {{ s.runs }} run{{ '' if s.runs==1 else 's' }}{% if s.last %} &middot; last: {{ s.last.label }}{% endif %}</div>
+    </div>
+    {% if s.score is not none %}
+    {% set cls = 'g' if s.score>=0.9 else ('m' if s.score>=0.6 else 'b') %}
+    <span class="bar {{ cls }}" style="margin-right:12px"><i style="width:{{ (s.score*100)|round }}%"></i></span>
+    <span class="score {{ cls }}">{{ (s.score*100)|round|int }}%</span>
+    {% elif s.last and s.last.status=='running' %}<span class="pill running">running</span>
+    {% else %}<span class="score n">no runs</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><h2>No eval suites yet</h2>Pick an agent above. The starter checks give you a governance baseline in one click; add cases from its real conversations.</div>
+{% endif %}
+
+<div class="grid g2" style="margin-top:22px">
+  <div>
+    <div class="section-h"><span class="lbl">Error analysis</span><span style="font-size:12px;color:var(--dim)">{{ total_ann }} annotation{{ '' if total_ann==1 else 's' }}</span></div>
+    <div class="card">
+      {% if cat_rows %}
+      <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">What has gone wrong, grouped and ranked. Fix the top category first, then re-run the suite.</div>
+      {% for c in cat_rows %}
+      <div class="cat">
+        <div class="cn">{{ c.n }}</div>
+        <div style="min-width:0">
+          <div class="ct">{{ c.category }}</div>
+          <div class="ci">{% for a in c.examples %}<a href="{{ url_for('run_view', rid=a.run_id) }}">{{ a.run_id }}</a>{% if a.note %}: {{ a.note[:90] }}{% endif %}{{ ' &middot; '|safe if not loop.last }}{% endfor %}</div>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--mut);font-size:13px;line-height:1.6">Nothing annotated yet. Open any conversation and mark the answer <b>Good</b> or <b>Wrong</b> with a category. Wrong answers show up here, ranked by how often each kind of mistake happens, and any conversation can be added to a suite as a case.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div>
+    <div class="section-h"><span class="lbl">Human feedback</span></div>
+    <div class="card">
+      <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Explicit: Good / Wrong marks on answers. Implicit: every approval decision is a human judging an action. A rising denial rate is an eval signal on its own.</div>
+      {% if feedback %}
+      <div class="fb">
+        <span class="h">agent</span><span class="h">good / wrong</span><span class="h">approved / denied</span><span class="h">denial rate</span>
+        {% for f in feedback %}
+        <span>{{ f.agent.name }}</span>
+        <span><b class="g">{{ f.up }}</b> / <b class="r">{{ f.down }}</b></span>
+        <span><b class="g">{{ f.approved }}</b> / <b class="r">{{ f.denied }}</b></span>
+        <span class="score {{ 'n' if f.denial_rate is none else ('g' if f.denial_rate<0.1 else ('m' if f.denial_rate<0.3 else 'b')) }}">{{ 'n/a' if f.denial_rate is none else ((f.denial_rate*100)|round|int ~ '%') }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:var(--mut);font-size:13px">No feedback yet. It accrues as you mark answers and decide approvals.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

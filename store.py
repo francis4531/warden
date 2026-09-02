@@ -83,6 +83,26 @@ def init():
         c.execute("ALTER TABLE runs ADD COLUMN parent_tool_use_id TEXT")
     if "depth" not in rcols:
         c.execute("ALTER TABLE runs ADD COLUMN depth INTEGER DEFAULT 0")
+    # evals: a run created by an eval suite carries the eval run id; gated actions are held, not executed
+    if "eval_run_id" not in rcols:
+        c.execute("ALTER TABLE runs ADD COLUMN eval_run_id TEXT")
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS eval_suites(
+      id TEXT PRIMARY KEY, agent_id TEXT, owner TEXT, name TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS eval_cases(
+      id TEXT PRIMARY KEY, suite_id TEXT, input TEXT, expected TEXT, source_run_id TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS eval_checks(
+      id TEXT PRIMARY KEY, suite_id TEXT, kind TEXT, name TEXT, config TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS eval_runs(
+      id TEXT PRIMARY KEY, suite_id TEXT, label TEXT, snapshot TEXT, status TEXT,
+      summary TEXT, created_at TEXT, finished_at TEXT);
+    CREATE TABLE IF NOT EXISTS eval_results(
+      id TEXT PRIMARY KEY, eval_run_id TEXT, case_id TEXT, run_id TEXT, check_id TEXT,
+      passed INTEGER, detail TEXT, human_label TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS annotations(
+      id TEXT PRIMARY KEY, run_id TEXT, agent_id TEXT, owner TEXT, verdict TEXT,
+      category TEXT, note TEXT, created_at TEXT);
+    """)
     c.commit(); c.close()
 
 def _agent_row(r):
@@ -144,14 +164,14 @@ def leads_of(agent_id):
     return [_agent_row(r) for r in rows if agent_id in (json.loads(r["members"] or "[]"))]
 
 # ---- runs ----
-def create_run(agent_id, user_input, parent_run_id=None, parent_tool_use_id=None, depth=0):
+def create_run(agent_id, user_input, parent_run_id=None, parent_tool_use_id=None, depth=0, eval_run_id=None):
     c = _conn(); rid = _id("run")
     ag = c.execute("SELECT owner FROM agents WHERE id=?", (agent_id,)).fetchone()
     owner = ag["owner"] if ag else ""
     c.execute("INSERT INTO runs(id,agent_id,input,status,transcript,created_at,updated_at,owner,"
-              "parent_run_id,parent_tool_use_id,depth) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+              "parent_run_id,parent_tool_use_id,depth,eval_run_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
               (rid, agent_id, user_input, "running", json.dumps([]), now(), now(), owner or "",
-               parent_run_id, parent_tool_use_id, int(depth or 0)))
+               parent_run_id, parent_tool_use_id, int(depth or 0), eval_run_id))
     c.commit(); c.close(); return rid
 
 def child_runs(rid):
@@ -197,7 +217,7 @@ def list_runs(limit=50, owner=None, top_level=True):
     """Runs newest first. Member runs (delegated by a lead) are hidden by default; they
     are reached through the lead's conversation."""
     c = _conn()
-    where = ["(parent_run_id IS NULL OR parent_run_id='')"] if top_level else []
+    where = ["(parent_run_id IS NULL OR parent_run_id='')", "(eval_run_id IS NULL OR eval_run_id='')"] if top_level else []
     args = []
     if owner is not None:
         where.append("owner=?"); args.append(owner)
@@ -436,3 +456,135 @@ def delete_orphan_agents():
         c.execute("DELETE FROM agents WHERE id=?", (aid,))
     c.commit(); c.close()
     return len(ids)
+
+# ---- evals ----
+def _rows(c, q, args=()):
+    rows = c.execute(q, args).fetchall()
+    return [dict(r) for r in rows]
+
+def create_suite(agent_id, owner, name):
+    c = _conn(); sid = _id("es")
+    c.execute("INSERT INTO eval_suites VALUES(?,?,?,?,?)", (sid, agent_id, owner or "", name, now()))
+    c.commit(); c.close(); return sid
+
+def get_suite(sid):
+    c = _conn(); r = c.execute("SELECT * FROM eval_suites WHERE id=?", (sid,)).fetchone(); c.close()
+    return dict(r) if r else None
+
+def list_suites(owner=None, agent_id=None):
+    c = _conn(); q = "SELECT * FROM eval_suites"; w = []; a = []
+    if owner is not None: w.append("owner=?"); a.append(owner)
+    if agent_id: w.append("agent_id=?"); a.append(agent_id)
+    if w: q += " WHERE " + " AND ".join(w)
+    out = _rows(c, q + " ORDER BY created_at DESC", tuple(a)); c.close(); return out
+
+def delete_suite(sid):
+    c = _conn()
+    for t in ("eval_cases", "eval_checks"):
+        c.execute("DELETE FROM %s WHERE suite_id=?" % t, (sid,))
+    for er in c.execute("SELECT id FROM eval_runs WHERE suite_id=?", (sid,)).fetchall():
+        c.execute("DELETE FROM eval_results WHERE eval_run_id=?", (er["id"],))
+    c.execute("DELETE FROM eval_runs WHERE suite_id=?", (sid,))
+    c.execute("DELETE FROM eval_suites WHERE id=?", (sid,))
+    c.commit(); c.close()
+
+def add_case(suite_id, text, expected="", source_run_id=None):
+    c = _conn(); cid = _id("ec")
+    c.execute("INSERT INTO eval_cases VALUES(?,?,?,?,?,?)", (cid, suite_id, text, expected or "", source_run_id, now()))
+    c.commit(); c.close(); return cid
+
+def delete_case(cid):
+    c = _conn(); c.execute("DELETE FROM eval_cases WHERE id=?", (cid,)); c.commit(); c.close()
+
+def list_cases(suite_id):
+    c = _conn(); out = _rows(c, "SELECT * FROM eval_cases WHERE suite_id=? ORDER BY created_at", (suite_id,)); c.close(); return out
+
+def add_check(suite_id, kind, name, config):
+    c = _conn(); kid = _id("ek")
+    c.execute("INSERT INTO eval_checks VALUES(?,?,?,?,?,?)", (kid, suite_id, kind, name, json.dumps(config or {}), now()))
+    c.commit(); c.close(); return kid
+
+def delete_check(kid):
+    c = _conn(); c.execute("DELETE FROM eval_checks WHERE id=?", (kid,)); c.commit(); c.close()
+
+def list_checks(suite_id):
+    c = _conn(); rows = _rows(c, "SELECT * FROM eval_checks WHERE suite_id=? ORDER BY created_at", (suite_id,)); c.close()
+    for r in rows: r["config"] = json.loads(r["config"] or "{}")
+    return rows
+
+def get_check(kid):
+    c = _conn(); r = c.execute("SELECT * FROM eval_checks WHERE id=?", (kid,)).fetchone(); c.close()
+    if not r: return None
+    d = dict(r); d["config"] = json.loads(d["config"] or "{}"); return d
+
+def create_eval_run(suite_id, label, snapshot):
+    c = _conn(); erid = _id("ev")
+    c.execute("INSERT INTO eval_runs VALUES(?,?,?,?,?,?,?,?)",
+              (erid, suite_id, label or "", json.dumps(snapshot), "running", None, now(), None))
+    c.commit(); c.close(); return erid
+
+def finish_eval_run(erid, summary, status="done"):
+    c = _conn(); c.execute("UPDATE eval_runs SET status=?, summary=?, finished_at=? WHERE id=?",
+                           (status, json.dumps(summary), now(), erid)); c.commit(); c.close()
+
+def get_eval_run(erid):
+    c = _conn(); r = c.execute("SELECT * FROM eval_runs WHERE id=?", (erid,)).fetchone(); c.close()
+    if not r: return None
+    d = dict(r); d["snapshot"] = json.loads(d["snapshot"] or "{}"); d["summary"] = json.loads(d["summary"] or "null"); return d
+
+def list_eval_runs(suite_id, limit=50):
+    c = _conn(); rows = _rows(c, "SELECT * FROM eval_runs WHERE suite_id=? ORDER BY created_at DESC LIMIT ?", (suite_id, limit)); c.close()
+    for d in rows:
+        d["snapshot"] = json.loads(d["snapshot"] or "{}"); d["summary"] = json.loads(d["summary"] or "null")
+    return rows
+
+def add_result(erid, case_id, run_id, check_id, passed, detail):
+    c = _conn(); rid = _id("er")
+    c.execute("INSERT INTO eval_results VALUES(?,?,?,?,?,?,?,?,?)",
+              (rid, erid, case_id, run_id, check_id, (None if passed is None else (1 if passed else 0)),
+               json.dumps(detail) if detail is not None else None, None, now()))
+    c.commit(); c.close(); return rid
+
+def label_result(rid, label):
+    c = _conn(); c.execute("UPDATE eval_results SET human_label=? WHERE id=?", (label or None, rid)); c.commit(); c.close()
+
+def list_results(erid):
+    c = _conn(); rows = _rows(c, "SELECT * FROM eval_results WHERE eval_run_id=? ORDER BY created_at", (erid,)); c.close()
+    for r in rows: r["detail"] = json.loads(r["detail"]) if r["detail"] else None
+    return rows
+
+def get_result(rid):
+    c = _conn(); r = c.execute("SELECT * FROM eval_results WHERE id=?", (rid,)).fetchone(); c.close()
+    return dict(r) if r else None
+
+# ---- annotations (error analysis + explicit feedback) ----
+def annotate(run_id, agent_id, owner, verdict, category, note):
+    c = _conn(); aid = _id("an")
+    c.execute("INSERT INTO annotations VALUES(?,?,?,?,?,?,?,?)",
+              (aid, run_id, agent_id, owner or "", verdict or "", (category or "").strip(), (note or "").strip(), now()))
+    c.commit(); c.close(); return aid
+
+def annotations_for_run(run_id):
+    c = _conn(); out = _rows(c, "SELECT * FROM annotations WHERE run_id=? ORDER BY created_at", (run_id,)); c.close(); return out
+
+def list_annotations(owner=None, limit=500):
+    c = _conn()
+    if owner is None:
+        out = _rows(c, "SELECT * FROM annotations ORDER BY created_at DESC LIMIT ?", (limit,))
+    else:
+        out = _rows(c, "SELECT * FROM annotations WHERE owner=? ORDER BY created_at DESC LIMIT ?", (owner, limit))
+    c.close(); return out
+
+def delete_annotation(aid):
+    c = _conn(); c.execute("DELETE FROM annotations WHERE id=?", (aid,)); c.commit(); c.close()
+
+def approval_stats_by_agent(agent_ids):
+    """Approved / denied counts per agent: the implicit human-feedback signal."""
+    if not agent_ids: return {}
+    c = _conn()
+    q = "SELECT agent_id, status, COUNT(*) n FROM approvals WHERE agent_id IN (%s) GROUP BY agent_id, status" % ",".join("?" * len(agent_ids))
+    rows = c.execute(q, tuple(agent_ids)).fetchall(); c.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r["agent_id"], {})[r["status"]] = r["n"]
+    return out

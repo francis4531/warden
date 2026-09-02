@@ -55,6 +55,26 @@
 .deleg.err{border-left-color:var(--high)}
 .gate .g-member{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);margin-top:6px}
 .gate .g-member b{color:var(--txt);font-weight:600}
+/* evaluation mode + feedback */
+.evalnote{border:1px solid color-mix(in srgb,var(--brass) 40%,var(--line));background:color-mix(in srgb,var(--brass) 7%,var(--ink2));border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--mut);margin-bottom:10px}
+.evalnote a{color:var(--brass)}
+.chip.held{border-color:color-mix(in srgb,var(--high) 40%,var(--line))}
+.chip.held .h{color:var(--high)}
+.fbbar{display:none;margin:14px 0 4px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);padding:12px 14px}
+.fbbar.on{display:block}
+.fbbar .q{font-size:12.5px;color:var(--mut);margin-bottom:8px}
+.fbbar .r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fbbar select,.fbbar input{margin:0}
+.fbbar select{width:auto}
+.fbbar input[type=text]{flex:1;min-width:180px}
+.fbbar .btn.good{color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))}
+.fbbar .btn.good.on{background:color-mix(in srgb,var(--low) 14%,var(--ink3))}
+.fbbar .btn.bad{color:var(--high);border-color:color-mix(in srgb,var(--high) 40%,var(--line2))}
+.fbbar .btn.bad.on{background:color-mix(in srgb,var(--high) 14%,var(--ink3))}
+.fbbar .done{font-size:12.5px;color:var(--mut)}
+.fbbar .done b{color:var(--txt)}
+.ann{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:6px}
+.ann .v.up{color:var(--low)}.ann .v.down{color:var(--high)}
 </style>
 
 <div class="page-h" style="margin-bottom:12px">
@@ -67,9 +87,32 @@
   </div>
 </div>
 
+{% if eval_run %}<div class="evalnote">Evaluation run for <a href="{{ url_for('eval_run_view', erid=eval_run.id) }}">{{ eval_run.label or eval_run.id }}</a>. Anything that needed approval was held and not executed.</div>{% endif %}
 <div id="chat"></div>
 <div id="gate"></div>
 <div id="activity" class="activity" style="display:none"><span class="livedot"></span><span id="activitytext">working&hellip;</span></div>
+
+<div id="fbbar" class="fbbar">
+  {% if annotations %}
+  <div class="done">Marked <b>{{ 'good' if annotations[-1].verdict=='up' else ('wrong' if annotations[-1].verdict=='down' else 'noted') }}</b>{% if annotations[-1].category %} &middot; {{ annotations[-1].category }}{% endif %}{% if annotations[-1].note %} &middot; {{ annotations[-1].note }}{% endif %}
+    {% if suites %} &middot; <form method="post" action="{{ url_for('add_case', sid=suites[0].id) }}" style="display:inline;margin:0"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button class="x" style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12.5px;padding:0">Add to {{ suites[0].name }} &rarr;</button></form>
+    {% else %} &middot; <form method="post" action="{{ url_for('create_suite') }}" style="display:inline;margin:0"><input type="hidden" name="agent_id" value="{{ agent.id }}"><input type="hidden" name="starter" value="1"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12.5px;padding:0">Start an eval suite from this &rarr;</button></form>{% endif %}
+  </div>
+  {% else %}
+  <div class="q">Was this answer right? Marking it feeds error analysis on the Evals page.</div>
+  <form method="post" action="{{ url_for('annotate_run', rid=run.id) }}" class="r" id="fbform">
+    <input type="hidden" name="verdict" id="fbverdict" value="">
+    <button type="button" class="btn sm good" onclick="fbPick('up')">Good</button>
+    <button type="button" class="btn sm bad" onclick="fbPick('down')">Wrong</button>
+    <select name="category" id="fbcat" style="display:none">
+      <option value="">what went wrong…</option>
+      {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+    </select>
+    <input type="text" name="note" placeholder="note (optional)">
+    <button class="btn brass sm" type="submit">Save</button>
+  </form>
+  {% endif %}
+</div>
 
 <div class="composer">
   <form id="composer" onsubmit="return false">
@@ -162,6 +205,8 @@ function renderChat(events){
       flush(); html+=`<div class="msg budget"><div class="who">&#9209; ${e.scope==='team'?'team budget reached':'budget reached'}</div>${esc(e.text)}</div>`;
     } else if(e.kind==='tool_result' || e.kind==='tool_result_gated'){
       chips+=`<span class="chip">used <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
+    } else if(e.kind==='eval_held'){
+      chips+=`<span class="chip held"><span class="h">held</span> <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){
       chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">denied</span></span>`;
     }
@@ -236,9 +281,16 @@ async function poll(){
   inp.disabled=busy; btn.disabled=busy;
   hint.textContent = d.status==='awaiting_approval' ? ((d.waiting_on||[]).length ? 'A team member is waiting on you. Resolve the approval above to continue.' : 'Resolve the approval above to continue.') : (d.status==='running' ? (d.team?'Team is working\u2026':'Agent is working\u2026') : '');
   if(atBottom && (chatChanged || busy)) window.scrollTo(0,document.body.scrollHeight);
+  document.getElementById('fbbar').classList.toggle('on', !busy && d.events.some(e=>e.kind==='final'));
   if(busy) setTimeout(poll, d.status==='running'?900:2500);
   else if(!inp.disabled){ inp.focus(); }
 }
 poll();
+function fbPick(v){
+  document.getElementById('fbverdict').value=v;
+  document.querySelector('.fbbar .good').classList.toggle('on',v==='up');
+  document.querySelector('.fbbar .bad').classList.toggle('on',v==='down');
+  document.getElementById('fbcat').style.display = v==='down' ? '' : 'none';
+}
 </script>
 {% endblock %}
