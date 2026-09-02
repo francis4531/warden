@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Warden{% endblock %}</title>
-<script>(function(){try{var t=localStorage.getItem('warden-theme');if(t!=='dark'&&t!=='light')t='light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
+<script>(function(){try{var t=localStorage.getItem('warden-theme');if(t!=='dark'&&t!=='light')t='dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -241,7 +241,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
     try{localStorage.setItem('warden-theme',t);}catch(e){}
     document.querySelectorAll('[data-theme-set]').forEach(b=>b.classList.toggle('on',b.dataset.themeSet===t));}
   document.querySelectorAll('[data-theme-set]').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.themeSet)));
-  apply(document.documentElement.getAttribute('data-theme')||'light');
+  apply(document.documentElement.getAttribute('data-theme')||'dark');
 })();
 </script>
 <script>
