@@ -20,6 +20,8 @@ SKILLS = {
     # team hand-off: a lead delegating to a member. Auto by default (the member's own
     # tools stay governed); override to HIGH to make every hand-off ask a human first.
     "delegate":        {"risk":"MED","gate":"auto","kind":"delegate"},
+    # asking the operator to connect a capability; no side effects until a human connects it
+    "request_connection": {"risk":"LOW","gate":"auto","kind":"request"},
 }
 
 READ_HINTS  = ("get","list","read","search","lookup","fetch","find","query","view",

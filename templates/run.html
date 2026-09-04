@@ -74,6 +74,18 @@
 .fbbar .done{font-size:12.5px;color:var(--mut)}
 .fbbar .done b{color:var(--txt)}
 .ann{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:6px}
+/* capability requests */
+.req{margin:12px 0;border:1.5px solid var(--brass);border-radius:14px;padding:16px 20px;background:color-mix(in srgb,var(--brass) 7%,var(--ink2));max-width:92%}
+.req .eye{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--brass)}
+.req .title{font-family:var(--disp);font-size:17px;font-weight:650;margin:6px 0 4px}
+.req .sub{color:var(--mut);font-size:13px;line-height:1.55}
+.req .opts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.req .opt{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ink)}
+.req .opt .on{font-weight:600;font-size:13.5px}
+.req .opt .od{color:var(--mut);font-size:12px;margin-top:2px}
+.req .opt .btn{margin-left:auto;flex:none}
+.req.done{border-color:color-mix(in srgb,var(--low) 50%,var(--line));background:color-mix(in srgb,var(--low) 6%,var(--ink2))}
+.req.done .eye{color:var(--low)}
 .ann .v.up{color:var(--low)}.ann .v.down{color:var(--high)}
 </style>
 
@@ -166,7 +178,19 @@ function md(src){
   return out.join('');
 }
 
-let DELEG={};
+let DELEG={}, REQS=[], ADMIN=false;
+function renderReq(e){
+  const q = REQS.find(x=>x.need===e.text) || {need:e.text, matches:[], fulfilled:false};
+  if(q.fulfilled){
+    return `<div class="req done"><div class="eye">&#10003; connected</div><div class="title">${esc(q.need)}</div><div class="sub">The requested capability is connected and granted to this agent.</div></div>`;
+  }
+  const opts = q.matches.length ? q.matches.map(m=>`<div class="opt"><div><div class="on">${esc(m.name)}${m.connected?' <span class="pill done">connected, not granted</span>':''}</div><div class="od">${m.source==='catalog'?'official server in the Warden catalog':'found in the MCP Registry'}</div></div>${m.connected?`<button class="btn brass sm" onclick="grantReq('${m.sid}')">Grant to this agent &rarr;</button>`:(ADMIN?`<a class="btn brass sm" href="${m.url}">Connect &amp; grant &rarr;</a>`:'')}</div>`).join('')
+    : `<div class="opt"><div><div class="on">No catalog match</div><div class="od">An admin can search the MCP Registry for &ldquo;${esc(q.keywords||'')}&rdquo; from the Connections page.</div></div></div>`;
+  return `<div class="req"><div class="eye">&#9673; needs a connection</div>
+    <div class="title">${'{{ agent.name|e }}'} needs: ${esc(q.need)}</div>
+    <div class="sub">${ADMIN?'Connect it and the tools are granted to this agent; the conversation resumes on its own.':(q.matches.some(m=>m.connected)?'Already connected in this studio. Grant it and the conversation resumes on its own.':'Ask your Warden admin to connect this. Once granted, the conversation resumes on its own.')}</div>
+    <div class="opts">${opts}</div></div>`;
+}
 function renderDeleg(d){
   if(!d) return '';
   const st = d.status==='awaiting_approval' ? 'wait' : (d.status==='error' ? 'err' : (d.status==='running' ? 'wait' : ''));
@@ -186,6 +210,12 @@ function renderChat(events){
   const flush=()=>{ if(chips){ html+=`<div>${chips}</div>`; chips=''; } };
   const shown=new Set();
   for(const e of events){
+    if(e.kind==='connection_request'){
+      flush(); html+=renderReq(e); continue;
+    }
+    if(e.kind==='connection_granted'){
+      flush(); html+=`<div class="msg user" style="border-left:2px solid var(--low)"><div class="who">warden</div>${esc(e.text)}</div>`; continue;
+    }
     if(e.kind==='delegation'){
       flush();
       if(e.child_run && !shown.has(e.child_run)){ shown.add(e.child_run); html+=renderDeleg(DELEG[e.child_run]); }
@@ -254,7 +284,7 @@ window.addEventListener('scroll',()=>{atBottom=(window.innerHeight+window.scroll
 
 async function poll(){
   let d; try{ d=await(await fetch(`/run/${RID}/events`)).json(); }catch(e){ setTimeout(poll,1500); return; }
-  DELEG={}; (d.delegations||[]).forEach(x=>{ DELEG[x.run]=x; });
+  DELEG={}; (d.delegations||[]).forEach(x=>{ DELEG[x.run]=x; }); REQS=d.requests||[]; ADMIN=!!d.admin;
   const chatHtml=renderChat(d.events);
   const chatChanged = chatHtml!==lastChat;
   if(chatChanged){ document.getElementById('chat').innerHTML=chatHtml; lastChat=chatHtml; }   // only re-render on real change
@@ -286,6 +316,10 @@ async function poll(){
   else if(!inp.disabled){ inp.focus(); }
 }
 poll();
+async function grantReq(sid){
+  const r=await (await fetch('/connections/grant',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'fetch'},body:'id='+encodeURIComponent(sid)+'&grant_to='+encodeURIComponent({{ agent.id|tojson }})+'&resume='+encodeURIComponent(RID)})).json();
+  poll();
+}
 function fbPick(v){
   document.getElementById('fbverdict').value=v;
   document.querySelector('.fbbar .good').classList.toggle('on',v==='up');

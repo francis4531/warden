@@ -22,6 +22,7 @@ SANDBOX = not bool(os.environ.get("ANTHROPIC_API_KEY"))
 # never sees a member's tools. Delegation is governed like any other tool: it has a risk
 # tier, it can be gated or denied by policy, and every hand-off is on the audit record.
 DELEGATE_KEY = "team__delegate"
+REQUEST_KEY = "warden__request_connection"
 MAX_DEPTH = int(os.environ.get("WARDEN_MAX_DELEGATION_DEPTH", "1"))      # lead -> member only
 MAX_DELEGATIONS = int(os.environ.get("WARDEN_MAX_DELEGATIONS", "8"))     # per lead run
 
@@ -80,7 +81,47 @@ def tool_index():
     for t in _cm().all_tools():
         idx[t["key"]] = {"tool": t["tool"], "desc": t["description"], "server": t["server_name"]}
     idx[DELEGATE_KEY] = {"tool": "delegate", "desc": "Hand a task to a team member agent.", "server": "Team"}
+    idx[REQUEST_KEY] = {"tool": "request_connection", "desc": "Ask the operator to connect a server this agent needs.", "server": "Warden"}
     return idx
+
+REQUEST_TOOL = {
+    "name": REQUEST_KEY,
+    "description": ("Ask the Warden operator to connect a capability you need but do not have (for example an "
+                    "email inbox, a calendar, a CRM, a database, a ticketing system). Warden keeps a catalog of "
+                    "official MCP servers and can connect one and grant you its tools. Call this instead of "
+                    "telling the user to install software, edit configuration files, or use another product. "
+                    "After calling it, tell the user what you asked for and what you will do once it is connected, then stop."),
+    "input_schema": {"type": "object", "required": ["need", "keywords"],
+                     "properties": {"need": {"type": "string", "description": "What you need to do, in one sentence, e.g. read and prioritize the user's Gmail inbox."},
+                                    "keywords": {"type": "string", "description": "Short search terms for the catalog, e.g. gmail, email, google."}}}}
+
+def find_connections(keywords, need=""):
+    """Match a capability request against the catalog (and the MCP Registry as a fallback).
+    Returns [{id, name, desc, connected, source}] best first."""
+    import catalog as cat
+    terms = [t for t in re.split(r"[^a-z0-9]+", (keywords + " " + need).lower()) if len(t) > 2]
+    st = {s_["id"]: s_ for s_ in _cm().connected_servers()}
+    scored = []
+    for e in cat.CATALOG:
+        hay = (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()
+        score = sum(3 if t in e["name"].lower() or t in e["id"] else (1 if t in hay else 0) for t in terms)
+        if score:
+            scored.append((score, {"id": e["id"], "name": e["name"], "desc": e.get("desc", ""), "source": "catalog",
+                                   "connected": e["id"] in st and st[e["id"]]["status"] == "connected",
+                                   "transport": e["transport"], "auth": e.get("auth", "")}))
+    scored.sort(key=lambda x: -x[0])
+    top = scored[0][0] if scored else 0
+    out = [m for sc, m in scored if sc >= 0.6 * top][:3]
+    if not out:
+        try:
+            import registry
+            r = registry.search(keywords, limit=3)
+            for it in r.get("results", []):
+                out.append({"id": None, "name": it["display"], "desc": it.get("description", ""), "source": "registry",
+                            "connected": False, "registry": it})
+        except Exception:
+            pass
+    return out
 
 def members_of(agent):
     """Resolved member agents of a lead, in the order they were added. Members that no
@@ -159,6 +200,7 @@ def tools_for(agent, depth=0):
         dt = delegate_tool(agent)
         if dt:
             out.append(dt)
+    out.append(REQUEST_TOOL)
     return out
 
 # ---- model dispatch ----
@@ -263,6 +305,20 @@ def _sandbox_model(messages, tools):
     money = any(w in user_text for w in ["refund","charged twice","double charge","duplicate","make it right","money back"])
     def tu(key, inp):
         return {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"sbx_"+key,"name":key,"input":inp}]}
+    # capability request: if the ask mentions something no granted tool covers, ask Warden for it
+    k_req = _find_key(tools, "request_connection")
+    if k_req and k_req not in called:
+        wants = {"gmail": "gmail, email, google", "email": "email, gmail", "inbox": "email, gmail",
+                 "calendar": "calendar, google", "slack": "slack, chat", "jira": "jira, atlassian",
+                 "salesforce": "salesforce, crm", "hubspot": "hubspot, crm", "notion": "notion, docs",
+                 "file": "files, filesystem, workspace", "folder": "files, filesystem"}
+        for w, kw in wants.items():
+            if w in user_text and not any(w in t["name"].lower() for t in tools):
+                return tu(k_req, {"need": user_raw.strip()[:200], "keywords": kw})
+    granted_since = any(m.get("role") == "user" and isinstance(m.get("content"), str) and "is now connected" in m["content"] for m in messages)
+    if k_req and k_req in called and not granted_since:
+        return {"stop_reason":"end_turn","content":[{"type":"text","text":
+                "[sandbox] I asked Warden to connect the capability this needs. Once the operator connects it and grants me its tools, this conversation resumes and I will do the work."}]}
     # team lead: hand the request to each member in turn, then summarize what came back
     k_del = _find_key(tools, "delegate")
     if k_del:
@@ -355,13 +411,36 @@ def advance(run_id):
 
 _driving = {}   # parent run_id -> True while its own thread is running member runs
 
+def situational_context(agent, tools, idx):
+    """What every agent is told about where it runs. The agent must reason from its real
+    tool grants, not from generic assumptions about what a chatbot can or cannot do."""
+    real = [t for t in tools if t["name"] not in (REQUEST_KEY, DELEGATE_KEY)]
+    by_server = {}
+    for t in real:
+        info = idx.get(t["name"], {"tool": t["name"], "server": "?"})
+        by_server.setdefault(info["server"], []).append(info["tool"])
+    lines = ["- %s: %s" % (srv, ", ".join(names)) for srv, names in by_server.items()] or ["- (no tools granted yet)"]
+    return ("You are %s, an agent running inside Warden, an enterprise AI agent studio. Warden connects "
+            "tools to you over MCP and governs every call: low-risk actions run on their own, high-impact "
+            "actions pause for a human to approve, and everything is recorded on an audit trail.\n\n"
+            "Your granted tools right now:\n%s\n\n"
+            "Rules:\n"
+            "1. Reason only from the tools listed above. Do not claim abilities you do not have, and do not "
+            "deny abilities Warden can add.\n"
+            "2. If the task needs a capability you lack (an inbox, calendar, CRM, database, ticketing, files, "
+            "the web, anything), call request_connection with what you need. Warden's operator can connect an "
+            "official server from the catalog and grant you its tools in one step. Never tell the user to "
+            "install software, edit configuration files, or use a different product.\n"
+            "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
+            "you will do once it is connected, then stop and wait.\n"
+            "4. Never state that an action happened unless a tool result confirms it."
+            % (agent["name"], "\n".join(lines)))
+
 def _advance_once(run_id):
     run = store.get_run(run_id); agent = store.get_agent(run["agent_id"])
     depth = int(run.get("depth") or 0)
-    system = (agent["instructions"] or "") + \
-        "\n\nYou operate under Warden governance. High-impact actions may require human " \
-        "approval before they execute; use the tools available and Warden gates what needs a human."
     tools = tools_for(agent, depth); idx = tool_index(); messages = run["transcript"]
+    system = (agent["instructions"] or "") + "\n\n" + situational_context(agent, tools, idx)
     if any(t["name"] == DELEGATE_KEY for t in tools):
         system += ("\n\nYou lead a team. Use delegate to hand well-defined tasks to members; each member "
                    "works under its own tool grants and approvals, and you only receive its written result. "
@@ -574,6 +653,19 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
             rtext=json.dumps({"denied":True,"note":"A human approver denied this action. Do not retry; explain and stop."})
             store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied"})
+        elif b["name"] == REQUEST_KEY:
+            inp = b["input"] if isinstance(b["input"], dict) else {}
+            matches = find_connections(str(inp.get("keywords") or ""), str(inp.get("need") or ""))
+            store.audit(run_id, agent["id"], "connection_request", skill=REQUEST_KEY, risk=d["risk"],
+                        detail={"input": inp, "need": inp.get("need"), "keywords": inp.get("keywords"),
+                                "matches": [{"id": m["id"], "name": m["name"], "source": m["source"], "connected": m["connected"]} for m in matches],
+                                "outcome": "ok", "status": "open"})
+            already = [m["name"] for m in matches if m["connected"]]
+            rtext = json.dumps({"requested": True,
+                                "matches": [m["name"] for m in matches] or ["no catalog match; the operator was asked to search the MCP Registry"],
+                                "already_connected_but_not_granted": already,
+                                "note": "The operator has been shown a one-click option to connect this and grant you its tools. "
+                                        "Tell the user what you asked for and what you will do once it is connected, then stop."})
         elif b["name"] == DELEGATE_KEY and not (gated and in_eval):
             if b["id"] in deleg_err:
                 rtext = deleg_err[b["id"]]

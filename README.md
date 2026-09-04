@@ -22,6 +22,18 @@ the model, but the governance around letting an agent act.
 - **Real audit.** Every thought, tool call, result, and approval decision is written to
   an append-only log, per-run and studio-wide, each stamped with its risk tier.
 
+## Agents know where they run
+
+Every agent's system prompt states that it runs inside Warden, lists its granted tools by
+server, and forbids the usual chatbot failure modes: claiming abilities it lacks, denying
+abilities Warden can add, or telling the user to edit configuration files. When a task needs
+a capability the agent does not have, it calls `request_connection(need, keywords)`. Warden
+matches the request against the catalog (and the MCP Registry as a fallback), records it on
+the audit trail, and shows a card in the conversation. An admin connects the server from that
+card; its tools are granted to the requesting agent and the conversation resumes on its own.
+Open requests are listed on the Connections page. Requesting is a LOW-risk governed action,
+so a policy can gate or deny agents asking for capabilities.
+
 ## Teams
 
 Any agent can be given member agents in the builder; that makes it a team lead with one
