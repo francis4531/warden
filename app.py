@@ -17,7 +17,7 @@ import registry
 import icons
 import evals
 
-WARDEN_VERSION = "0.5"
+WARDEN_VERSION = "0.6"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -323,7 +323,11 @@ def connections():
     return render_template("connections.html", catalog=merged_catalog(), status=status,
                            enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                           tools=connected_tools(), discover=discover, discover_q=dq)
+                           tools=connected_tools(), discover=discover, discover_q=dq,
+                           requests=_all_open_requests(),
+                           grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
+                           connect_id=request.args.get("connect", ""),
+                           grant_agent=store.get_agent(request.args.get("grant_to", "")) if request.args.get("grant_to") else None)
 
 @app.route("/connections/enable", methods=["POST"])
 def enable_connection():
@@ -335,9 +339,16 @@ def enable_connection():
     url = request.form.get("url") or entry.get("run")
     store.enable_connection(cid, transport, command=command, url=url, token=token)
     st = cm().connect_spec({"id": cid, "transport": transport, "command": command, "url": url, "token": token})
+    grant_to, resume = request.form.get("grant_to"), request.form.get("resume")
+    granted = False
+    if grant_to and (st or {}).get("status") == "connected":
+        _grant_and_resume(cid, grant_to, resume); granted = True
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "status": (st or {}).get("status"), "error": (st or {}).get("error"),
-                "tool_count": (st or {}).get("tool_count", 0)}
+                "tool_count": (st or {}).get("tool_count", 0), "granted": granted,
+                "resume_url": url_for("run_view", rid=resume) if (granted and resume) else None}
+    if granted and resume:
+        return redirect(url_for("run_view", rid=resume))
     return redirect(url_for("connections"))
 
 @app.route("/connections/disable", methods=["POST"])
@@ -625,6 +636,10 @@ def _fmt_event(e):
            "text": text}
     if kind in ("delegation", "delegation_result"):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
+    if kind == "connection_request":
+        out["text"] = d.get("need") or ""
+    if kind == "connection_granted":
+        out["text"] = d.get("text") or ""
     if kind == "eval_held":
         out["text"] = " ".join(_json.dumps(d.get("input"), ensure_ascii=False).split())[:200]
     if kind == "budget_stop" and d.get("scope"):
@@ -743,9 +758,10 @@ def run_events(rid):
                              "parts": format_args(a["arguments"].get("input")),
                              "approve": url_for("approval", apid=a["id"]), "member": m["name"]})
     waiting_on = [dg["member"] for dg in delegations if dg["status"] in ("running", "awaiting_approval")]
+    requests_ = _open_requests(rid, r["agent_id"])
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
             "pending": pend, "back": url_for("run_view", rid=rid), "delegations": delegations,
-            "waiting_on": waiting_on, "team": len(delegations) > 0,
+            "waiting_on": waiting_on, "team": len(delegations) > 0, "requests": requests_, "admin": is_admin(),
             "cost": usage["cost"], "tokens": usage["tokens"], "calls": usage["calls"], "live": rt.mode() == "live"}
 
 @app.route("/run/<rid>/say", methods=["POST"])
@@ -934,6 +950,79 @@ def run_export(rid):
     import telemetry
     if not store.get_run(rid): abort(404)
     return telemetry.export(rid)
+
+# ---------------- capability requests ----------------
+def _open_requests(rid, agent_id):
+    """Connection requests raised in a run, with whether each match is now connected and
+    granted to the agent, so the conversation can show what is still outstanding."""
+    ag = store.get_agent(agent_id) or {"skills": []}
+    granted_servers = {k.split("__")[0] for k in (ag.get("skills") or [])}
+    connected = {s_["id"] for s_ in cm().connected_servers() if s_["status"] == "connected"}
+    out = []
+    for e in store.audit_for_run(rid):
+        if e["kind"] != "connection_request":
+            continue
+        d = e.get("detail") or {}
+        matches = []
+        for m in d.get("matches", []):
+            sid = m.get("id")
+            matches.append({**m, "connected": sid in connected if sid else False,
+                            "granted": sid in granted_servers if sid else False, "sid": sid,
+                            "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid
+                                   else url_for("connections", discover=d.get("keywords") or "", grant_to=agent_id, resume=rid)})
+        done = any(m["granted"] for m in matches)
+        out.append({"ts": e["ts"], "need": d.get("need"), "keywords": d.get("keywords"), "matches": matches, "fulfilled": done})
+    return out
+
+def _all_open_requests():
+    """Every unfulfilled request across agents, for admins on the Connections page."""
+    seen = {}
+    for e in store.audit_all(2000):
+        if e["kind"] != "connection_request":
+            continue
+        ag = store.get_agent(e["agent_id"])
+        if not ag:
+            continue
+        reqs = _open_requests(e["run_id"], e["agent_id"])
+        for q in reqs:
+            if q["fulfilled"] or (e["run_id"], q["need"]) in seen:
+                continue
+            seen[(e["run_id"], q["need"])] = {**q, "agent": ag, "run_id": e["run_id"]}
+    return sorted(seen.values(), key=lambda q: q["ts"], reverse=True)[:20]
+
+def _grant_and_resume(sid, agent_id, rid):
+    """After a requested server connects: grant its tools to the requesting agent, note it on
+    the audit trail, and nudge the conversation forward so the agent continues its task."""
+    ag = store.get_agent(agent_id)
+    if not ag:
+        return
+    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin():
+        return
+    new_keys = [t["key"] for t in cm().all_tools() if t["server_id"] == sid]
+    if not new_keys:
+        return
+    skills = list(ag.get("skills") or []) + [k for k in new_keys if k not in (ag.get("skills") or [])]
+    store.update_agent(agent_id, ag["name"], ag["instructions"], ag["model"], skills)
+    name = next((s_["name"] for s_ in cm().connected_servers() if s_["id"] == sid), sid)
+    r = store.get_run(rid) if rid else None
+    if r and r["agent_id"] == agent_id and r["status"] not in ("running", "awaiting_approval"):
+        text = "%s is now connected and its %d tool%s are granted to you. Continue the task." % (name, len(new_keys), "" if len(new_keys) == 1 else "s")
+        store.audit(rid, agent_id, "connection_granted", detail={"server": sid, "text": text, "tools": len(new_keys)})
+        tr = r["transcript"]; tr.append({"role": "user", "content": text})
+        store.update_run(rid, status="running", transcript=tr)
+        _advance_bg(rid)
+
+@app.route("/connections/grant", methods=["POST"])
+def grant_connection():
+    """Grant an already-connected server's tools to the agent that asked for it, and resume."""
+    sid = request.form.get("id"); aid = request.form.get("grant_to"); rid = request.form.get("resume")
+    ag = store.get_agent(aid)
+    if not ag: abort(404)
+    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin(): abort(403)
+    _grant_and_resume(sid, aid, rid)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "resume_url": url_for("run_view", rid=rid) if rid else url_for("agent", aid=aid)}
+    return redirect(url_for("run_view", rid=rid) if rid else url_for("agent", aid=aid))
 
 # ---------------- evals ----------------
 DEFAULT_CATEGORIES = ["wrong facts", "hallucinated detail", "missed a step", "took a risky action",

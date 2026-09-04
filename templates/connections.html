@@ -88,6 +88,30 @@
   {% endif %}
 </div>
 
+{% if grant_agent %}
+<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--brass) 45%,var(--line));background:color-mix(in srgb,var(--brass) 6%,var(--ink2))">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span class="aico" style="width:26px;height:26px">{{ agent_icon(grant_agent.icon, seed=grant_agent.id)|safe }}</span>
+    <div style="flex:1;min-width:240px"><b>Connecting for {{ grant_agent.name }}.</b> <span style="color:var(--mut)">Whatever you connect on this page now is granted to that agent automatically{% if resume %}, and its conversation resumes with the new tools{% endif %}.</span></div>
+    <a class="btn ghost sm" href="{{ url_for('connections') }}">Cancel</a>
+  </div>
+</div>
+{% endif %}
+{% if requests %}
+<div class="section-h"><span class="lbl">Requested by agents</span><span style="font-size:12px;color:var(--dim)">{{ requests|length }} open</span></div>
+<div class="list" style="margin-bottom:22px">
+  {% for q in requests %}
+  <div class="row">
+    <span class="aico" style="width:26px;height:26px;margin-right:12px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
+    <div class="r-main" style="flex:1">
+      <div class="r-title">{{ q.agent.name }} needs: {{ q.need }}</div>
+      <div class="r-meta">{% for m in q.matches %}<a href="{{ m.url }}" style="color:var(--brass)">{{ m.name }}</a>{{ ' &middot; '|safe if not loop.last }}{% else %}no catalog match, try the registry search above with &ldquo;{{ q.keywords }}&rdquo;{% endfor %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}" style="color:var(--dim)">open conversation</a></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="cgrid">
   {% for e in catalog %}
   {% set st = status.get(e.id) %}
@@ -114,15 +138,15 @@
           <input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
       {% elif e.transport=='http' and e.auth=='none' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
-          <input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}<button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
-          <input type="hidden" name="id" value="{{ e.id }}">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
           <button class="btn brass sm">Connect</button></form>
       {% else %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
-          <input type="hidden" name="id" value="{{ e.id }}">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <input type="text" name="command" value="{{ e.run }}" title="edit to add a real connection string or token">
           <button class="btn sm">Enable</button></form>
       {% endif %}
@@ -170,11 +194,17 @@
 {% endfor %}
 
 <script>
+(function(){
+  const want={{ connect_id|tojson }};
+  if(want){ const card=document.getElementById(want); if(card){ card.style.boxShadow='0 0 0 2px var(--brass)'; card.scrollIntoView({block:'center',behavior:'smooth'}); const inp=card.querySelector('input[name=token],input[name=command]'); if(inp) setTimeout(()=>inp.focus(),400); } }
+})();
 document.querySelectorAll('form.connform').forEach(f=>{
   f.addEventListener('submit', async e=>{
     e.preventDefault();
     const btn=f.querySelector('button'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-    try{ await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}); }catch(_){}
+    let r=null;
+    try{ r=await (await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))})).json(); }catch(_){}
+    if(r && r.resume_url){ location.href=r.resume_url; return; }
     location.reload();
   });
 });
