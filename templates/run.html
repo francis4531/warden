@@ -178,7 +178,7 @@ function md(src){
   return out.join('');
 }
 
-let DELEG={}, REQS=[], ADMIN=false;
+let DELEG={}, REQS=[], ADMIN=false, ADMINS=[];
 function renderReq(e){
   const q = REQS.find(x=>x.need===e.text) || {need:e.text, matches:[], fulfilled:false};
   if(q.fulfilled){
@@ -188,7 +188,7 @@ function renderReq(e){
     : `<div class="opt"><div><div class="on">No catalog match</div><div class="od">An admin can search the MCP Registry for &ldquo;${esc(q.keywords||'')}&rdquo; from the Connections page.</div></div></div>`;
   return `<div class="req"><div class="eye">&#9673; needs a connection</div>
     <div class="title">${'{{ agent.name|e }}'} needs: ${esc(q.need)}</div>
-    <div class="sub">${ADMIN?'Connect it and the tools are granted to this agent; the conversation resumes on its own.':(q.matches.some(m=>m.connected)?'Already connected in this studio. Grant it and the conversation resumes on its own.':'Ask your Warden admin to connect this. Once granted, the conversation resumes on its own.')}</div>
+    <div class="sub">${ADMIN?'Connect it and the tools are granted to this agent; the conversation resumes on its own.':(q.matches.some(m=>m.connected)?'Already connected in this studio. Grant it and the conversation resumes on its own.':('This request is waiting under <b>Approvals</b> for your Warden admin'+(ADMINS.length?' ('+esc(ADMINS.join(', '))+')':'')+' to connect it. Once granted, the conversation resumes on its own.'))}</div>
     <div class="opts">${opts}</div></div>`;
 }
 function renderDeleg(d){
@@ -284,7 +284,7 @@ window.addEventListener('scroll',()=>{atBottom=(window.innerHeight+window.scroll
 
 async function poll(){
   let d; try{ d=await(await fetch(`/run/${RID}/events`)).json(); }catch(e){ setTimeout(poll,1500); return; }
-  DELEG={}; (d.delegations||[]).forEach(x=>{ DELEG[x.run]=x; }); REQS=d.requests||[]; ADMIN=!!d.admin;
+  DELEG={}; (d.delegations||[]).forEach(x=>{ DELEG[x.run]=x; }); REQS=d.requests||[]; ADMIN=!!d.admin; ADMINS=d.admins||[];
   const chatHtml=renderChat(d.events);
   const chatChanged = chatHtml!==lastChat;
   if(chatChanged){ document.getElementById('chat').innerHTML=chatHtml; lastChat=chatHtml; }   // only re-render on real change

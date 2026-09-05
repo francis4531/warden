@@ -5,10 +5,40 @@
 <div class="page-h">
   <div class="eyebrow">Approvals</div>
   <h1>Actions on hold for a human.</h1>
-  <p class="sub">High-risk skills pause here before they run. Approving executes the action and records it; denying stops it. Either way it lands in the audit log.</p>
+  <p class="sub">Everything an agent is waiting on a human for. High-risk actions pause here before they run; connection requests wait here for an admin to connect and grant them. Every decision lands in the audit log.</p>
 </div>
 
+{% if requests %}
+<div class="section-h"><span class="lbl">Connection requests</span><span style="font-size:12px;color:var(--dim)">{{ requests|length }} waiting</span></div>
+{% for q in requests %}
+<div class="gate" style="border-color:var(--brass);background:color-mix(in srgb,var(--brass) 7%,var(--ink2))">
+  <div class="g-eye" style="color:var(--brass)"><span>&#9673; needs a connection</span></div>
+  <div class="g-title" style="display:flex;align-items:center;gap:10px"><span class="aico" style="width:26px;height:26px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>{{ q.agent.name }} needs: {{ q.need }}</div>
+  <div style="color:var(--mut);font-size:13px">
+    {% if is_admin %}Connect it and its tools are granted to {{ q.agent.name }}; the conversation resumes on its own.
+    {% else %}Waiting for a Warden admin{% if admin_emails %} ({{ admin_emails|join(', ') }}){% endif %} to connect it. The conversation resumes on its own once granted.{% endif %}
+  </div>
+  <div class="args" style="display:flex;flex-direction:column;gap:8px">
+    {% for m in q.matches %}
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ink)">
+      <div><div style="font-weight:600;font-size:13.5px">{{ m.name }}{% if m.connected %} <span class="pill done">connected, not granted</span>{% endif %}</div><div style="color:var(--mut);font-size:12px">{{ 'official server in the Warden catalog' if m.source=='catalog' else 'found in the MCP Registry' }}</div></div>
+      {% if m.connected %}
+      <form method="post" action="{{ url_for('grant_connection') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.sid }}"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Grant to {{ q.agent.name }} &rarr;</button></form>
+      {% elif is_admin %}
+      <a class="btn brass sm" style="margin-left:auto" href="{{ m.url }}">Connect &amp; grant &rarr;</a>
+      {% endif %}
+    </div>
+    {% else %}
+    <div style="color:var(--mut);font-size:13px">No catalog match for &ldquo;{{ q.keywords }}&rdquo;.{% if is_admin %} <a href="{{ url_for('connections', discover=q.keywords, grant_to=q.agent.id, resume=q.run_id) }}" style="color:var(--brass)">Search the MCP Registry &rarr;</a>{% endif %}</div>
+    {% endfor %}
+  </div>
+  <div class="g-actions"><a class="btn ghost" href="{{ url_for('run_view', rid=q.run_id) }}">Open conversation</a></div>
+</div>
+{% endfor %}
+{% endif %}
+
 {% if pending %}
+{% if requests %}<div class="section-h"><span class="lbl">Actions on hold</span></div>{% endif %}
 {% for ap in pending %}
 <div class="gate">
   <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
@@ -40,7 +70,7 @@
   </form>
 </div>
 {% endfor %}
-{% else %}
-<div class="empty"><h2>Nothing on hold</h2>When an agent reaches for a high-risk skill, it will wait for you right here.</div>
+{% elif not requests %}
+<div class="empty"><h2>Nothing on hold</h2>When an agent reaches for a high-risk skill, or asks for a connection it does not have, it will wait for you right here.</div>
 {% endif %}
 {% endblock %}

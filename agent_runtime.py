@@ -23,6 +23,8 @@ SANDBOX = not bool(os.environ.get("ANTHROPIC_API_KEY"))
 # tier, it can be gated or denied by policy, and every hand-off is on the audit record.
 DELEGATE_KEY = "team__delegate"
 REQUEST_KEY = "warden__request_connection"
+# set by the app at import: who administers this studio, so agents can say so precisely
+ADMIN_INFO = {"auth_on": False, "admins": []}
 MAX_DEPTH = int(os.environ.get("WARDEN_MAX_DELEGATION_DEPTH", "1"))      # lead -> member only
 MAX_DELEGATIONS = int(os.environ.get("WARDEN_MAX_DELEGATIONS", "8"))     # per lead run
 
@@ -411,7 +413,14 @@ def advance(run_id):
 
 _driving = {}   # parent run_id -> True while its own thread is running member runs
 
-def situational_context(agent, tools, idx):
+def _requester_is_admin(run):
+    if not ADMIN_INFO.get("auth_on"):
+        return True
+    owner = (run.get("owner") or "").lower()
+    admins = [a.lower() for a in ADMIN_INFO.get("admins") or []]
+    return owner in admins if admins else False
+
+def situational_context(agent, tools, idx, run=None):
     """What every agent is told about where it runs. The agent must reason from its real
     tool grants, not from generic assumptions about what a chatbot can or cannot do."""
     real = [t for t in tools if t["name"] not in (REQUEST_KEY, DELEGATE_KEY)]
@@ -433,14 +442,29 @@ def situational_context(agent, tools, idx):
             "install software, edit configuration files, or use a different product.\n"
             "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
             "you will do once it is connected, then stop and wait.\n"
-            "4. Never state that an action happened unless a tool result confirms it."
-            % (agent["name"], "\n".join(lines)))
+            "4. Never state that an action happened unless a tool result confirms it.\n\n"
+            "How connection requests work, so you can describe them exactly: the request appears as a card in "
+            "this conversation directly above your reply, and under Approvals in Warden's left navigation "
+            "(the Approvals badge counts it). %s When it is connected, its tools are granted to you and this "
+            "conversation resumes automatically; the user does not need to type anything or come back to tell you. "
+            "Do not speculate about other places it might appear."
+            % (agent["name"], "\n".join(lines), _admin_sentence(run)))
+
+def _admin_sentence(run):
+    admins = ADMIN_INFO.get("admins") or []
+    if run is not None and _requester_is_admin(run):
+        return ("The person you are talking to IS the Warden admin: they can connect it from the card or from "
+                "Approvals with one click.")
+    if admins:
+        return ("The person you are talking to is not an admin. The Warden admin is %s; the card shows them "
+                "that name and the request is already waiting for the admin under Approvals." % ", ".join(admins))
+    return "A Warden admin connects it from Approvals."
 
 def _advance_once(run_id):
     run = store.get_run(run_id); agent = store.get_agent(run["agent_id"])
     depth = int(run.get("depth") or 0)
     tools = tools_for(agent, depth); idx = tool_index(); messages = run["transcript"]
-    system = (agent["instructions"] or "") + "\n\n" + situational_context(agent, tools, idx)
+    system = (agent["instructions"] or "") + "\n\n" + situational_context(agent, tools, idx, run)
     if any(t["name"] == DELEGATE_KEY for t in tools):
         system += ("\n\nYou lead a team. Use delegate to hand well-defined tasks to members; each member "
                    "works under its own tool grants and approvals, and you only receive its written result. "
