@@ -13,9 +13,9 @@
 .tag{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
 .tag.cat{color:var(--brass);border-color:color-mix(in srgb,var(--brass) 35%,var(--line))}
 .conn .desc{color:var(--mut);font-size:12.5px;line-height:1.45;margin-top:11px;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.conn .act{margin-top:13px;display:flex;gap:7px;align-items:center}
+.conn .act{margin-top:13px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .conn .act form{display:flex;gap:7px;flex:1}
-.conn .act input{flex:1;min-width:0;background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:8px 10px}
+.conn .act input:not([type=radio]){flex:1;min-width:0;background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:8px 10px}
 .conn .act .btn{flex-shrink:0}
 .conn .cstatus{font-family:var(--mono);font-size:10.5px;margin-right:auto}
 .conn.on{border-color:color-mix(in srgb,var(--low) 45%,var(--line))}
@@ -28,6 +28,18 @@
 .gsec[open]>summary .chev{transform:rotate(90deg)}
 .gsec .ledger{border:none;border-radius:0;border-top:1px solid var(--line)}
 .gsec .ev:last-child{border-bottom:none}
+.oauthform{display:flex;flex-direction:column;gap:8px;flex:1}
+.scopes{display:flex;gap:14px;font-size:12.5px;color:var(--mut)}
+.scopes label{display:flex;align-items:center;gap:5px;margin:0;font-weight:500;text-transform:none;letter-spacing:0}
+.scopes input{margin:0}
+.setup{flex-basis:100%;font-size:12px;color:var(--mut);margin-top:4px}
+.setup summary{cursor:pointer;color:var(--brass);list-style:none}
+.setup summary::-webkit-details-marker{display:none}
+.setup>div{margin-top:6px;line-height:1.55}
+.setup code{font-family:var(--mono);font-size:11px;background:var(--ink3);padding:1px 5px;border-radius:4px;word-break:break-all}
+.oauthst{font-size:12px;color:var(--low);flex:1}
+.act .hint{font-size:11.5px;color:var(--dim)}
+.act .hint a{color:var(--brass)}
 </style>
 
 <div class="page-h" style="margin-bottom:20px">
@@ -88,6 +100,8 @@
   {% endif %}
 </div>
 
+{% if oauth_error %}<div class="card" style="margin-bottom:14px;border-color:color-mix(in srgb,var(--high) 45%,var(--line));color:var(--high);font-size:13.5px">{{ oauth_error }}</div>{% endif %}
+{% if just_connected %}<div class="card" style="margin-bottom:14px;border-color:color-mix(in srgb,var(--low) 45%,var(--line));font-size:13.5px"><b>Connected.</b> Its tools are governed like any other; grant them to an agent in the builder.</div>{% endif %}
 {% if grant_agent %}
 <div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--brass) 45%,var(--line));background:color-mix(in srgb,var(--brass) 6%,var(--ink2))">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -127,23 +141,52 @@
     <div class="tags">
       <span class="tag cat">{{ e.category }}</span>
       <span class="tag">{{ mlabel[e.maintainer] }}</span>
-      <span class="tag">{{ slabel[e.status] }}</span>
+      <span class="tag">{{ 'remote (sign in with Google)' if e.provider=='google' else ('remote (sign in, no token)' if e.provider=='mcp' else slabel[e.status]) }}</span>
     </div>
     <div class="desc">{{ e.desc }}</div>
     <div class="act">
       {% if e.transport=='builtin' %}
         <span class="pill done" style="margin-left:auto">always on</span>
       {% elif e.id in enabled %}
+        {% set os_ = oauth_status.get(e.id) %}
+        {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
         <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
+      {% elif e.provider=='google' %}
+        <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <div class="scopes">
+            <label><input type="radio" name="scope" value="read" checked> Read only</label>
+            <label><input type="radio" name="scope" value="write"> Read and write</label>
+          </div>
+          <button class="btn brass sm" type="submit" {{ 'disabled' if not google_on }}><svg width="14" height="14" viewBox="0 0 48 48" style="margin-right:2px"><path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></svg>Connect with Google</button>
+        </form>
+        <details class="setup"><summary>One-time setup</summary>
+          <div>In the Google Cloud project behind Warden's sign-in: add <code>{{ google_redirect or 'WARDEN_BASE_URL/connections/oauth/google/callback' }}</code> as an authorized redirect URI, enable the {{ e.name.split(' ')[0] }} API, and add the scope{{ '' if (e.scopes.read|length)==1 else 's' }} to the consent screen. While the app is unverified, keep the consent screen in Testing and add each connecting account as a test user.</div>
+        </details>
+        {% if not google_on %}<div class="hint" style="margin-top:6px">Google sign-in is not configured on this server (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET).</div>{% endif %}
+      {% elif e.provider=='mcp' %}
+        <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform" style="margin-left:auto">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <button class="btn brass sm" type="submit">Sign in with {{ e.name.split(' (')[0] }}</button>
+        </form>
+        {% if e.token_url %}
+        <details class="setup"><summary>Or paste a {{ e.token_label or 'token' }}</summary>
+          <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;margin-top:6px">
+            <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+            <input type="password" name="token" placeholder="{{ e.token_label or 'token' }}"><button class="btn sm">Connect</button></form>
+          <div class="hint"><a href="{{ e.token_url }}" target="_blank" rel="noopener">Get a {{ e.token_label or 'token' }} &rarr;</a>{% if e.env and is_admin %} &middot; or set <code>${{ e.env }}</code> on the server{% endif %}</div>
+        </details>
+        {% endif %}
       {% elif e.transport=='http' and e.auth=='none' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}<button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
           <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
-          <input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}">
+          <input type="password" name="token" placeholder="{{ e.token_label or 'API key' }}">
           <button class="btn brass sm">Connect</button></form>
+        <div class="hint" style="flex-basis:100%">{% if e.token_url %}<a href="{{ e.token_url }}" target="_blank" rel="noopener">Get an API key &rarr;</a>{% endif %}{% if e.env and is_admin %}{{ ' &middot; '|safe if e.token_url }}or set <code>${{ e.env }}</code> on the server{% endif %}</div>
       {% else %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
           <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}

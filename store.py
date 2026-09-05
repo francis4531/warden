@@ -359,6 +359,16 @@ def enable_connection(cid, transport, command=None, url=None, token=None):
               (cid, transport, command, url, vault.encrypt(token), 1, now()))
     c.commit(); c.close()
 
+def update_connection_token(cid, token):
+    import vault
+    c = _conn(); c.execute("UPDATE connections SET token=? WHERE id=?", (vault.encrypt(token), cid)); c.commit(); c.close()
+
+def get_connection(cid):
+    import vault
+    c = _conn(); r = c.execute("SELECT * FROM connections WHERE id=?", (cid,)).fetchone(); c.close()
+    if not r: return None
+    d = dict(r); d["token"] = vault.decrypt(d["token"]); return d
+
 def disable_connection(cid):
     c = _conn(); c.execute("DELETE FROM connections WHERE id=?", (cid,)); c.commit(); c.close()
 
