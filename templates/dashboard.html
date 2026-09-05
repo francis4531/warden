@@ -17,13 +17,23 @@
 
 <div class="grid g3">
   <a class="card k" href="#agents"><span class="kv">{{ agents|length }}</span><span class="kl">Agents</span><span class="kd">defined in the studio</span></a>
-  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if pending|length else 'var(--txt)' }}">{{ pending|length }}</span><span class="kl">Awaiting approval</span><span class="kd">high-risk actions on hold</span></a>
+  {% set nwait = pending|length + open_requests|length %}
+  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nwait else 'var(--txt)' }}">{{ nwait }}</span><span class="kl">Waiting on a human</span><span class="kd">{{ pending|length }} action{{ '' if pending|length==1 else 's' }} on hold &middot; {{ open_requests|length }} connection request{{ '' if open_requests|length==1 else 's' }}</span></a>
   <a class="card k" href="{{ url_for('connections') }}"><span class="kv">{{ tool_count }}</span><span class="kl">Governed tools</span><span class="kd">across {{ servers|length }} connected server{{ '' if servers|length==1 else 's' }}</span></a>
 </div>
 
-{% if pending|length %}
+{% if pending|length or open_requests|length %}
 <div class="section-h"><span class="lbl">On hold, needs a human</span></div>
 <div class="list">
+  {% for q in open_requests %}
+  <div class="row">
+    <div class="r-main">
+      <div class="r-title">{{ q.agent.name }} needs a connection <span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent)">{{ q.matches[0].name if q.matches else q.keywords }}</span></div>
+      <div class="r-meta">{{ q.need }}</div>
+    </div>
+    <a class="btn brass sm" href="{{ url_for('approvals') }}">{{ 'Connect' if is_admin else 'View' }} &rarr;</a>
+  </div>
+  {% endfor %}
   {% for ap in pending %}
   <div class="row">
     <div class="r-main">

@@ -17,7 +17,7 @@ import registry
 import icons
 import evals
 
-WARDEN_VERSION = "0.6"
+WARDEN_VERSION = "0.6.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -82,6 +82,7 @@ GOOGLE_ON = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAILS", "").split(",") if e.strip()}
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
+rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
 _PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
 
 def current_owner():
@@ -267,7 +268,12 @@ def cm():
 
 @app.context_processor
 def inject_globals():
+    try:
+        open_requests = _requests_for_me() if _authed() else []
+    except Exception:
+        open_requests = []
     return {"pending": store.pending_approvals(_scope()), "mode": rt.mode(),
+            "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
 def connected_tools():
@@ -324,7 +330,7 @@ def connections():
                            enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
-                           requests=_all_open_requests(),
+                           requests=_requests_for_me(),
                            grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
                            connect_id=request.args.get("connect", ""),
                            grant_agent=store.get_agent(request.args.get("grant_to", "")) if request.args.get("grant_to") else None)
@@ -762,6 +768,7 @@ def run_events(rid):
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
             "pending": pend, "back": url_for("run_view", rid=rid), "delegations": delegations,
             "waiting_on": waiting_on, "team": len(delegations) > 0, "requests": requests_, "admin": is_admin(),
+            "admins": sorted(ADMIN_EMAILS),
             "cost": usage["cost"], "tokens": usage["tokens"], "calls": usage["calls"], "live": rt.mode() == "live"}
 
 @app.route("/run/<rid>/say", methods=["POST"])
@@ -815,7 +822,8 @@ def _with_team_context(pending):
 
 @app.route("/approvals")
 def approvals():
-    return render_template("approvals.html", pending=_with_team_context(store.pending_approvals(_scope())))
+    return render_template("approvals.html", pending=_with_team_context(store.pending_approvals(_scope())),
+                           requests=_requests_for_me())
 
 @app.route("/architecture")
 def architecture():
@@ -974,8 +982,8 @@ def _open_requests(rid, agent_id):
         out.append({"ts": e["ts"], "need": d.get("need"), "keywords": d.get("keywords"), "matches": matches, "fulfilled": done})
     return out
 
-def _all_open_requests():
-    """Every unfulfilled request across agents, for admins on the Connections page."""
+def _all_open_requests(owner=None):
+    """Unfulfilled connection requests. Admins see every agent's; a user sees their own."""
     seen = {}
     for e in store.audit_all(2000):
         if e["kind"] != "connection_request":
@@ -983,12 +991,18 @@ def _all_open_requests():
         ag = store.get_agent(e["agent_id"])
         if not ag:
             continue
+        if owner is not None and (ag.get("owner") or "") != owner:
+            continue
         reqs = _open_requests(e["run_id"], e["agent_id"])
         for q in reqs:
             if q["fulfilled"] or (e["run_id"], q["need"]) in seen:
                 continue
             seen[(e["run_id"], q["need"])] = {**q, "agent": ag, "run_id": e["run_id"]}
     return sorted(seen.values(), key=lambda q: q["ts"], reverse=True)[:20]
+
+def _requests_for_me():
+    """Open requests this signed-in person should see: all of them for an admin, their own otherwise."""
+    return _all_open_requests(None if is_admin() else _scope())
 
 def _grant_and_resume(sid, agent_id, rid):
     """After a requested server connects: grant its tools to the requesting agent, note it on
