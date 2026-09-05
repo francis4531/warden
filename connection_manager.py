@@ -50,6 +50,14 @@ def _http_params(sid, spec):
     if not tok and cat.get("env"):          # fall back to an environment variable
         tok = os.environ.get(cat["env"])
     if tok:
+        import oauth
+        if oauth.is_oauth(tok):
+            # OAuth connection: mint a fresh access token, persisting a refreshed record
+            import store
+            def _persist(new):
+                spec["token"] = new
+                store.update_connection_token(sid, new)
+            tok = oauth.access_token(tok, persist=_persist)
         headers["Authorization"] = tok if tok.lower().startswith("bearer") else f"Bearer {tok}"
     return url, (headers or None)
 

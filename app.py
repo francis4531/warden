@@ -16,8 +16,9 @@ import policy
 import registry
 import icons
 import evals
+import oauth
 
-WARDEN_VERSION = "0.6.1"
+WARDEN_VERSION = "0.7"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -84,6 +85,8 @@ ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS",
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
 rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
 _PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
+# OAuth callbacks for connections come back from a provider with a state we issued; auth is
+# still required (the operator started the flow while signed in), they are just not admin-gated twice
 
 def current_owner():
     """The signed-in user's identity, used to scope their workspace. Falls back to a
@@ -244,6 +247,7 @@ def _auth_ctx():
             "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
 
 _ADMIN_ENDPOINTS = {"connections", "enable_connection", "disable_connection", "tool_risk",
+                    "oauth_start", "oauth_google_callback", "oauth_mcp_callback",
                     "discover", "discover_add", "discover_remove", "discover_json",
                     "policies", "create_policy", "toggle_policy", "delete_policy"}
 
@@ -326,11 +330,17 @@ def connections():
     status = {s["id"]: s for s in cm().connected_servers()}
     dq = (request.args.get("discover") or "").strip()
     discover = registry.search(dq) if dq else None
+    oauth_status = {}
+    for c_ in store.enabled_connections():
+        d_ = oauth.describe(c_.get("token"))
+        if d_: oauth_status[c_["id"]] = d_
     return render_template("connections.html", catalog=merged_catalog(), status=status,
                            enabled={c["id"] for c in store.enabled_connections()},
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
-                           requests=_requests_for_me(),
+                           requests=_requests_for_me(), oauth_status=oauth_status, google_on=GOOGLE_ON,
+                           google_redirect=_oauth_redirect("google") if GOOGLE_ON else "",
+                           oauth_error=request.args.get("oauth_error", ""), just_connected=request.args.get("connected", ""),
                            grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
                            connect_id=request.args.get("connect", ""),
                            grant_agent=store.get_agent(request.args.get("grant_to", "")) if request.args.get("grant_to") else None)
@@ -1025,6 +1035,86 @@ def _grant_and_resume(sid, agent_id, rid):
         tr = r["transcript"]; tr.append({"role": "user", "content": text})
         store.update_run(rid, status="running", transcript=tr)
         _advance_bg(rid)
+
+# ---------------- OAuth connect flows ----------------
+def _oauth_redirect(kind):
+    base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
+    path = "/connections/oauth/%s/callback" % kind
+    return (base + path) if base else url_for("oauth_google_callback" if kind == "google" else "oauth_mcp_callback", _external=True)
+
+def _finish_connection(cid, token_json, grant_to=None, resume=None):
+    """Store the OAuth token, connect, and (if this came from a request) grant and resume."""
+    entry = cat_by_id(cid)
+    url = entry.get("run")
+    store.enable_connection(cid, "http", url=url, token=token_json)
+    st = cm().connect_spec({"id": cid, "transport": "http", "url": url, "token": token_json})
+    if (st or {}).get("status") == "connected" and grant_to:
+        _grant_and_resume(cid, grant_to, resume)
+        if resume:
+            return redirect(url_for("run_view", rid=resume))
+    if (st or {}).get("status") != "connected":
+        return redirect(url_for("connections", oauth_error="Connected to the provider but the MCP server refused the session: %s" % ((st or {}).get("error") or "unknown")) + "#" + cid)
+    return redirect(url_for("connections", connected=cid) + "#" + cid)
+
+@app.route("/connections/oauth/start", methods=["POST"])
+def oauth_start():
+    cid = request.form.get("id"); entry = cat_by_id(cid)
+    if not entry or entry.get("provider") not in ("google", "mcp"):
+        abort(404)
+    state = secrets.token_urlsafe(20)
+    ctx = {"cid": cid, "grant_to": request.form.get("grant_to") or "", "resume": request.form.get("resume") or ""}
+    if entry["provider"] == "google":
+        if not GOOGLE_ON:
+            return redirect(url_for("connections", oauth_error="Google sign-in is not configured on this server (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."))
+        level = "write" if request.form.get("scope") == "write" else "read"
+        scopes = (entry.get("scopes") or {}).get(level) or []
+        ctx["scopes"] = scopes
+        session["conn_oauth"] = {"state": state, **ctx}
+        return redirect(oauth.google_authorize_url(GOOGLE_CLIENT_ID, _oauth_redirect("google"), scopes, state))
+    # MCP-standard: discover, register, PKCE
+    try:
+        meta = oauth.mcp_discover(entry["run"])
+        client_id, client_secret = oauth.mcp_register(meta, _oauth_redirect("mcp"))
+    except Exception as ex:
+        return redirect(url_for("connections", oauth_error="%s: %s" % (entry["name"], str(ex)[:200])) + "#" + cid)
+    verifier, challenge = oauth.pkce()
+    ctx.update({"meta": {k: meta.get(k) for k in ("authorization_endpoint", "token_endpoint", "scopes_supported")},
+                "client_id": client_id, "client_secret": client_secret, "verifier": verifier, "resource": entry["run"]})
+    session["conn_oauth"] = {"state": state, **ctx}
+    return redirect(oauth.mcp_authorize_url(meta, client_id, _oauth_redirect("mcp"), state, challenge, resource=entry["run"]))
+
+def _oauth_ctx():
+    ctx = session.pop("conn_oauth", None)
+    if not ctx or not request.args.get("state") or request.args.get("state") != ctx.get("state"):
+        return None
+    return ctx
+
+@app.route("/connections/oauth/google/callback")
+def oauth_google_callback():
+    ctx = _oauth_ctx()
+    if not ctx:
+        return redirect(url_for("connections", oauth_error="The Google sign-in expired or did not match. Try again."))
+    if request.args.get("error") or not request.args.get("code"):
+        return redirect(url_for("connections", oauth_error="Google did not grant access: %s" % (request.args.get("error") or "cancelled")) + "#" + ctx["cid"])
+    try:
+        tok = oauth.google_exchange(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, _oauth_redirect("google"), request.args["code"], ctx.get("scopes") or [])
+    except Exception as ex:
+        return redirect(url_for("connections", oauth_error="Could not exchange the Google code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
+    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"))
+
+@app.route("/connections/oauth/mcp/callback")
+def oauth_mcp_callback():
+    ctx = _oauth_ctx()
+    if not ctx:
+        return redirect(url_for("connections", oauth_error="The sign-in expired or did not match. Try again."))
+    if request.args.get("error") or not request.args.get("code"):
+        return redirect(url_for("connections", oauth_error="The provider did not grant access: %s" % (request.args.get("error") or "cancelled")) + "#" + ctx["cid"])
+    try:
+        tok = oauth.mcp_exchange(ctx["meta"], ctx["client_id"], ctx.get("client_secret"), _oauth_redirect("mcp"),
+                                 request.args["code"], ctx["verifier"], ctx["meta"].get("scopes_supported") or [], resource=ctx.get("resource"))
+    except Exception as ex:
+        return redirect(url_for("connections", oauth_error="Could not exchange the authorization code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
+    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"))
 
 @app.route("/connections/grant", methods=["POST"])
 def grant_connection():

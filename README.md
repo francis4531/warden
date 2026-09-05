@@ -77,11 +77,19 @@ category, and any conversation becomes a case with one click.
 
 The Connections page lists common enterprise MCP servers grouped by category (GitHub,
 Linear, Notion, Stripe, Sentry, Slack, Postgres, Supabase, Playwright, the Anthropic
-reference servers, and more). Each entry shows who maintains it and how it connects:
+reference servers, Google Workspace, and more). Each entry shows who maintains it and how
+it connects, and the card matches the credential the server actually needs:
 
 - Built in (Enterprise Tools, Filesystem): always connected, no setup.
-- Remote (GitHub, Linear, Notion, Stripe, Sentry, Cloudflare): paste an access token and
-  connect over HTTP. Works without any local runtime.
+- Google (Gmail, Drive, Calendar, Docs, Sheets): "Connect with Google". Warden runs the
+  OAuth flow with its own Google client, read-only scopes by default, stores the refresh
+  token encrypted, and mints a fresh access token before every call. One-time setup: add
+  `WARDEN_BASE_URL/connections/oauth/google/callback` as a redirect URI and enable the API.
+- MCP-standard OAuth (Linear, Notion, Sentry, Atlassian, Cloudflare, Vercel, GitHub):
+  "Sign in with <vendor>". Warden discovers the authorization server, registers itself as
+  a client, and completes the PKCE flow in the browser. No token to paste.
+- API key (Stripe, Terraform, Grafana, PagerDuty, Firecrawl, Exa, Supabase): paste a key,
+  with a link to the vendor page that issues one.
 - stdio (Filesystem official, Supabase, Playwright, Postgres, Slack, Fetch, Git): these
   are Node (npx) or Python (uvx) processes and require that runtime present. On a
   Python-only host they report a clear connection error rather than connecting; expected.

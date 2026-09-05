@@ -14,6 +14,11 @@ Accurate as of mid-2026. Each entry records who maintains it, how it connects
               archived = still works but no longer maintained upstream.
 Risk posture is a starting point; Warden classifies each discovered tool and lets
 you override it.
+
+'provider':   google = Warden runs Google OAuth itself (Connect with Google, scopes per
+              entry, read-only by default); mcp = the server follows the MCP authorization
+              spec (discovery + dynamic client registration + PKCE, Sign in with <vendor>).
+'token_url':  where a person gets an API key or personal access token for paste-in auth.
 """
 
 CATALOG = [
@@ -48,68 +53,68 @@ CATALOG = [
    "desc":"A simple knowledge-graph memory the agent can write to and recall."},
 
   # --- vendor-maintained (the right pick for production) ---
-  {"id":"github","env":"GITHUB_TOKEN","name":"GitHub","category":"Dev","maintainer":"vendor","transport":"http",
+  {"id":"github","provider":"mcp","token_url":"https://github.com/settings/tokens","token_label":"personal access token","env":"GITHUB_TOKEN","name":"GitHub","category":"Dev","maintainer":"vendor","transport":"http",
    "run":"https://api.githubcopilot.com/mcp/","auth":"oauth_or_pat","status":"remote",
    "desc":"Read repos and issues; create issues, branches, and pull requests. Hosted OAuth endpoint."},
-  {"id":"linear","env":"LINEAR_API_KEY","name":"Linear","category":"Product","maintainer":"vendor","transport":"http",
+  {"id":"linear","provider":"mcp","env":"LINEAR_API_KEY","name":"Linear","category":"Product","maintainer":"vendor","transport":"http",
    "run":"https://mcp.linear.app/sse","auth":"oauth","status":"remote",
    "desc":"Issue tracking and project planning. Read issues and create or update them."},
-  {"id":"notion","env":"NOTION_TOKEN","name":"Notion","category":"Knowledge","maintainer":"vendor","transport":"http",
+  {"id":"notion","provider":"mcp","env":"NOTION_TOKEN","name":"Notion","category":"Knowledge","maintainer":"vendor","transport":"http",
    "run":"https://mcp.notion.com/mcp","auth":"oauth","status":"remote",
    "desc":"Read and write Notion docs and databases. A common agent knowledge base."},
-  {"id":"stripe","env":"STRIPE_API_KEY","name":"Stripe","category":"Payments","maintainer":"vendor","transport":"http",
+  {"id":"stripe","token_url":"https://dashboard.stripe.com/apikeys","env":"STRIPE_API_KEY","name":"Stripe","category":"Payments","maintainer":"vendor","transport":"http",
    "run":"https://mcp.stripe.com","auth":"api_key","status":"remote",
    "desc":"Look up customers, invoices, and payments; issue refunds. High-impact by nature."},
-  {"id":"sentry","env":"SENTRY_TOKEN","name":"Sentry","category":"Observability","maintainer":"vendor","transport":"http",
+  {"id":"sentry","token_url":"https://sentry.io/settings/account/api/auth-tokens/","provider":"mcp","env":"SENTRY_TOKEN","name":"Sentry","category":"Observability","maintainer":"vendor","transport":"http",
    "run":"https://mcp.sentry.dev/mcp","auth":"oauth","status":"remote",
    "desc":"Read issues and errors; triage and resolve. Hosted OAuth endpoint."},
-  {"id":"supabase","env":"SUPABASE_ACCESS_TOKEN","name":"Supabase","category":"Data","maintainer":"vendor","transport":"stdio_node",
+  {"id":"supabase","token_url":"https://supabase.com/dashboard/account/tokens","env":"SUPABASE_ACCESS_TOKEN","name":"Supabase","category":"Data","maintainer":"vendor","transport":"stdio_node",
    "run":"npx -y @supabase/mcp-server-supabase","auth":"api_key","status":"needs_node",
    "desc":"Query and manage a Supabase Postgres project, tables, and rows."},
   {"id":"playwright","name":"Playwright","category":"Web","maintainer":"vendor","transport":"stdio_node",
    "run":"npx -y @playwright/mcp","auth":"none","status":"needs_node",
    "desc":"Drive a real browser: navigate, click, fill forms, extract. Microsoft-maintained."},
-  {"id":"cloudflare","env":"CLOUDFLARE_TOKEN","name":"Cloudflare","category":"Infra","maintainer":"vendor","transport":"http",
+  {"id":"cloudflare","token_url":"https://dash.cloudflare.com/profile/api-tokens","provider":"mcp","env":"CLOUDFLARE_TOKEN","name":"Cloudflare","category":"Infra","maintainer":"vendor","transport":"http",
    "run":"https://observability.mcp.cloudflare.com/sse","auth":"oauth","status":"remote",
    "desc":"Inspect and manage Cloudflare resources over a hosted OAuth connection."},
 
   # --- newer remote (HTTP) servers: paste a URL + token, run on the native runtime ---
-  {"id":"atlassian","env":"ATLASSIAN_TOKEN","name":"Atlassian (Jira + Confluence)","category":"Product","maintainer":"vendor","transport":"http",
+  {"id":"atlassian","provider":"mcp","env":"ATLASSIAN_TOKEN","name":"Atlassian (Jira + Confluence)","category":"Product","maintainer":"vendor","transport":"http",
    "run":"https://mcp.atlassian.com/v1/sse","auth":"oauth","status":"remote",
    "desc":"Read Jira issues and Confluence pages; comment, create, and transition tickets. Official OAuth endpoint."},
-  {"id":"grafana","env":"GRAFANA_TOKEN","name":"Grafana","category":"Observability","maintainer":"vendor","transport":"http",
+  {"id":"grafana","token_url":"https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/","env":"GRAFANA_TOKEN","name":"Grafana","category":"Observability","maintainer":"vendor","transport":"http",
    "run":"https://mcp.grafana.com/mcp","auth":"api_key","status":"remote",
    "desc":"Search dashboards, query Prometheus/Loki, and read alerts. Read-heavy observability."},
-  {"id":"pagerduty","env":"PAGERDUTY_TOKEN","name":"PagerDuty","category":"Observability","maintainer":"vendor","transport":"http",
+  {"id":"pagerduty","token_url":"https://support.pagerduty.com/docs/api-access-keys","env":"PAGERDUTY_TOKEN","name":"PagerDuty","category":"Observability","maintainer":"vendor","transport":"http",
    "run":"https://mcp.pagerduty.com/mcp","auth":"api_key","status":"remote",
    "desc":"Read incidents and on-call schedules; acknowledge and resolve. Incident response."},
-  {"id":"firecrawl","env":"FIRECRAWL_API_KEY","name":"Firecrawl","category":"Web","maintainer":"vendor","transport":"http",
+  {"id":"firecrawl","token_url":"https://www.firecrawl.dev/app/api-keys","env":"FIRECRAWL_API_KEY","name":"Firecrawl","category":"Web","maintainer":"vendor","transport":"http",
    "run":"https://mcp.firecrawl.dev/mcp","auth":"api_key","status":"remote",
    "desc":"Scrape and crawl any site, including dynamic pages, into clean structured text. Read-only."},
-  {"id":"exa","env":"EXA_API_KEY","name":"Exa Search","category":"Web","maintainer":"vendor","transport":"http",
+  {"id":"exa","token_url":"https://dashboard.exa.ai/api-keys","env":"EXA_API_KEY","name":"Exa Search","category":"Web","maintainer":"vendor","transport":"http",
    "run":"https://mcp.exa.ai/mcp","auth":"api_key","status":"remote",
    "desc":"Neural web search with full-content retrieval. Grounds agents in current sources. Read-only."},
-  {"id":"terraform","env":"TFE_TOKEN","name":"Terraform (HashiCorp)","category":"Infra","maintainer":"vendor","transport":"http",
+  {"id":"terraform","token_url":"https://app.terraform.io/app/settings/tokens","env":"TFE_TOKEN","name":"Terraform (HashiCorp)","category":"Infra","maintainer":"vendor","transport":"http",
    "run":"https://mcp.terraform.io/mcp","auth":"api_key","status":"remote",
    "desc":"Read providers, modules, and plans; run apply. Infrastructure changes are high-impact by nature."},
-  {"id":"vercel","env":"VERCEL_TOKEN","name":"Vercel","category":"Infra","maintainer":"vendor","transport":"http",
+  {"id":"vercel","token_url":"https://vercel.com/account/tokens","provider":"mcp","env":"VERCEL_TOKEN","name":"Vercel","category":"Infra","maintainer":"vendor","transport":"http",
    "run":"https://mcp.vercel.com","auth":"oauth","status":"remote",
    "desc":"Read projects and deployments; trigger and promote deploys. Ship behind a human gate."},
 
   # --- Google Workspace: official, first-party Google servers (one per product, OAuth) ---
-  {"id":"google_gmail","env":"GOOGLE_OAUTH","name":"Gmail (Google official)","category":"Comms","maintainer":"vendor","transport":"http",
+  {"id":"google_gmail","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/gmail.readonly"],"write":["https://www.googleapis.com/auth/gmail.modify"]},"name":"Gmail (Google official)","category":"Comms","maintainer":"vendor","transport":"http",
    "run":"https://gmailmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Gmail MCP server. Search threads, read messages, draft, and manage labels. OAuth via a Google Cloud project."},
-  {"id":"google_drive","env":"GOOGLE_OAUTH","name":"Google Drive (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+  {"id":"google_drive","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/drive.readonly"],"write":["https://www.googleapis.com/auth/drive"]},"name":"Google Drive (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
    "run":"https://drivemcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Drive MCP server. Search, read, copy, and create files; manage permissions. OAuth via a Google Cloud project."},
-  {"id":"google_calendar","env":"GOOGLE_OAUTH","name":"Google Calendar (official)","category":"Productivity","maintainer":"vendor","transport":"http",
+  {"id":"google_calendar","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/calendar.readonly"],"write":["https://www.googleapis.com/auth/calendar"]},"name":"Google Calendar (official)","category":"Productivity","maintainer":"vendor","transport":"http",
    "run":"https://calendarmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Calendar MCP server. List and search events, check free/busy, create and update events. OAuth via a Google Cloud project."},
-  {"id":"google_docs","env":"GOOGLE_OAUTH","name":"Google Docs (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+  {"id":"google_docs","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/documents.readonly"],"write":["https://www.googleapis.com/auth/documents"]},"name":"Google Docs (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
    "run":"https://docsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Docs MCP server. Read and update documents. OAuth via a Google Cloud project."},
-  {"id":"google_sheets","env":"GOOGLE_OAUTH","name":"Google Sheets (official)","category":"Data","maintainer":"vendor","transport":"http",
+  {"id":"google_sheets","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/spreadsheets.readonly"],"write":["https://www.googleapis.com/auth/spreadsheets"]},"name":"Google Sheets (official)","category":"Data","maintainer":"vendor","transport":"http",
    "run":"https://sheetsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Sheets MCP server. Read values, update cells and formulas, insert rows. OAuth via a Google Cloud project."},
 
