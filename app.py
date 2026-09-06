@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.10"
+WARDEN_VERSION = "0.10.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1278,6 +1278,11 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None):
     entry = cat_by_id(cid)
     url = entry.get("run")
     owner = current_owner() if entry.get("personal") else None
+    missing = oauth.missing_scopes(token_json)
+    if missing:
+        short = entry["name"].split(" (")[0]
+        return redirect(url_for("connections", oauth_error="Google signed you in but did not grant %s access (%s was left unticked on the consent page). Connect again and tick the %s box."
+                                % (short, ", ".join(m.split("/")[-1] for m in missing), short)) + "#" + cid)
     key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner)
     st = cm().connect_spec({"id": key, "transport": "http", "url": url, "token": token_json,
                             "owner": owner or "", "catalog_id": cid})
@@ -1286,7 +1291,9 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None):
         if resume:
             return redirect(url_for("run_view", rid=resume))
     if (st or {}).get("status") != "connected":
-        return redirect(url_for("connections", oauth_error="Connected to the provider but the MCP server refused the session: %s" % ((st or {}).get("error") or "unknown")) + "#" + cid)
+        # do not leave a half-connected personal source behind; the person can retry cleanly
+        store.disable_connection(key); cm().disconnect(key)
+        return redirect(url_for("connections", oauth_error="Signed in, but %s's MCP server refused the session: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown")) + "#" + cid)
     return redirect(url_for("connections", connected=cid) + "#" + cid)
 
 @app.route("/connections/oauth/start", methods=["POST"])

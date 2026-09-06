@@ -150,10 +150,19 @@ def mcp_exchange(meta, client_id, client_secret, redirect_uri, code, verifier, s
 def _pack(provider, t, token_endpoint, client_id, client_secret, scopes):
     if "access_token" not in t:
         raise RuntimeError("token endpoint returned no access token: " + json.dumps(t)[:160])
+    granted = (t.get("scope") or "").split()      # what the provider actually granted (Google lets people untick scopes)
     return json.dumps({"type": "oauth", "provider": provider, "access_token": t["access_token"],
                        "refresh_token": t.get("refresh_token"), "expires_at": int(time.time()) + int(t.get("expires_in") or 3600),
                        "token_endpoint": token_endpoint, "client_id": client_id, "client_secret": client_secret,
-                       "scopes": list(scopes or []), "obtained_at": int(time.time())})
+                       "scopes": list(scopes or []), "granted": granted, "obtained_at": int(time.time())})
+
+def missing_scopes(token_json):
+    """Requested scopes the provider did not grant (empty when it reported none, or all)."""
+    d = parse(token_json) or {}
+    granted = d.get("granted") or []
+    if not granted:
+        return []
+    return [s for s in d.get("scopes") or [] if s not in granted]
 
 def access_token(token_json, persist=None):
     """A valid bearer token for a stored OAuth connection, refreshing when within 60s of

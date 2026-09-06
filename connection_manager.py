@@ -42,6 +42,33 @@ class _LoopThread:
     def run(self, coro, timeout=None):
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
+def _leaf(e):
+    """The first real exception inside nested ExceptionGroups (anyio TaskGroups wrap them)."""
+    subs = getattr(e, "exceptions", None)
+    while subs:
+        e = subs[0]; subs = getattr(e, "exceptions", None)
+    return e
+
+def _explain(e, cat):
+    """A sentence a person can act on, instead of 'unhandled errors in a TaskGroup'."""
+    e = _leaf(e)
+    resp = getattr(e, "response", None)
+    status = getattr(resp, "status_code", None)
+    if status:
+        www = (resp.headers.get("www-authenticate") or "") if getattr(resp, "headers", None) else ""
+        vendor = (cat or {}).get("name", "the server").split(" (")[0]
+        if status == 401:
+            hint = ("Google rejected the token (invalid_token). Check that the %s API is enabled in the Google Cloud project that owns the OAuth client, and that %s access was ticked on the consent page. Then disconnect and connect again."
+                    % (vendor, vendor)) if (cat or {}).get("provider") == "google" else \
+                   "%s rejected the token (401). Disconnect and connect again; if it persists, the token lacks the scope this server needs." % vendor
+            return hint + ((" [" + www[:80] + "]") if www else "")
+        if status == 403:
+            return "%s refused access (403): the account or project is not allowed to use this API. For Google, enable the %s API in the project and check the consent screen's test users." % (vendor, vendor)
+        if status == 404:
+            return "%s answered 404 at its MCP endpoint; the catalog URL may be out of date." % vendor
+        return "%s answered HTTP %s." % (vendor, status)
+    return (str(e) or e.__class__.__name__)
+
 def _http_params(sid, spec):
     cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     url = spec.get("url") or cat.get("run")
@@ -125,12 +152,12 @@ class _Manager:
                                  "transport": transport, "tool_count": len(tools),
                                  "owner": spec.get("owner") or "", "catalog_id": spec.get("catalog_id") or sid}
         except Exception as e:
-            msg = (str(e) or e.__class__.__name__)
+            msg = _explain(e, cat)
             low = msg.lower()
             if transport != "http" and ("closed" in low or "exit" in low or "broken pipe" in low or not msg.strip()):
                 msg = ("server exited on startup, it likely needs credentials or configuration. "
                        "Edit the command to supply them (e.g. a real connection string or token).")
-            self._status[sid] = {"status": "error", "error": msg[:220],
+            self._status[sid] = {"status": "error", "error": msg[:320],
                                  "name": name, "transport": transport, "tool_count": 0,
                                  "owner": spec.get("owner") or "", "catalog_id": spec.get("catalog_id") or sid}
 
