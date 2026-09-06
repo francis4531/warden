@@ -45,7 +45,7 @@
 <div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow">Connections</div>
   <h1>{{ 'Choose the MCP servers your agents can use.' if is_admin else 'Connect the sources your agents will use.' }}</h1>
-  <p class="sub">{% if is_admin %}Personal sources (Gmail, Drive, Calendar) are connected by each person for themselves. Shared systems you connect once for everyone. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated.{% else %}Personal sources like Gmail are yours to connect, in one click, and only your agents can use them. Shared company systems are set up by your admin and already available. Reads run on their own; anything that changes state asks you first.{% endif %}</p>
+  <p class="sub">{% if is_admin %}Personal sources (Gmail, Drive, Calendar) are connected by each person for themselves. Company systems you connect once and the studio provides to everyone. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated.{% else %}Personal sources like Gmail are yours to connect, in one click, and only your agents can use them. Company systems are provided by your studio and already available. Reads run on their own; anything that changes state asks you first.{% endif %}</p>
 </div>
 
 <style>
@@ -139,9 +139,9 @@
   {% endfor %}
 </div>
 
-<div class="section-h"><span class="lbl">{{ 'Shared connections' if is_admin else 'Shared by your admin' }}</span><span style="font-size:12px;color:var(--dim)">{{ 'connected once for the whole studio' if is_admin else 'company systems your agents can already use' }}</span></div>
+<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="{{ url_for('settings') }}#defaults">default tools for new agents</a> under Settings{% else %}company systems your agents can already use{% endif %}</span></div>
 <div class="cgrid">
-  {% for e in catalog if not e.personal and (is_admin or e.id in enabled or e.transport=='builtin') %}
+  {% for e in catalog if not e.personal and (is_admin or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}
   {% set errored = st and st.status=='error' %}

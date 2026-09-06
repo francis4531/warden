@@ -1,6 +1,7 @@
   <div class="conn {{ 'on' if connected }}{{ 'err' if errored }}" id="{{ e.id }}" data-id="{{ e.id }}">
     <div class="top">
       <span class="nm">{{ e.name }}</span>
+      {% if e.sample %}<span class="stamp" style="background:var(--line);color:var(--mut)" title="Built into Warden so you can try agents before connecting real systems">sample</span>{% endif %}
       {% if e.custom %}<span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">discovered</span>{% endif %}
       {% if connected %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
       {% elif errored %}<span class="stamp HIGH">error</span>{% endif %}

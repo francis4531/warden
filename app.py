@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.8.1"
+WARDEN_VERSION = "0.9"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -302,10 +302,30 @@ def inject_globals():
             "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
+def default_tools():
+    """Tool keys an admin chose as the starting grant for every new agent."""
+    try:
+        v = store.get_setting("default_tools")
+        return [k for k in _json.loads(v) if isinstance(k, str)] if v else []
+    except Exception:
+        return []
+
+def _is_sample(catalog_id):
+    e = cat.BY_ID.get(catalog_id or "")
+    return bool(e and e.get("sample"))
+
 def _visible(t):
-    """A tool or server is visible to the signed-in person if it is shared or their own."""
+    """A tool or server is visible to the signed-in person if it is provided by the studio
+    or their own. Sample servers are admin-only unless an admin put one of their tools in
+    the defaults; then the whole server shows, defaults pre-checked, so people can add more."""
     own = t.get("owner") or ""
-    return (not own) or own == current_owner()
+    if own and own != current_owner():
+        return False
+    cid = t.get("catalog_id") or t.get("id") or t.get("server_id") or ""
+    if _is_sample(cid) and not is_admin():
+        sid = t.get("server_id") or t.get("id") or cid
+        return any(k.startswith(sid + "__") for k in default_tools())
+    return True
 
 def connected_tools():
     """Tools across connected servers this person may use (shared plus their personal
@@ -383,7 +403,9 @@ def connections():
         d_ = oauth.describe(c_.get("token"))
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
+    default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
     return render_template("connections.html", catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
+                           default_servers=default_servers,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
                            requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(),
@@ -491,7 +513,7 @@ def tools_json():
     groups = {}
     for t in connected_tools():
         g = groups.setdefault(t["server_id"], {"server": t["server_name"], "tools": []})
-        g["tools"].append({"key": t["key"], "tool": t["tool"], "risk": t["risk"],
+        g["tools"].append({"key": t["key"], "tool": t["tool"], "risk": t["risk"], "personal": bool(t.get("owner")),
                            "gate": t["gate"], "description": t["description"]})
     return {"groups": list(groups.values())}
 
@@ -549,10 +571,20 @@ def _builder_ctx(edit_agent=None):
     catalog_meta = {c["id"]: {"name": c["name"], "personal": bool(c.get("personal")),
                               "connected": store.conn_key(c["id"], current_owner() if c.get("personal") else None) in connected_ids}
                     for c in merged_catalog()}
+    visible_servers = set(connected_ids)
+    def tpl_ok(t):
+        if is_admin():
+            return True
+        for sid in t.get("servers") or []:
+            e = cat.BY_ID.get(sid, {})
+            if e.get("sample") and store.conn_key(sid) not in visible_servers:
+                return False
+        return True
     return dict(groups=groups, catalog=merged_catalog(), status=status,
                 enabled={c["id"] for c in store.enabled_connections()},
                 mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                templates=AGENT_TEMPLATES, catalog_meta=catalog_meta,
+                templates=[t for t in AGENT_TEMPLATES if tpl_ok(t)], catalog_meta=catalog_meta,
+                defaults=default_tools(),
                 edit_agent=edit_agent,
                 edit_skills=set(edit_agent["skills"]) if edit_agent else None,
                 candidates=[a for a in store.list_agents(_scope())
@@ -1101,7 +1133,14 @@ def _grant_and_resume(sid, agent_id, rid):
 def settings():
     gcid, gsec = _google_client()
     byo = bool(store.get_setting("google_client_id"))
+    provided = {}
+    for t in connected_tools():
+        if t.get("owner"):
+            continue
+        g = provided.setdefault(t["server_id"], {"name": t["server_name"], "sample": _is_sample(t.get("catalog_id")), "tools": []})
+        g["tools"].append(t)
     return render_template("settings.html", google_configured=bool(gcid and gsec), byo=byo,
+                           provided=provided, defaults=set(default_tools()),
                            client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
                            redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
                            base_url=os.environ.get("WARDEN_BASE_URL", ""), signin_on=GOOGLE_ON,
@@ -1111,6 +1150,10 @@ def settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     f = request.form
+    if f.get("section") == "defaults":
+        ok = {t["key"] for t in connected_tools() if not t.get("owner")}
+        store.set_setting("default_tools", _json.dumps([k for k in f.getlist("default_tools") if k in ok]))
+        return redirect(url_for("settings", saved="defaults"))
     if f.get("clear"):
         store.set_setting("google_client_id", None); store.set_setting("google_client_secret", None)
     else:

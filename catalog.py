@@ -19,6 +19,9 @@ you override it.
               entry, read-only by default); mcp = the server follows the MCP authorization
               spec (discovery + dynamic client registration + PKCE, Sign in with <vendor>).
 'token_url':  where a person gets an API key or personal access token for paste-in auth.
+'sample':     ships with Warden for trying things out (fake customers, a scratch folder,
+              Warden's own source). Admins see them; regular users only if an admin put
+              some of their tools in the studio defaults.
 'personal':   each person connects their own account (Gmail, Drive, Calendar); the token is
               stored under that person and only their agents can use it. Everything else is
               shared: an admin connects it once for the whole studio.
@@ -26,13 +29,13 @@ you override it.
 
 CATALOG = [
   # --- ships with Warden (always connectable) ---
-  {"id":"builtin_enterprise","name":"Enterprise Tools (Warden)","category":"Reference",
+  {"id":"builtin_enterprise","name":"Enterprise Tools (Warden)","category":"Reference","sample":True,
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Customer lookup, knowledge search, ticketing, and refunds. Warden's built-in server."},
-  {"id":"builtin_files","name":"Filesystem (Warden)","category":"Files & Docs",
+  {"id":"builtin_files","name":"Filesystem (Warden)","category":"Files & Docs","sample":True,
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Read, list, and write files inside a sandboxed workspace. A working second server."},
-  {"id":"builtin_code","name":"Self-Audit (Warden)","category":"Dev",
+  {"id":"builtin_code","name":"Self-Audit (Warden)","category":"Dev","sample":True,
    "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
    "desc":"Reads Warden's own source, runs a static self-check, and proposes fixes (gated). Warden debugging Warden."},
 
