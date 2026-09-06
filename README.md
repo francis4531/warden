@@ -73,6 +73,15 @@ category, and any conversation becomes a case with one click.
 | `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides, eval suites, annotations |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 
+## Personal vs shared
+
+Connections come in two kinds. Shared ones (Stripe, Jira, GitHub, a data warehouse) are
+connected once by an admin for the whole studio. Personal ones (Gmail, Drive, Calendar)
+belong to one person: they connect their own account, their agents use it, nobody else
+can see or grant it. A first-time user is walked through three steps on the dashboard:
+connect a source, build an agent from a template, run it. Nothing in that path asks for a
+token, a key, or a configuration file.
+
 ## Connections
 
 The Connections page lists common enterprise MCP servers grouped by category (GitHub,
@@ -81,10 +90,12 @@ reference servers, Google Workspace, and more). Each entry shows who maintains i
 it connects, and the card matches the credential the server actually needs:
 
 - Built in (Enterprise Tools, Filesystem): always connected, no setup.
-- Google (Gmail, Drive, Calendar, Docs, Sheets): "Connect with Google". Warden runs the
-  OAuth flow with its own Google client, read-only scopes by default, stores the refresh
-  token encrypted, and mints a fresh access token before every call. One-time setup: add
-  `WARDEN_BASE_URL/connections/oauth/google/callback` as a redirect URI and enable the API.
+- Personal (Gmail, Drive, Calendar, Docs, Sheets): each person clicks "Connect your Google
+  account" for themselves. The token is stored encrypted under that person, only their
+  agents can be granted it, and they can disconnect any time. Read-only scopes by default;
+  a fresh access token is minted before every call. The admin sets up the Google client
+  once under Settings (or brings their own Workspace-internal client, which needs no
+  Google verification) and never touches a user's connection.
 - MCP-standard OAuth (Linear, Notion, Sentry, Atlassian, Cloudflare, Vercel, GitHub):
   "Sign in with <vendor>". Warden discovers the authorization server, registers itself as
   a client, and completes the PKCE flow in the browser. No token to paste.

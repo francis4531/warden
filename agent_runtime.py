@@ -97,19 +97,26 @@ REQUEST_TOOL = {
                      "properties": {"need": {"type": "string", "description": "What you need to do, in one sentence, e.g. read and prioritize the user's Gmail inbox."},
                                     "keywords": {"type": "string", "description": "Short search terms for the catalog, e.g. gmail, email, google."}}}}
 
-def find_connections(keywords, need=""):
+def find_connections(keywords, need="", owner=None):
     """Match a capability request against the catalog (and the MCP Registry as a fallback).
-    Returns [{id, name, desc, connected, source}] best first."""
+    Returns [{id, name, desc, connected, source}] best first. A personal connector counts as
+    connected only if this owner has connected their own account."""
     import catalog as cat
     terms = [t for t in re.split(r"[^a-z0-9]+", (keywords + " " + need).lower()) if len(t) > 2]
-    st = {s_["id"]: s_ for s_ in _cm().connected_servers()}
+    st = {}
+    for s_ in _cm().connected_servers():
+        if s_.get("status") != "connected":
+            continue
+        if s_.get("owner") and s_.get("owner") != (owner or ""):
+            continue
+        st[s_.get("catalog_id") or s_["id"]] = s_
     scored = []
     for e in cat.CATALOG:
         hay = (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()
         score = sum(3 if t in e["name"].lower() or t in e["id"] else (1 if t in hay else 0) for t in terms)
         if score:
             scored.append((score, {"id": e["id"], "name": e["name"], "desc": e.get("desc", ""), "source": "catalog",
-                                   "connected": e["id"] in st and st[e["id"]]["status"] == "connected",
+                                   "connected": e["id"] in st, "personal": bool(e.get("personal")),
                                    "transport": e["transport"], "auth": e.get("auth", "")}))
     scored.sort(key=lambda x: -x[0])
     top = scored[0][0] if scored else 0
@@ -437,15 +444,18 @@ def situational_context(agent, tools, idx, run=None):
             "1. Reason only from the tools listed above. Do not claim abilities you do not have, and do not "
             "deny abilities Warden can add.\n"
             "2. If the task needs a capability you lack (an inbox, calendar, CRM, database, ticketing, files, "
-            "the web, anything), call request_connection with what you need. Warden's operator can connect an "
-            "official server from the catalog and grant you its tools in one step. Never tell the user to "
-            "install software, edit configuration files, or use a different product.\n"
+            "the web, anything), call request_connection with what you need. Personal sources such as Gmail, "
+            "Drive, and Calendar are connected by the user themselves with one click (Connect your Google "
+            "account); shared systems are connected by the Warden admin. Either way Warden grants you the "
+            "tools in one step. Never tell the user to install software, edit configuration files, or use a "
+            "different product.\n"
             "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
             "you will do once it is connected, then stop and wait.\n"
             "4. Never state that an action happened unless a tool result confirms it.\n\n"
             "How connection requests work, so you can describe them exactly: the request appears as a card in "
             "this conversation directly above your reply, and under Approvals in Warden's left navigation "
-            "(the Approvals badge counts it). %s When it is connected, its tools are granted to you and this "
+            "(the Approvals badge counts it). For a personal source like Gmail the card has a Connect your Google "
+            "account button the user clicks themselves. %s When it is connected, its tools are granted to you and this "
             "conversation resumes automatically; the user does not need to type anything or come back to tell you. "
             "Do not speculate about other places it might appear."
             % (agent["name"], "\n".join(lines), _admin_sentence(run)))
@@ -679,10 +689,10 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                         detail={"input":b["input"],"outcome":"denied"})
         elif b["name"] == REQUEST_KEY:
             inp = b["input"] if isinstance(b["input"], dict) else {}
-            matches = find_connections(str(inp.get("keywords") or ""), str(inp.get("need") or ""))
+            matches = find_connections(str(inp.get("keywords") or ""), str(inp.get("need") or ""), owner=run.get("owner") or "")
             store.audit(run_id, agent["id"], "connection_request", skill=REQUEST_KEY, risk=d["risk"],
                         detail={"input": inp, "need": inp.get("need"), "keywords": inp.get("keywords"),
-                                "matches": [{"id": m["id"], "name": m["name"], "source": m["source"], "connected": m["connected"]} for m in matches],
+                                "matches": [{"id": m["id"], "name": m["name"], "source": m["source"], "connected": m["connected"], "personal": m.get("personal", False)} for m in matches],
                                 "outcome": "ok", "status": "open"})
             already = [m["name"] for m in matches if m["connected"]]
             rtext = json.dumps({"requested": True,

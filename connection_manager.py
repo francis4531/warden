@@ -43,7 +43,7 @@ class _LoopThread:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
 def _http_params(sid, spec):
-    cat = catalog_mod.BY_ID.get(sid, {})
+    cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     url = spec.get("url") or cat.get("run")
     headers = {}
     tok = spec.get("token")
@@ -115,14 +115,15 @@ class _Manager:
 
     # ---- connect (on loop thread) ----
     def _connect(self, sid, spec):
-        cat = catalog_mod.BY_ID.get(sid, {})
-        name = cat.get("name", sid)
+        cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
+        name = cat.get("name", spec.get("catalog_id") or sid)
         transport = spec.get("transport") or cat.get("transport", "stdio_node")
         try:
             tools = self._lt.run(self._aopen(sid, spec, transport), timeout=75)
             self._toolcache[sid] = tools
             self._status[sid] = {"status": "connected", "error": None, "name": name,
-                                 "transport": transport, "tool_count": len(tools)}
+                                 "transport": transport, "tool_count": len(tools),
+                                 "owner": spec.get("owner") or "", "catalog_id": spec.get("catalog_id") or sid}
         except Exception as e:
             msg = (str(e) or e.__class__.__name__)
             low = msg.lower()
@@ -130,7 +131,8 @@ class _Manager:
                 msg = ("server exited on startup, it likely needs credentials or configuration. "
                        "Edit the command to supply them (e.g. a real connection string or token).")
             self._status[sid] = {"status": "error", "error": msg[:220],
-                                 "name": name, "transport": transport, "tool_count": 0}
+                                 "name": name, "transport": transport, "tool_count": 0,
+                                 "owner": spec.get("owner") or "", "catalog_id": spec.get("catalog_id") or sid}
 
     async def _aopen(self, sid, spec, transport):
         if transport == "http":
@@ -173,11 +175,13 @@ class _Manager:
         out = []
         with self._lock:
             for sid, tools in self._toolcache.items():
-                sname = self._status.get(sid, {}).get("name", sid)
+                st = self._status.get(sid, {})
+                sname = st.get("name", sid)
                 for t in tools:
                     key = f"{sid}__{t['name']}"[:64]
                     self._toolmap[key] = (sid, t["name"])
                     out.append({"key": key, "server_id": sid, "server_name": sname,
+                                "owner": st.get("owner") or "", "catalog_id": st.get("catalog_id") or sid,
                                 "tool": t["name"], "description": t["description"],
                                 "input_schema": t["input_schema"]})
         return out

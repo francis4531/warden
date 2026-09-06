@@ -15,7 +15,8 @@
   <div class="g-eye" style="color:var(--brass)"><span>&#9673; needs a connection</span></div>
   <div class="g-title" style="display:flex;align-items:center;gap:10px"><span class="aico" style="width:26px;height:26px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>{{ q.agent.name }} needs: {{ q.need }}</div>
   <div style="color:var(--mut);font-size:13px">
-    {% if is_admin %}Connect it and its tools are granted to {{ q.agent.name }}; the conversation resumes on its own.
+    {% if q.matches and q.matches[0].personal %}A personal source: the person who owns the agent connects their own account, read-only, and the conversation resumes on its own.
+    {% elif is_admin %}Connect it and its tools are granted to {{ q.agent.name }}; the conversation resumes on its own.
     {% else %}Waiting for a Warden admin{% if admin_emails %} ({{ admin_emails|join(', ') }}){% endif %} to connect it. The conversation resumes on its own once granted.{% endif %}
   </div>
   <div class="args" style="display:flex;flex-direction:column;gap:8px">
@@ -24,6 +25,10 @@
       <div><div style="font-weight:600;font-size:13.5px">{{ m.name }}{% if m.connected %} <span class="pill done">connected, not granted</span>{% endif %}</div><div style="color:var(--mut);font-size:12px">{{ 'official server in the Warden catalog' if m.source=='catalog' else 'found in the MCP Registry' }}</div></div>
       {% if m.connected %}
       <form method="post" action="{{ url_for('grant_connection') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.sid }}"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Grant to {{ q.agent.name }} &rarr;</button></form>
+      {% elif m.personal and q.agent.owner == user_email %}
+      <form method="post" action="{{ url_for('oauth_start') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Connect your {{ m.name.split(' (')[0] }} &rarr;</button></form>
+      {% elif m.personal %}
+      <span style="margin-left:auto;color:var(--dim);font-size:12px">personal: {{ q.agent.owner }} connects their own</span>
       {% elif is_admin %}
       <a class="btn brass sm" style="margin-left:auto" href="{{ m.url }}">Connect &amp; grant &rarr;</a>
       {% endif %}
