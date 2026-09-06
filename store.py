@@ -300,6 +300,32 @@ def audit_all(limit=200):
         d = dict(r); d["detail"] = json.loads(d["detail"]) if d["detail"] else None; out.append(d)
     return out
 
+def cost_by_agent(iso_prefix=None):
+    """Model spend per agent id, all time or for audit rows whose ts starts with iso_prefix."""
+    c = _conn()
+    if iso_prefix:
+        rows = c.execute("SELECT agent_id, detail FROM audit WHERE kind='model_call' AND ts LIKE ?", (iso_prefix + "%",)).fetchall()
+    else:
+        rows = c.execute("SELECT agent_id, detail FROM audit WHERE kind='model_call'").fetchall()
+    c.close()
+    out = {}
+    for r in rows:
+        try:
+            out[r["agent_id"]] = out.get(r["agent_id"], 0.0) + ((json.loads(r["detail"]) or {}).get("cost", 0) or 0)
+        except Exception:
+            pass
+    return {k: round(v, 6) for k, v in out.items()}
+
+def run_counts_by_agent():
+    """(runs, last activity, running-or-waiting) per agent id, top-level runs only."""
+    c = _conn()
+    rows = c.execute("""SELECT agent_id, COUNT(*) AS n, MAX(updated_at) AS last,
+                        SUM(CASE WHEN status IN ('running','awaiting_approval') THEN 1 ELSE 0 END) AS active
+                        FROM runs WHERE (parent_run_id IS NULL OR parent_run_id='') AND (eval_run_id IS NULL OR eval_run_id='')
+                        GROUP BY agent_id""").fetchall()
+    c.close()
+    return {r["agent_id"]: {"runs": r["n"], "last": r["last"], "active": r["active"] or 0} for r in rows}
+
 def cost_since(iso_prefix):
     """Total model-call cost across ALL runs whose audit ts starts with iso_prefix
     (e.g. '2026-08-31' for today, UTC). Powers the global daily spend cap."""

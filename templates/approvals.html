@@ -5,7 +5,7 @@
 <div class="page-h">
   <div class="eyebrow">Approvals</div>
   <h1>Actions on hold for a human.</h1>
-  <p class="sub">Everything an agent is waiting on a human for. High-risk actions pause here before they run; connection requests wait here for an admin to connect and grant them. Every decision lands in the audit log.</p>
+  <p class="sub">Everything an agent is waiting on a human for. High-risk actions pause here before they run; connection requests wait here for whoever can connect them: an admin for studio-provided systems, the agent's owner for personal sources. Every decision lands in the audit log.</p>
 </div>
 
 {% if requests %}
@@ -42,8 +42,24 @@
 {% endfor %}
 {% endif %}
 
+{% if waiting %}
+<div class="section-h"><span class="lbl">Waiting on people</span><span style="font-size:12px;color:var(--dim)">{{ waiting|length }} personal source{{ '' if waiting|length==1 else 's' }} their owners have to connect &middot; nothing for you to do</span></div>
+<div class="list" style="margin-bottom:22px">
+  {% for q in waiting %}
+  <a class="row" href="{{ url_for('run_view', rid=q.run_id) }}">
+    <span class="aico" style="width:26px;height:26px;margin-right:12px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
+    <div class="r-main" style="flex:1">
+      <div class="r-title">{{ q.agent.name }} <span style="color:var(--dim);font-weight:400">&middot; {{ q.agent.owner }}</span></div>
+      <div class="r-meta">needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} &middot; {{ q.need[:110] }}</div>
+    </div>
+    <span class="pill awaiting_approval">owner connects</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if pending %}
-{% if requests %}<div class="section-h"><span class="lbl">Actions on hold</span></div>{% endif %}
+{% if requests or waiting %}<div class="section-h"><span class="lbl">Actions on hold</span></div>{% endif %}
 {% for ap in pending %}
 <div class="gate">
   <div class="g-eye"><span>&#9209; approval required</span><span class="stamp {{ ap.risk }}">{{ ap.risk }} risk</span></div>
@@ -75,7 +91,7 @@
   </form>
 </div>
 {% endfor %}
-{% elif not requests %}
+{% elif not requests and not waiting %}
 <div class="empty"><h2>Nothing on hold</h2>When an agent reaches for a high-risk skill, or asks for a connection it does not have, it will wait for you right here.</div>
 {% endif %}
 {% endblock %}

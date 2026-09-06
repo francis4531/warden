@@ -102,7 +102,13 @@ def find_connections(keywords, need="", owner=None):
     Returns [{id, name, desc, connected, source}] best first. A personal connector counts as
     connected only if this owner has connected their own account."""
     import catalog as cat
-    terms = [t for t in re.split(r"[^a-z0-9]+", (keywords + " " + need).lower()) if len(t) > 2]
+    _STOP = {"the", "and", "for", "with", "from", "into", "that", "this", "your", "our", "get", "read",
+             "all", "any", "new", "use", "via", "per", "can", "not", "are", "was", "has", "have", "need",
+             "needs", "today", "user", "users", "data", "list", "find", "then", "them", "they", "you"}
+    def _terms(txt):
+        return [t for t in re.split(r"[^a-z0-9]+", (txt or "").lower()) if len(t) > 2 and t not in _STOP]
+    kw_terms = _terms(keywords)
+    terms = kw_terms + [t for t in _terms(need) if t not in kw_terms]
     st = {}
     for s_ in _cm().connected_servers():
         if s_.get("status") != "connected":
@@ -112,8 +118,13 @@ def find_connections(keywords, need="", owner=None):
         st[s_.get("catalog_id") or s_["id"]] = s_
     scored = []
     for e in cat.CATALOG:
-        hay = (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()
-        score = sum(3 if t in e["name"].lower() or t in e["id"] else (1 if t in hay else 0) for t in terms)
+        # whole-word matching: "for" must not light up "terraform", "mail" must not light up "gmail"
+        strong = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e["id"]).lower()))
+        hay = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()))
+        # the agent's own keywords count double: they name the system, the need describes the task
+        score = sum((2 if t in kw_terms else 1) * (3 if t in strong else (1 if t in hay else 0)) for t in terms)
+        if any(t == e["id"] or t == e["name"].split(" (")[0].lower() for t in kw_terms):
+            score += 2   # the keyword names this server outright
         if score:
             scored.append((score, {"id": e["id"], "name": e["name"], "desc": e.get("desc", ""), "source": "catalog",
                                    "connected": e["id"] in st, "personal": bool(e.get("personal")),

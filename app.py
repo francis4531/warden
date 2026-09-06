@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.9.1"
+WARDEN_VERSION = "0.10"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -138,6 +138,29 @@ def _owned_run(rid):
     if AUTH_ON and (r.get("owner") or "") != current_owner():
         abort(404)
     return r
+
+def _viewable_run(rid):
+    """A run the signed-in person may look at: their own, or anyone's for an admin, who
+    gets it read-only (no replying, approving, or annotating on someone else's behalf)."""
+    r = store.get_run(rid)
+    if not r:
+        abort(404)
+    if not AUTH_ON or (r.get("owner") or "") == current_owner():
+        return r, False
+    if is_admin():
+        return r, True
+    abort(404)
+
+def _viewable_agent(aid):
+    """Like _viewable_run: the owner's agent, or read-only for an admin."""
+    ag = store.get_agent(aid)
+    if not ag:
+        abort(404)
+    if not AUTH_ON or (ag.get("owner") or "") == current_owner():
+        return ag, False
+    if is_admin():
+        return ag, True
+    abort(404)
 
 def _authed():
     return (not AUTH_ON) or bool(session.get("auth"))
@@ -656,7 +679,7 @@ def _create_template_members(tpl):
 
 @app.route("/agent/<aid>")
 def agent(aid):
-    ag = _owned_agent(aid)
+    ag, readonly = _viewable_agent(aid)
     all_tools = connected_tools()
     idx = {t["key"]: t for t in all_tools}
     skills = set(ag["skills"] or [])
@@ -683,7 +706,7 @@ def agent(aid):
     est_base = max(200, len(ag["instructions"] or "") // 4 + len(granted) * 80 + 350)
     return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
                            counts=counts, missing=missing, runs=runs, team=team, leads=leads,
-                           est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"))
+                           est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"), readonly=readonly)
 
 def _advance_bg(rid):
     """Run the agent loop in the background so the browser isn't blocked."""
@@ -710,8 +733,10 @@ def run():
 
 @app.route("/run/<rid>")
 def run_view(rid):
-    r = _owned_run(rid)
+    r, readonly = _viewable_run(rid)
     ag = store.get_agent(r["agent_id"])
+    if readonly:
+        store.audit(rid, r["agent_id"], "admin_view", detail={"by": current_owner(), "text": "Opened read-only by admin %s" % current_owner()})
     parent = store.get_run(r["parent_run_id"]) if r.get("parent_run_id") else None
     lead = store.get_agent(parent["agent_id"]) if parent else None
     ev = store.get_eval_run(r["eval_run_id"]) if r.get("eval_run_id") else None
@@ -720,7 +745,7 @@ def run_view(rid):
                            is_team=bool(ag and ag.get("members")),
                            annotations=store.annotations_for_run(rid),
                            suites=store.list_suites(_scope(), agent_id=r["agent_id"]),
-                           eval_run=ev, categories=_categories())
+                           eval_run=ev, categories=_categories(), readonly=readonly)
 
 def _fmt_event(e):
     d = e.get("detail") or {}
@@ -748,7 +773,7 @@ def _fmt_event(e):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
     if kind == "connection_request":
         out["text"] = d.get("need") or ""
-    if kind == "connection_granted":
+    if kind in ("connection_granted", "admin_view"):
         out["text"] = d.get("text") or ""
     if kind == "eval_held":
         out["text"] = " ".join(_json.dumps(d.get("input"), ensure_ascii=False).split())[:200]
@@ -836,7 +861,7 @@ app.jinja_env.globals["ICON_SET"] = icons.PLANETS
 
 @app.route("/run/<rid>/events")
 def run_events(rid):
-    r = _owned_run(rid)
+    r, _ro = _viewable_run(rid)
     audit = store.audit_for_run(rid)
     mc = []
     for e in audit:
@@ -871,7 +896,7 @@ def run_events(rid):
     requests_ = _open_requests(rid, r["agent_id"])
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
             "pending": pend, "back": url_for("run_view", rid=rid), "delegations": delegations,
-            "waiting_on": waiting_on, "team": len(delegations) > 0, "requests": requests_, "admin": is_admin(),
+            "waiting_on": waiting_on, "team": len(delegations) > 0, "requests": requests_, "admin": is_admin(), "readonly": _ro,
             "admins": sorted(ADMIN_EMAILS),
             "cost": usage["cost"], "tokens": usage["tokens"], "calls": usage["calls"], "live": rt.mode() == "live"}
 
@@ -927,7 +952,7 @@ def _with_team_context(pending):
 @app.route("/approvals")
 def approvals():
     return render_template("approvals.html", pending=_with_team_context(store.pending_approvals(_scope())),
-                           requests=_requests_for_me())
+                           requests=_requests_for_me(), waiting=_requests_waiting_on_people())
 
 @app.route("/architecture")
 def architecture():
@@ -1043,8 +1068,7 @@ def observability():
 @app.route("/run/<rid>/trace")
 def run_trace(rid):
     import telemetry
-    r = store.get_run(rid)
-    if not r: abort(404)
+    r, _ro = _viewable_run(rid)
     spans, meta = telemetry.build_spans(rid)
     return render_template("trace.html", run=r, agent=store.get_agent(r["agent_id"]),
                            spans=spans, meta=meta,
@@ -1053,14 +1077,14 @@ def run_trace(rid):
 @app.route("/run/<rid>/trace.json")
 def run_trace_json(rid):
     import telemetry
-    if not store.get_run(rid): abort(404)
+    _viewable_run(rid)
     return app.response_class(_json.dumps(telemetry.to_otlp(rid), indent=2),
                               mimetype="application/json")
 
 @app.route("/run/<rid>/export", methods=["POST"])
 def run_export(rid):
     import telemetry
-    if not store.get_run(rid): abort(404)
+    _viewable_run(rid)
     return telemetry.export(rid)
 
 # ---------------- capability requests ----------------
@@ -1107,9 +1131,27 @@ def _all_open_requests(owner=None):
             seen[(e["run_id"], q["need"])] = {**q, "agent": ag, "run_id": e["run_id"]}
     return sorted(seen.values(), key=lambda q: q["ts"], reverse=True)[:20]
 
+def _actionable(q):
+    """Whether the signed-in person is the one who can satisfy a connection request. A
+    personal source is only ever connected by the agent's owner; a studio-provided one by
+    an admin. Anything else is informational for this viewer."""
+    personal = bool(q.get("matches")) and bool(q["matches"][0].get("personal"))   # best match decides
+    if personal:
+        return (q["agent"].get("owner") or "") == current_owner()
+    return is_admin()
+
 def _requests_for_me():
-    """Open requests this signed-in person should see: all of them for an admin, their own otherwise."""
-    return _all_open_requests(None if is_admin() else _scope())
+    """Open requests this signed-in person can act on: their own agents' requests for a
+    user; for an admin, the studio-provided ones from every agent."""
+    scope = None if is_admin() else _scope()
+    return [q for q in _all_open_requests(scope) if _actionable(q)]
+
+def _requests_waiting_on_people():
+    """Admin-only: open requests that someone else has to satisfy (their own Gmail, for
+    example). Shown for awareness, never counted as the admin's to-do."""
+    if not is_admin():
+        return []
+    return [q for q in _all_open_requests(None) if not _actionable(q)]
 
 def _grant_and_resume(sid, agent_id, rid):
     """After a requested server connects: grant its tools to the requesting agent, note it on
@@ -1132,6 +1174,56 @@ def _grant_and_resume(sid, agent_id, rid):
         tr = r["transcript"]; tr.append({"role": "user", "content": text})
         store.update_run(rid, status="running", transcript=tr)
         _advance_bg(rid)
+
+# ---------------- studio (admin, read-only view of everyone) ----------------
+@app.route("/studio")
+def studio():
+    if not is_admin():
+        abort(404)
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    spend_all = store.cost_by_agent(); spend_today = store.cost_by_agent(today)
+    rc = store.run_counts_by_agent()
+    pend = store.pending_approvals(None)
+    pend_by_agent = {}
+    for a in pend:
+        pend_by_agent[a["agent_id"]] = pend_by_agent.get(a["agent_id"], 0) + 1
+    reqs = _all_open_requests(None)
+    req_by_owner = {}
+    for q in reqs:
+        req_by_owner.setdefault(q["agent"].get("owner") or "", []).append(q)
+    conns = store.enabled_connections()
+    personal_by_owner = {}
+    for c_ in conns:
+        if c_.get("owner"):
+            personal_by_owner[c_["owner"]] = personal_by_owner.get(c_["owner"], 0) + 1
+    people = {}
+    for ag in store.list_agents(None):
+        own = ag.get("owner") or "operator"
+        p = people.setdefault(own, {"email": own, "agents": [], "runs": 0, "active": 0, "spend": 0.0, "today": 0.0,
+                                    "pending": 0, "last": None, "requests": req_by_owner.get(own, []),
+                                    "personal": personal_by_owner.get(own, 0), "admin": own.lower() in ADMIN_EMAILS})
+        r_ = rc.get(ag["id"], {"runs": 0, "last": None, "active": 0})
+        row = {**ag, "runs": r_["runs"], "active": r_["active"], "last": r_["last"],
+               "spend": spend_all.get(ag["id"], 0.0), "pending": pend_by_agent.get(ag["id"], 0),
+               "team": bool(ag.get("members"))}
+        p["agents"].append(row)
+        p["runs"] += row["runs"]; p["active"] += row["active"]; p["spend"] += row["spend"]
+        p["today"] += spend_today.get(ag["id"], 0.0); p["pending"] += row["pending"]
+        if row["last"] and (not p["last"] or row["last"] > p["last"]):
+            p["last"] = row["last"]
+    for own in list(req_by_owner) + list(personal_by_owner):
+        if own not in people:
+            people[own] = {"email": own, "agents": [], "runs": 0, "active": 0, "spend": 0.0, "today": 0.0, "pending": 0,
+                           "last": None, "requests": req_by_owner.get(own, []), "personal": personal_by_owner.get(own, 0),
+                           "admin": own.lower() in ADMIN_EMAILS}
+    rows = sorted(people.values(), key=lambda p: (p["last"] or ""), reverse=True)
+    for p in rows:
+        p["agents"].sort(key=lambda a: (a["last"] or ""), reverse=True)
+    totals = {"people": len(rows), "agents": sum(len(p["agents"]) for p in rows), "runs": sum(p["runs"] for p in rows),
+              "active": sum(p["active"] for p in rows), "spend": sum(p["spend"] for p in rows),
+              "today": sum(p["today"] for p in rows), "pending": len(pend), "requests": len(reqs),
+              "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
+    return render_template("studio.html", people=rows, totals=totals)
 
 # ---------------- settings (admin) ----------------
 @app.route("/settings")

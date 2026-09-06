@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% set active='studio' %}
+{% block title %}Studio · Warden{% endblock %}
+{% block body %}
+<style>
+.g4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:900px){.g4{grid-template-columns:1fr 1fr}}
+.person{border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-bottom:10px;overflow:hidden}
+.person>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1.6fr) repeat(5,minmax(0,.7fr)) auto;gap:12px;align-items:center;padding:14px 16px}
+.person>summary::-webkit-details-marker{display:none}
+.person>summary .who{min-width:0}
+.person>summary .em{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person>summary .sub{font-size:11.5px;color:var(--dim);margin-top:2px}
+.person .n{font-family:var(--mono);font-size:13px}
+.person .n small{display:block;font-family:var(--body);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-top:2px}
+.person .n.warn{color:var(--med)}
+.person .chev{font-size:10px;color:var(--dim);transition:transform .15s}
+.person[open]>summary .chev{transform:rotate(90deg)}
+.person .body{border-top:1px solid var(--line);padding:6px 16px 14px}
+.hdr{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(5,minmax(0,.7fr)) auto;gap:12px;padding:0 16px 8px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.arow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.arow:first-child{border-top:none}
+.arow .an{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow .am{font-family:var(--mono);font-size:12px;color:var(--mut);white-space:nowrap}
+.arow a{color:inherit;text-decoration:none}
+.arow a:hover{color:var(--brass)}
+.tag{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:20px;border:1px solid var(--line2);color:var(--mut);margin-left:6px}
+.reqline{font-size:12.5px;color:var(--mut);padding:8px 0 0}
+.reqline a{color:var(--brass)}
+@media (max-width:900px){.person>summary,.hdr{grid-template-columns:1fr 1fr 1fr}.hdr{display:none}}
+</style>
+
+<div class="page-h">
+  <div class="eyebrow">Studio</div>
+  <h1>Everyone's agents, in one place.</h1>
+  <p class="sub">Every person in the studio, what they have built, what it is doing, and what it costs. Open any agent or conversation to read it; acting on it (replying, approving, editing) stays with its owner, and opening someone else's conversation is itself an audit event.</p>
+</div>
+
+<div class="grid g4" style="margin-bottom:22px">
+  <div class="card k"><span class="kv">{{ totals.people }}</span><span class="kl">People</span><span class="kd">{{ totals.agents }} agent{{ '' if totals.agents==1 else 's' }} between them</span></div>
+  <div class="card k"><span class="kv" style="color:{{ 'var(--low)' if totals.active else 'var(--txt)' }}">{{ totals.active }}</span><span class="kl">Active now</span><span class="kd">running or waiting &middot; {{ totals.runs }} conversation{{ '' if totals.runs==1 else 's' }} all time</span></div>
+  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if (totals.pending or totals.requests) else 'var(--txt)' }}">{{ totals.pending + totals.requests }}</span><span class="kl">Waiting on a human</span><span class="kd">{{ totals.pending }} action{{ '' if totals.pending==1 else 's' }} on hold &middot; {{ totals.requests }} connection request{{ '' if totals.requests==1 else 's' }}</span></a>
+  <div class="card k"><span class="kv">${{ '%.2f'|format(totals.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if totals.daily_cap %}of a ${{ '%.2f'|format(totals.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(totals.spend) }} all time</span></div>
+</div>
+
+{% if people %}
+<div class="hdr"><span>person</span><span>agents</span><span>conversations</span><span>active</span><span>on hold</span><span>spend</span><span></span></div>
+{% for p in people %}
+<details class="person" {{ 'open' if p.active or p.pending or p.requests }}>
+  <summary>
+    <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}</div>
+      <div class="sub">{% if p.last %}last activity {{ p.last[:16].replace('T',' ') }} UTC{% else %}no conversations yet{% endif %} &middot; {{ p.personal }} personal connection{{ '' if p.personal==1 else 's' }}</div></div>
+    <div class="n">{{ p.agents|length }}<small>agents</small></div>
+    <div class="n">{{ p.runs }}<small>conversations</small></div>
+    <div class="n {{ 'warn' if p.active }}">{{ p.active }}<small>active</small></div>
+    <div class="n {{ 'warn' if (p.pending or p.requests) }}">{{ p.pending + p.requests|length }}<small>on hold</small></div>
+    <div class="n">${{ '%.2f'|format(p.spend) }}<small>{{ '$%.2f today'|format(p.today) if p.today else 'all time' }}</small></div>
+    <span class="chev">&#9654;</span>
+  </summary>
+  <div class="body">
+    {% for a in p.agents %}
+    <div class="arow">
+      <span class="aico" style="width:24px;height:24px;flex:none">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
+      <span class="an"><a href="{{ url_for('agent', aid=a.id) }}">{{ a.name }}</a>{% if a.team %}<span class="tag">team</span>{% endif %}</span>
+      <span class="am">{{ a.runs }} conv{{ '' if a.runs==1 else 's' }}</span>
+      {% if a.active %}<span class="pill running">{{ a.active }} active</span>{% endif %}
+      {% if a.pending %}<span class="pill awaiting_approval">{{ a.pending }} on hold</span>{% endif %}
+      <span class="am">${{ '%.4f'|format(a.spend) }}</span>
+      <span class="am" style="color:var(--dim)">{{ a.last[:16].replace('T',' ') if a.last else 'never run' }}</span>
+    </div>
+    {% else %}
+    <div class="arow" style="color:var(--dim)">No agents yet.</div>
+    {% endfor %}
+    {% for q in p.requests %}
+    <div class="reqline">&#9673; <b>{{ q.agent.name }}</b> is waiting for {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }}{% if q.matches and q.matches[0].personal %} (personal, {{ p.email }} connects it){% else %} (studio-provided, <a href="{{ url_for('approvals') }}">yours to connect</a>){% endif %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}">open conversation</a></div>
+    {% endfor %}
+  </div>
+</details>
+{% endfor %}
+{% else %}
+<div class="empty"><h2>Nobody has built anything yet</h2>People appear here as soon as they create an agent or connect a personal source.</div>
+{% endif %}
+{% endblock %}

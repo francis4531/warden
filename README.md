@@ -73,6 +73,16 @@ category, and any conversation becomes a case with one click.
 | `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides, eval suites, annotations |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 
+## The admin's view
+
+Admins get a Studio page: every person, their agents, conversations, what is active, what
+is on hold, and spend today and all time. Any agent or conversation opens read-only, so an
+admin can see exactly what an agent did without being able to reply, approve, edit, or mark
+answers on the owner's behalf; opening someone else's conversation writes an `admin_view`
+event to that run's audit trail, visible to the owner. Approvals separates what the admin
+can act on (studio-provided systems to connect) from what is waiting on other people (a
+personal source only its owner can connect), and only the first counts toward the badge.
+
 ## Provided by the studio vs your own
 
 Connections come in two kinds. Studio-provided ones (Stripe, Jira, GitHub, a data

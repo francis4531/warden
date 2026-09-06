@@ -104,7 +104,8 @@
 <div id="gate"></div>
 <div id="activity" class="activity" style="display:none"><span class="livedot"></span><span id="activitytext">working&hellip;</span></div>
 
-<div id="fbbar" class="fbbar">
+{% if readonly %}<div class="evalnote" style="margin-top:10px">Owned by <b>{{ run.owner }}</b>. You are viewing as admin, read-only: replying, approving, and marking answers stay with the owner.</div>{% endif %}
+<div id="fbbar" class="fbbar" {{ 'hidden' if readonly }}>
   {% if annotations %}
   <div class="done">Marked <b>{{ 'good' if annotations[-1].verdict=='up' else ('wrong' if annotations[-1].verdict=='down' else 'noted') }}</b>{% if annotations[-1].category %} &middot; {{ annotations[-1].category }}{% endif %}{% if annotations[-1].note %} &middot; {{ annotations[-1].note }}{% endif %}
     {% if suites %} &middot; <form method="post" action="{{ url_for('add_case', sid=suites[0].id) }}" style="display:inline;margin:0"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button class="x" style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12.5px;padding:0">Add to {{ suites[0].name }} &rarr;</button></form>
@@ -126,7 +127,7 @@
   {% endif %}
 </div>
 
-<div class="composer">
+<div class="composer" {{ 'hidden' if readonly }}>
   <form id="composer" onsubmit="return false">
     <div class="box">
       <input id="msg" type="text" autocomplete="off" placeholder="Reply to the agent&hellip;">
@@ -179,12 +180,13 @@ function md(src){
 }
 
 let DELEG={}, REQS=[], ADMIN=false, ADMINS=[];
+const READONLY = {{ 'true' if readonly else 'false' }};
 function renderReq(e){
   const q = REQS.find(x=>x.need===e.text) || {need:e.text, matches:[], fulfilled:false};
   if(q.fulfilled){
     return `<div class="req done"><div class="eye">&#10003; connected</div><div class="title">${esc(q.need)}</div><div class="sub">The requested capability is connected and granted to this agent.</div></div>`;
   }
-  const opts = q.matches.length ? q.matches.map(m=>`<div class="opt"><div><div class="on">${esc(m.name)}${m.connected?' <span class="pill done">connected, not granted</span>':''}</div><div class="od">${m.source==='catalog'?'official server in the Warden catalog':'found in the MCP Registry'}</div></div>${m.connected?`<button class="btn brass sm" onclick="grantReq('${m.sid}')">Grant to this agent &rarr;</button>`:(m.personal?`<form method="post" action="/connections/oauth/start" style="margin:0"><input type="hidden" name="id" value="${esc(m.id)}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="${'{{ agent.id }}'}"><input type="hidden" name="resume" value="${RID}"><button class="btn brass sm">Connect your ${esc(m.name.split(' (')[0])} &rarr;</button></form>`:(ADMIN?`<a class="btn brass sm" href="${m.url}">Connect &amp; grant &rarr;</a>`:''))}</div>`).join('')
+  const opts = q.matches.length ? q.matches.map(m=>`<div class="opt"><div><div class="on">${esc(m.name)}${m.connected?' <span class="pill done">connected, not granted</span>':''}</div><div class="od">${m.source==='catalog'?'official server in the Warden catalog':'found in the MCP Registry'}</div></div>${READONLY?`<span style="margin-left:auto;color:var(--dim);font-size:12px">${m.personal?'personal: the owner connects their own':'studio-provided'}</span>`:m.connected?`<button class="btn brass sm" onclick="grantReq('${m.sid}')">Grant to this agent &rarr;</button>`:(m.personal?`<form method="post" action="/connections/oauth/start" style="margin:0"><input type="hidden" name="id" value="${esc(m.id)}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="${'{{ agent.id }}'}"><input type="hidden" name="resume" value="${RID}"><button class="btn brass sm">Connect your ${esc(m.name.split(' (')[0])} &rarr;</button></form>`:(ADMIN?`<a class="btn brass sm" href="${m.url}">Connect &amp; grant &rarr;</a>`:''))}</div>`).join('')
     : `<div class="opt"><div><div class="on">No catalog match</div><div class="od">An admin can search the MCP Registry for &ldquo;${esc(q.keywords||'')}&rdquo; from the Connections page.</div></div></div>`;
   return `<div class="req"><div class="eye">&#9673; needs a connection</div>
     <div class="title">${'{{ agent.name|e }}'} needs: ${esc(q.need)}</div>
@@ -239,6 +241,8 @@ function renderChat(events){
       chips+=`<span class="chip held"><span class="h">held</span> <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){
       chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">denied</span></span>`;
+    } else if(e.kind==='admin_view'){
+      chips+=`<span class="chip" style="color:var(--dim)">&#128065; ${esc(e.text)}</span>`;
     }
   }
   flush();
@@ -261,10 +265,10 @@ function renderGate(pending, back){
       <div style="color:var(--mut);font-size:13px">This changes state and is held until you approve. Nothing has happened yet.${a.member?' The whole team is paused until you decide.':''}</div>
       ${a.member?`<div class="g-member">team member <b>${esc(a.member)},</b> working on a task delegated by ${'{{ agent.name|e }}'}</div>`:''}
       <div class="args">${renderParts(a.parts)}</div>
-      <div class="g-actions">
+      ${READONLY?`<div style="color:var(--dim);font-size:12.5px">Waiting on the owner to decide.</div>`:`<div class="g-actions">
         <button class="btn brass" onclick="decide('${a.approve}','approved')">Approve &amp; run</button>
         <button class="btn deny" onclick="decide('${a.approve}','denied')">Deny</button>
-      </div>
+      </div>`}
     </div>`).join('');
 }
 async function decide(url, decision){
