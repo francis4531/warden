@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.9"
+WARDEN_VERSION = "0.9.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -87,6 +87,11 @@ def _google_client():
     cid = store.get_setting("google_client_id") or GOOGLE_CLIENT_ID
     sec = store.get_setting("google_client_secret") or GOOGLE_CLIENT_SECRET
     return cid, sec
+
+def _google_verified():
+    """An admin marks the Google app verified (or Workspace Internal) once Google stops
+    showing the unverified-app page; until then the connect card warns people about it."""
+    return store.get_setting("google_verified") == "1"
 
 def _google_connectors_on():
     cid, sec = _google_client()
@@ -379,7 +384,7 @@ def home():
             personal.append({"entry": e, "connected": k in raw and raw[k]["status"] == "connected"})
     return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
                            pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
-                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on())
+                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified())
 
 def _my_key(entry):
     """The connection row a catalog entry maps to for the signed-in person."""
@@ -408,7 +413,7 @@ def connections():
                            default_servers=default_servers,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
-                           requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(),
+                           requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(), google_verified=_google_verified(),
                            google_redirect=_oauth_redirect("google"),
                            oauth_error=request.args.get("oauth_error", ""), just_connected=request.args.get("connected", ""),
                            grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
@@ -1139,7 +1144,7 @@ def settings():
             continue
         g = provided.setdefault(t["server_id"], {"name": t["server_name"], "sample": _is_sample(t.get("catalog_id")), "tools": []})
         g["tools"].append(t)
-    return render_template("settings.html", google_configured=bool(gcid and gsec), byo=byo,
+    return render_template("settings.html", google_configured=bool(gcid and gsec), byo=byo, google_verified=_google_verified(),
                            provided=provided, defaults=set(default_tools()),
                            client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
                            redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
@@ -1150,6 +1155,9 @@ def settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     f = request.form
+    if f.get("section") == "verified":
+        store.set_setting("google_verified", "1" if f.get("google_verified") == "1" else None)
+        return redirect(url_for("settings", saved="verified"))
     if f.get("section") == "defaults":
         ok = {t["key"] for t in connected_tools() if not t.get("owner")}
         store.set_setting("default_tools", _json.dumps([k for k in f.getlist("default_tools") if k in ok]))
