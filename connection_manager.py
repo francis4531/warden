@@ -57,6 +57,23 @@ def _explain(e, cat):
     if status:
         www = (resp.headers.get("www-authenticate") or "") if getattr(resp, "headers", None) else ""
         vendor = (cat or {}).get("name", "the server").split(" (")[0]
+        # the provider's own words first: Google's 403 names the project and the API to enable
+        detail = ""
+        try:
+            body = resp.json()
+            err = body.get("error") if isinstance(body, dict) else None
+            if isinstance(err, dict):
+                detail = err.get("message") or ""
+            elif isinstance(err, str):
+                detail = err
+        except Exception:
+            try:
+                detail = (resp.text or "")[:300]
+            except Exception:
+                detail = ""
+        detail = " ".join(detail.split())
+        if detail:
+            return "%s answered %s: %s" % (vendor, status, detail[:400])
         if status == 401:
             hint = ("Google rejected the token (invalid_token). Check that the %s API is enabled in the Google Cloud project that owns the OAuth client, and that %s access was ticked on the consent page. Then disconnect and connect again."
                     % (vendor, vendor)) if (cat or {}).get("provider") == "google" else \
@@ -157,7 +174,7 @@ class _Manager:
             if transport != "http" and ("closed" in low or "exit" in low or "broken pipe" in low or not msg.strip()):
                 msg = ("server exited on startup, it likely needs credentials or configuration. "
                        "Edit the command to supply them (e.g. a real connection string or token).")
-            self._status[sid] = {"status": "error", "error": msg[:320],
+            self._status[sid] = {"status": "error", "error": msg[:480],
                                  "name": name, "transport": transport, "tool_count": 0,
                                  "owner": spec.get("owner") or "", "catalog_id": spec.get("catalog_id") or sid}
 
