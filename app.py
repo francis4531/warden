@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.8"
+WARDEN_VERSION = "0.8.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -216,6 +216,11 @@ def google_login():
 
 @app.route("/auth/google/callback")
 def google_callback():
+    # a connector flow (Connect your Google account) comes back here too; its state lives
+    # in session["conn_oauth"], the sign-in state in session["oauth_state"]
+    co = session.get("conn_oauth")
+    if co and request.args.get("state") and request.args.get("state") == co.get("state"):
+        return oauth_google_callback()
     if not GOOGLE_ON:
         abort(404)
     if not request.args.get("state") or request.args.get("state") != session.pop("oauth_state", None):
@@ -1116,9 +1121,13 @@ def save_settings():
 
 # ---------------- OAuth connect flows ----------------
 def _oauth_redirect(kind):
+    """Google connector flows reuse the sign-in callback, which is already registered on
+    the Google client, so connecting Gmail never needs a new redirect URI in Google Cloud.
+    MCP-standard servers register Warden's redirect dynamically, so they get their own."""
+    if kind == "google":
+        return _redirect_uri()
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
-    path = "/connections/oauth/%s/callback" % kind
-    return (base + path) if base else url_for("oauth_google_callback" if kind == "google" else "oauth_mcp_callback", _external=True)
+    return (base + "/connections/oauth/mcp/callback") if base else url_for("oauth_mcp_callback", _external=True)
 
 def _finish_connection(cid, token_json, grant_to=None, resume=None):
     """Store the OAuth token, connect, and (if this came from a request) grant and resume.
