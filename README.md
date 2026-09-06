@@ -73,14 +73,22 @@ category, and any conversation becomes a case with one click.
 | `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides, eval suites, annotations |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 
-## Personal vs shared
+## Provided by the studio vs your own
 
-Connections come in two kinds. Shared ones (Stripe, Jira, GitHub, a data warehouse) are
-connected once by an admin for the whole studio. Personal ones (Gmail, Drive, Calendar)
-belong to one person: they connect their own account, their agents use it, nobody else
-can see or grant it. A first-time user is walked through three steps on the dashboard:
-connect a source, build an agent from a template, run it. Nothing in that path asks for a
-token, a key, or a configuration file.
+Connections come in two kinds. Studio-provided ones (Stripe, Jira, GitHub, a data
+warehouse) are connected once by an admin and available to everyone. Personal ones (Gmail,
+Drive, Calendar) belong to one person: they connect their own account, their agents use
+it, nobody else can see or grant it. A first-time user is walked through three steps on
+the dashboard: connect a source, build an agent from a template, run it. Nothing in that
+path asks for a token, a key, or a configuration file.
+
+Admins choose the default tools for new agents under Settings. Every new agent starts
+with exactly those granted; the person building it adds more from their own connections.
+With no defaults set, Warden falls back to granting every read-only tool. The three
+sample servers built into Warden (enterprise tools, files, code) are tagged as samples and
+stay hidden from non-admins unless one of their tools is a default, so a real studio never
+shows made-up systems to its users, and a new studio can still hand people a working
+first agent in one click.
 
 ## Connections
 

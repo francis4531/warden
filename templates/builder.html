@@ -102,15 +102,15 @@
     </div>
     <div id="toolsections">
     {% for sid, g in groups.items() %}
-    {% if edit_skills is not none %}{% set sel = g.tools | selectattr('key','in',edit_skills) | list | length %}{% else %}{% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}{% endif %}
+    {% if edit_skills is not none %}{% set sel = g.tools | selectattr('key','in',edit_skills) | list | length %}{% elif defaults %}{% set sel = g.tools | selectattr('key','in',defaults) | list | length + (g.tools | selectattr('owner') | selectattr('risk','equalto','LOW') | list | length) %}{% else %}{% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}{% endif %}
     <details class="tsec" {{ 'open' if g.tools|length <= 6 or sel }}>
       <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
       <div class="tbody">
       {% for s in g.tools %}
       <label class="skill-row">
-        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" {% if edit_skills is not none %}{{ 'checked' if s.key in edit_skills }}{% else %}{{ 'checked' if s.risk == 'LOW' }}{% endif %}>
+        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" data-personal="{{ '1' if s.owner else '0' }}" {% if edit_skills is not none %}{{ 'checked' if s.key in edit_skills }}{% elif defaults %}{{ 'checked' if s.key in defaults or (s.owner and s.risk == 'LOW') }}{% else %}{{ 'checked' if s.risk == 'LOW' }}{% endif %}>
         <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
-          <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
+          <span class="stamp {{ s.risk }}">{{ s.risk }}</span>{% if s.key in defaults %}<span class="stamp" style="background:var(--line);color:var(--mut)" title="Your admin grants this to every new agent">default</span>{% endif %}
           {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
           <span class="sk-desc">{{ s.description }}</span></span>
       </label>
@@ -174,11 +174,17 @@
 const TEMPLATES = {{ templates|tojson }};
 const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const CATALOG_META = {{ catalog_meta|tojson }};
-// read-only (LOW) tools are the baseline that flows down to every agent; a template
-// adds its purposeful writes on top. Blank resets to that baseline.
+const DEFAULTS = new Set({{ defaults|tojson }});
+// The baseline that flows down to every new agent: the admin's "default tools for new
+// agents" when set (plus read-only tools from your own personal connections), otherwise
+// every read-only (LOW) tool. A template adds its purposeful writes on top.
+function isBaseline(key, risk, personal){
+  if(DEFAULTS.size) return DEFAULTS.has(key) || (personal && risk==='LOW');
+  return risk==='LOW';
+}
 function applyGrants(want){
   document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{
-    b.checked = (b.dataset.risk==='LOW') || want.has(b.value.split('__').pop());
+    b.checked = isBaseline(b.value, b.dataset.risk, b.dataset.personal==='1') || want.has(b.value.split('__').pop());
   });
   document.querySelectorAll('details.tsec').forEach(sec=>{
     const n=sec.querySelectorAll('input[name=skills]:checked').length;
@@ -198,7 +204,7 @@ function renderTplPrompt(t){
   if(need.length){
     const ids = JSON.stringify(need.map(p=>p.id));
     const label = need.length===1 ? ('Connect ' + esc(need[0].name)) : ('Connect ' + need.length + ' servers');
-    html += `<div class="tpl-line dim">Read-only tools are granted already. To grant its write tools, connect `
+    html += `<div class="tpl-line dim">${DEFAULTS.size?"Your studio\x27s default tools are granted already":"Read-only tools are granted already"}. To grant its write tools, connect `
       + need.map(p=>`<b>${esc(p.name)}</b>`).join(', ') + `.</div>`;
     if(IS_ADMIN || need.every(p=>p.personal)) html += IS_ADMIN
       ? `<button type="button" class="btn brass sm" onclick='openConnFor(${ids})'>${label} &rarr;</button>`
@@ -272,7 +278,7 @@ async function refreshTools(){
   for(const g of data.groups){
     const rows = g.tools.map(t=>{
       const isNew = !existing.has(t.key);
-      const checked = keep.has(t.key) || (isNew && t.risk==='LOW');   // read-only flows down by default
+      const checked = keep.has(t.key) || (isNew && isBaseline(t.key, t.risk, !!t.personal));   // baseline flows down by default
       return {t, checked};
     });
     const sel = rows.filter(r=>r.checked).length;
@@ -280,9 +286,9 @@ async function refreshTools(){
     html += `<details class="tsec" ${open}><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
       +`<span class="cnt">${g.tools.length} tools &middot; <span class="selc">${sel}</span> granted</span></summary><div class="tbody">`;
     for(const {t,checked} of rows){
-      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" data-risk="${t.risk}" ${checked?'checked':''}>`
+      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" data-risk="${t.risk}" data-personal="${t.personal?'1':'0'}" ${checked?'checked':''}>`
         +`<span class="sk-body"><span class="sk-top"><span class="sk-name">${esc(t.tool)}</span>`
-        +`<span class="stamp ${t.risk}">${t.risk}</span>${gatePill(t.gate)}</span>`
+        +`<span class="stamp ${t.risk}">${t.risk}</span>${DEFAULTS.has(t.key)?'<span class="stamp" style="background:var(--line);color:var(--mut)">default</span>':''}${gatePill(t.gate)}</span>`
         +`<span class="sk-desc">${esc(t.description)}</span></span></label>`;
     }
     html += `</div></details>`;
