@@ -1,0 +1,63 @@
+  <div class="conn {{ 'on' if connected }}{{ 'err' if errored }}" id="{{ e.id }}" data-id="{{ e.id }}">
+    <div class="top">
+      <span class="nm">{{ e.name }}</span>
+      {% if e.custom %}<span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">discovered</span>{% endif %}
+      {% if connected %}<span class="stamp LOW">{{ st.tool_count }} tools</span>
+      {% elif errored %}<span class="stamp HIGH">error</span>{% endif %}
+    </div>
+    <div class="tags">
+      <span class="tag cat">{{ e.category }}</span>
+      <span class="tag">{{ mlabel[e.maintainer] }}</span>
+      {% if e.personal %}<span class="tag" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,var(--line2))">personal · you connect your own</span>{% else %}<span class="tag">{{ 'remote (sign in, no token)' if e.provider=='mcp' else slabel[e.status] }}</span>{% endif %}
+    </div>
+    <div class="desc">{{ e.desc }}</div>
+    <div class="act">
+      {% if e.transport=='builtin' %}
+        <span class="pill done" style="margin-left:auto">always on</span>
+      {% elif e.id in enabled %}
+        {% set os_ = oauth_status.get(keyed[e.id]) %}
+        {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
+        <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
+          <input type="hidden" name="id" value="{{ keyed[e.id] }}"><button class="btn ghost sm">Disconnect</button></form>
+      {% elif e.provider=='google' %}
+        <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <div class="scopes">
+            <label><input type="radio" name="scope" value="read" checked> Read only</label>
+            <label><input type="radio" name="scope" value="write"> Read and write</label>
+          </div>
+          <button class="btn brass sm" type="submit" {{ 'disabled' if not google_on }}><svg width="14" height="14" viewBox="0 0 48 48" style="margin-right:2px"><path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></svg>Connect your Google account</button>
+        </form>
+        <div class="hint" style="flex-basis:100%">Personal: only your agents can use it, and you can disconnect any time.{% if not google_on %} {% if is_admin %}Not available yet: set up the Google client under <a href="{{ url_for('settings') }}">Settings</a>.{% else %}Not available yet: ask your admin to set up the Google client.{% endif %}{% endif %}</div>
+      {% elif not is_admin %}
+        <span class="hint" style="margin-left:auto">Shared system: your admin connects it once for everyone.</span>
+      {% elif e.provider=='mcp' %}
+        <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform" style="margin-left:auto">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <button class="btn brass sm" type="submit">Sign in with {{ e.name.split(' (')[0] }}</button>
+        </form>
+        {% if e.token_url %}
+        <details class="setup"><summary>Or paste a {{ e.token_label or 'token' }}</summary>
+          <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;margin-top:6px">
+            <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+            <input type="password" name="token" placeholder="{{ e.token_label or 'token' }}"><button class="btn sm">Connect</button></form>
+          <div class="hint"><a href="{{ e.token_url }}" target="_blank" rel="noopener">Get a {{ e.token_label or 'token' }} &rarr;</a>{% if e.env and is_admin %} &middot; or set <code>${{ e.env }}</code> on the server{% endif %}</div>
+        </details>
+        {% endif %}
+      {% elif e.transport=='http' and e.auth=='none' %}
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}<button class="btn brass sm">Connect</button></form>
+      {% elif e.transport=='http' %}
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <input type="password" name="token" placeholder="{{ e.token_label or 'API key' }}">
+          <button class="btn brass sm">Connect</button></form>
+        <div class="hint" style="flex-basis:100%">{% if e.token_url %}<a href="{{ e.token_url }}" target="_blank" rel="noopener">Get an API key &rarr;</a>{% endif %}{% if e.env and is_admin %}{{ ' &middot; '|safe if e.token_url }}or set <code>${{ e.env }}</code> on the server{% endif %}</div>
+      {% else %}
+        <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
+          <input type="hidden" name="id" value="{{ e.id }}">{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
+          <input type="text" name="command" value="{{ e.run }}" title="edit to add a real connection string or token">
+          <button class="btn sm">Enable</button></form>
+      {% endif %}
+    </div>
+  </div>

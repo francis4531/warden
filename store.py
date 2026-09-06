@@ -86,6 +86,13 @@ def init():
     # evals: a run created by an eval suite carries the eval run id; gated actions are held, not executed
     if "eval_run_id" not in rcols:
         c.execute("ALTER TABLE runs ADD COLUMN eval_run_id TEXT")
+    # personal connections: owner is set for a connection one person made for themselves
+    ccols = [r["name"] for r in c.execute("PRAGMA table_info(connections)").fetchall()]
+    if "owner" not in ccols:
+        c.execute("ALTER TABLE connections ADD COLUMN owner TEXT")
+    if "catalog_id" not in ccols:
+        c.execute("ALTER TABLE connections ADD COLUMN catalog_id TEXT")
+    c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     c.executescript("""
     CREATE TABLE IF NOT EXISTS eval_suites(
       id TEXT PRIMARY KEY, agent_id TEXT, owner TEXT, name TEXT, created_at TEXT);
@@ -352,12 +359,22 @@ def approvals_for_run(run_id):
     return out
 
 # ---- connections (enabled external MCP servers) ----
-def enable_connection(cid, transport, command=None, url=None, token=None):
+def conn_key(cid, owner=None):
+    """Row id for a connection. Shared connections use the catalog id; a personal one is
+    the catalog id plus a short hash of the owner, so two people can each connect Gmail."""
+    if not owner:
+        return cid
+    return cid + "~" + hashlib.sha1(owner.lower().encode()).hexdigest()[:8]
+
+def enable_connection(cid, transport, command=None, url=None, token=None, owner=None):
     import vault
+    key = conn_key(cid, owner)
     c = _conn()
-    c.execute("INSERT OR REPLACE INTO connections VALUES(?,?,?,?,?,?,?)",
-              (cid, transport, command, url, vault.encrypt(token), 1, now()))
+    c.execute("INSERT OR REPLACE INTO connections(id,transport,command,url,token,enabled,created_at,owner,catalog_id) "
+              "VALUES(?,?,?,?,?,?,?,?,?)",
+              (key, transport, command, url, vault.encrypt(token), 1, now(), owner or "", cid))
     c.commit(); c.close()
+    return key
 
 def update_connection_token(cid, token):
     import vault
@@ -372,15 +389,36 @@ def get_connection(cid):
 def disable_connection(cid):
     c = _conn(); c.execute("DELETE FROM connections WHERE id=?", (cid,)); c.commit(); c.close()
 
-def enabled_connections():
+def enabled_connections(owner=None):
+    """All enabled connections (the manager starts every one). With owner given: the
+    shared ones plus that person's personal ones, which is what they may see and use."""
     import vault
     c = _conn(); rows = c.execute("SELECT * FROM connections WHERE enabled=1").fetchall(); c.close()
     out = []
     for r in rows:
         d = dict(r)
+        own = d.get("owner") or ""
+        if owner is not None and own and own != owner:
+            continue
         out.append({"id": d["id"], "transport": d["transport"], "command": d["command"],
-                    "url": d["url"], "token": vault.decrypt(d["token"])})
+                    "url": d["url"], "token": vault.decrypt(d["token"]),
+                    "owner": own, "catalog_id": d.get("catalog_id") or d["id"]})
     return out
+
+# ---- settings (admin-set values that override environment defaults) ----
+def get_setting(key, default=None):
+    import vault
+    c = _conn(); r = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone(); c.close()
+    return vault.decrypt(r["value"]) if r and r["value"] is not None else default
+
+def set_setting(key, value):
+    import vault
+    c = _conn()
+    if value is None or value == "":
+        c.execute("DELETE FROM settings WHERE key=?", (key,))
+    else:
+        c.execute("INSERT OR REPLACE INTO settings VALUES(?,?,?)", (key, vault.encrypt(value), now()))
+    c.commit(); c.close()
 
 def is_enabled(cid):
     c = _conn(); r = c.execute("SELECT 1 FROM connections WHERE id=? AND enabled=1", (cid,)).fetchone(); c.close()

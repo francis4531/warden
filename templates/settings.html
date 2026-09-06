@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set active='settings' %}
+{% block title %}Settings · Warden{% endblock %}
+{% block body %}
+<style>
+.st{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-size:13.5px;align-items:baseline}
+.st .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.st code{font-family:var(--mono);font-size:12px;background:var(--ink3);padding:2px 6px;border-radius:5px;word-break:break-all}
+.ok{color:var(--low);font-weight:600}.bad{color:var(--high);font-weight:600}
+.steps{counter-reset:s;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;position:relative;padding:8px 0 8px 34px;font-size:13.5px;line-height:1.55;border-top:1px solid var(--line)}
+.steps li:first-child{border-top:none}
+.steps li::before{content:counter(s);position:absolute;left:0;top:9px;width:22px;height:22px;border-radius:50%;background:var(--brass);color:var(--accent-ink);font-size:12px;font-weight:700;display:grid;place-items:center}
+.steps a{color:var(--brass)}
+</style>
+<div class="page-h">
+  <div class="eyebrow">Settings</div>
+  <h1>Studio configuration.</h1>
+  <p class="sub">The things an admin sets once so everyone else gets one-click flows. Nothing here is ever shown to a regular user.</p>
+</div>
+
+{% if saved %}<div class="card" style="margin-bottom:14px;border-color:color-mix(in srgb,var(--low) 45%,var(--line));font-size:13.5px"><b>Saved.</b> Connect with Google now uses this client.</div>{% endif %}
+
+<div class="section-h"><span class="lbl">Google connectors</span><span class="{{ 'ok' if google_configured else 'bad' }}" style="font-size:12.5px">{{ 'configured' if google_configured else 'not configured' }}</span></div>
+<div class="card" style="margin-bottom:18px">
+  <div class="st">
+    <span class="k">status</span><span>{% if google_configured %}<span class="ok">Ready.</span> People can connect their own Gmail, Drive, Calendar, Docs, and Sheets with one click.{% else %}<span class="bad">Not ready.</span> Personal Google connectors are hidden behind a disabled button until a client is configured.{% endif %}</span>
+    <span class="k">client</span><span>{% if byo %}Your own Google Cloud client (set below){% elif signin_on %}The sign-in client from the server environment (GOOGLE_CLIENT_ID){% else %}none{% endif %}{% if client_id_hint %} &middot; <code>{{ client_id_hint }}</code>{% endif %}</span>
+    <span class="k">redirect URI</span><span><code>{{ redirect_uri }}</code> <span style="color:var(--dim);font-size:12px">(must be listed on the client, alongside the sign-in one, <code>{{ signin_redirect }}</code>)</span></span>
+    <span class="k">scopes</span><span>{% for e in personal if e.scopes %}{{ e.name.split(' (')[0] }}: <code>{{ e.scopes.read[0].split('/')[-1] }}</code>{{ ', ' if not loop.last }}{% endfor %} (read-only by default; read-and-write scopes are requested only when a person picks that option)</span>
+  </div>
+  <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--brass);font-size:13px">One-time setup in Google Cloud</summary>
+    <ol class="steps" style="margin-top:10px">
+      <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">APIs &amp; Services &rarr; Credentials</a> in the project that holds the client above. Under the web client, add the redirect URI shown here. Keep the sign-in URI too.</li>
+      <li>Enable the APIs you will use: <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail</a>, Drive, Calendar, Docs, Sheets.</li>
+      <li>On the <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener">OAuth consent screen</a>, add the scopes listed above.</li>
+      <li>If your organization uses Google Workspace, set the app's user type to <b>Internal</b>: no verification is needed and every person in the organization can connect. Otherwise keep the app in <b>Testing</b> and add each person as a test user (up to 100) until the app is verified.</li>
+    </ol>
+  </details>
+</div>
+
+<div class="section-h"><span class="lbl">Bring your own Google client</span></div>
+<div class="card">
+  <div style="color:var(--mut);font-size:13px;margin-bottom:12px">Recommended for organizations on Google Workspace: create an OAuth client in your own Google Cloud project (user type Internal), and paste it here. It replaces the sign-in client for connectors only; sign-in is unchanged. Secrets are stored encrypted.</div>
+  <form method="post" action="{{ url_for('save_settings') }}">
+    <label class="f" for="gcid">Client ID</label>
+    <input type="text" id="gcid" name="google_client_id" placeholder="xxxxxxxx.apps.googleusercontent.com">
+    <label class="f" for="gsec">Client secret</label>
+    <input type="password" id="gsec" name="google_client_secret" placeholder="{{ 'stored, leave blank to keep' if byo else 'GOCSPX-…' }}">
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn brass" type="submit">Save</button>
+      {% if byo %}<button class="btn ghost" name="clear" value="1" type="submit">Remove and use the sign-in client</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

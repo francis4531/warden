@@ -62,7 +62,55 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="empty"><h2>No agents yet</h2>Build your first governed agent to see it here.<br><br><a class="btn brass" href="{{ url_for('new_agent') }}">Build an agent</a></div>
+<style>
+.guide{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:900px){.guide{grid-template-columns:1fr}}
+.gstep{position:relative;border:1px solid var(--line);border-radius:14px;background:var(--ink2);padding:18px 18px 16px 18px}
+.gstep .n{width:26px;height:26px;border-radius:50%;background:var(--brass);color:var(--accent-ink);font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:10px}
+.gstep.done .n{background:var(--low)}
+.gstep h3{font-family:var(--disp);font-size:16px;font-weight:650;margin:0 0 6px}
+.gstep p{color:var(--mut);font-size:13px;line-height:1.55;margin:0 0 12px}
+.gstep .pc{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.gstep .pc form{margin:0}
+.gstep .row2{display:flex;align-items:center;gap:8px;font-size:13px}
+.gstep .row2 .ok{color:var(--low);font-weight:600}
+</style>
+<div class="card" style="padding:22px">
+  <div class="eyebrow" style="margin-bottom:6px">Start here</div>
+  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">Your first agent in three steps.</h2>
+  <p style="color:var(--mut);font-size:13.5px;margin:0 0 16px">Nothing here needs a token, a key, or a config file. Connect a source with one click, pick a template, run it.</p>
+  <div class="guide">
+    {% set anyp = personal|selectattr('connected')|list|length %}
+    <div class="gstep {{ 'done' if anyp }}">
+      <div class="n">{{ '&#10003;'|safe if anyp else '1' }}</div>
+      <h3>Connect a source</h3>
+      <p>Personal sources are yours: only your agents can use them, and you can disconnect any time.</p>
+      <div class="pc">
+        {% for p in personal[:3] %}
+        <div class="row2">
+          {% if p.connected %}<span class="ok">&#10003;</span> {{ p.entry.name.split(' (')[0] }} connected
+          {% elif google_on %}
+          <form method="post" action="{{ url_for('oauth_start') }}"><input type="hidden" name="id" value="{{ p.entry.id }}"><input type="hidden" name="scope" value="read"><button class="btn sm">Connect {{ p.entry.name.split(' (')[0] }}</button></form>
+          {% else %}<span style="color:var(--dim)">{{ p.entry.name.split(' (')[0] }}: waiting for your admin to set up Google</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <a href="{{ url_for('connections') }}" style="color:var(--brass);font-size:12.5px">All connections &rarr;</a>
+    </div>
+    <div class="gstep">
+      <div class="n">2</div>
+      <h3>Build an agent</h3>
+      <p>Pick a template, such as Inbox Prioritizer, and Warden grants it the read-only tools from what you connected. Anything that changes state will ask you first.</p>
+      <a class="btn brass sm" href="{{ url_for('new_agent') }}">Build an agent &rarr;</a>
+    </div>
+    <div class="gstep">
+      <div class="n">3</div>
+      <h3>Run it and stay in control</h3>
+      <p>Talk to your agent in a conversation. It works on its own for reads, pauses for your approval on anything risky, and every step lands on the audit log.</p>
+      <a href="{{ url_for('architecture') }}" style="color:var(--brass);font-size:12.5px">How governance works &rarr;</a>
+    </div>
+  </div>
+</div>
 {% endif %}
 
 {% if runs %}

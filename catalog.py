@@ -19,6 +19,9 @@ you override it.
               entry, read-only by default); mcp = the server follows the MCP authorization
               spec (discovery + dynamic client registration + PKCE, Sign in with <vendor>).
 'token_url':  where a person gets an API key or personal access token for paste-in auth.
+'personal':   each person connects their own account (Gmail, Drive, Calendar); the token is
+              stored under that person and only their agents can use it. Everything else is
+              shared: an admin connects it once for the whole studio.
 """
 
 CATALOG = [
@@ -102,19 +105,19 @@ CATALOG = [
    "desc":"Read projects and deployments; trigger and promote deploys. Ship behind a human gate."},
 
   # --- Google Workspace: official, first-party Google servers (one per product, OAuth) ---
-  {"id":"google_gmail","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/gmail.readonly"],"write":["https://www.googleapis.com/auth/gmail.modify"]},"name":"Gmail (Google official)","category":"Comms","maintainer":"vendor","transport":"http",
+  {"id":"google_gmail","provider":"google","personal":True,"scopes":{"read":["https://www.googleapis.com/auth/gmail.readonly"],"write":["https://www.googleapis.com/auth/gmail.modify"]},"name":"Gmail (Google official)","category":"Comms","maintainer":"vendor","transport":"http",
    "run":"https://gmailmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Gmail MCP server. Search threads, read messages, draft, and manage labels. OAuth via a Google Cloud project."},
-  {"id":"google_drive","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/drive.readonly"],"write":["https://www.googleapis.com/auth/drive"]},"name":"Google Drive (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+  {"id":"google_drive","provider":"google","personal":True,"scopes":{"read":["https://www.googleapis.com/auth/drive.readonly"],"write":["https://www.googleapis.com/auth/drive"]},"name":"Google Drive (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
    "run":"https://drivemcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Drive MCP server. Search, read, copy, and create files; manage permissions. OAuth via a Google Cloud project."},
-  {"id":"google_calendar","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/calendar.readonly"],"write":["https://www.googleapis.com/auth/calendar"]},"name":"Google Calendar (official)","category":"Productivity","maintainer":"vendor","transport":"http",
+  {"id":"google_calendar","provider":"google","personal":True,"scopes":{"read":["https://www.googleapis.com/auth/calendar.readonly"],"write":["https://www.googleapis.com/auth/calendar"]},"name":"Google Calendar (official)","category":"Productivity","maintainer":"vendor","transport":"http",
    "run":"https://calendarmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Calendar MCP server. List and search events, check free/busy, create and update events. OAuth via a Google Cloud project."},
-  {"id":"google_docs","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/documents.readonly"],"write":["https://www.googleapis.com/auth/documents"]},"name":"Google Docs (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
+  {"id":"google_docs","provider":"google","personal":True,"scopes":{"read":["https://www.googleapis.com/auth/documents.readonly"],"write":["https://www.googleapis.com/auth/documents"]},"name":"Google Docs (official)","category":"Files & Docs","maintainer":"vendor","transport":"http",
    "run":"https://docsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Docs MCP server. Read and update documents. OAuth via a Google Cloud project."},
-  {"id":"google_sheets","provider":"google","scopes":{"read":["https://www.googleapis.com/auth/spreadsheets.readonly"],"write":["https://www.googleapis.com/auth/spreadsheets"]},"name":"Google Sheets (official)","category":"Data","maintainer":"vendor","transport":"http",
+  {"id":"google_sheets","provider":"google","personal":True,"scopes":{"read":["https://www.googleapis.com/auth/spreadsheets.readonly"],"write":["https://www.googleapis.com/auth/spreadsheets"]},"name":"Google Sheets (official)","category":"Data","maintainer":"vendor","transport":"http",
    "run":"https://sheetsmcp.googleapis.com/mcp/v1","auth":"oauth","status":"remote",
    "desc":"Google's own Sheets MCP server. Read values, update cells and formulas, insert rows. OAuth via a Google Cloud project."},
 

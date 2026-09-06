@@ -172,6 +172,7 @@
 
 <script>
 const TEMPLATES = {{ templates|tojson }};
+const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const CATALOG_META = {{ catalog_meta|tojson }};
 // read-only (LOW) tools are the baseline that flows down to every agent; a template
 // adds its purposeful writes on top. Blank resets to that baseline.
@@ -199,7 +200,10 @@ function renderTplPrompt(t){
     const label = need.length===1 ? ('Connect ' + esc(need[0].name)) : ('Connect ' + need.length + ' servers');
     html += `<div class="tpl-line dim">Read-only tools are granted already. To grant its write tools, connect `
       + need.map(p=>`<b>${esc(p.name)}</b>`).join(', ') + `.</div>`;
-    html += `<button type="button" class="btn brass sm" onclick='openConnFor(${ids})'>${label} &rarr;</button>`;
+    if(IS_ADMIN || need.every(p=>p.personal)) html += IS_ADMIN
+      ? `<button type="button" class="btn brass sm" onclick='openConnFor(${ids})'>${label} &rarr;</button>`
+      : `<a class="btn brass sm" href="/connections?connect=${encodeURIComponent(need[0].id)}">${label} &rarr;</a>`;
+    else html += `<div class="tpl-line dim">Ask your admin to connect ` + need.map(p=>esc(p.name)).join(', ') + `.</div>`;
   } else {
     html += '<div class="tpl-line ok">\u2713 Everything this template needs is connected.</div>';
   }

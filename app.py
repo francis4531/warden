@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.7"
+WARDEN_VERSION = "0.8"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -80,6 +80,17 @@ AUTH_PASSWORD = os.environ.get("WARDEN_PASSWORD", "")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_ON = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+def _google_client():
+    """The Google OAuth client used for connectors: an admin-provided one from Settings
+    (bring your own client, e.g. an internal Workspace app) wins over the sign-in client."""
+    cid = store.get_setting("google_client_id") or GOOGLE_CLIENT_ID
+    sec = store.get_setting("google_client_secret") or GOOGLE_CLIENT_SECRET
+    return cid, sec
+
+def _google_connectors_on():
+    cid, sec = _google_client()
+    return bool(cid and sec)
 ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAILS", "").split(",") if e.strip()}
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
@@ -125,6 +136,12 @@ def _owned_run(rid):
 
 def _authed():
     return (not AUTH_ON) or bool(session.get("auth"))
+
+def _allowed_skills(form):
+    """Only tool keys this person can see may be granted: never another person's personal
+    connection, never a key that does not exist."""
+    ok = {t["key"] for t in connected_tools()}
+    return [k for k in form.getlist("skills") if k in ok]
 
 def _member_ids(form, self_id=None):
     """Member agent ids from the builder form, restricted to agents the current user owns.
@@ -246,10 +263,10 @@ def _auth_ctx():
             "is_admin": is_admin(),
             "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
 
-_ADMIN_ENDPOINTS = {"connections", "enable_connection", "disable_connection", "tool_risk",
-                    "oauth_start", "oauth_google_callback", "oauth_mcp_callback",
+_ADMIN_ENDPOINTS = {"enable_connection", "tool_risk",
                     "discover", "discover_add", "discover_remove", "discover_json",
-                    "policies", "create_policy", "toggle_policy", "delete_policy"}
+                    "policies", "create_policy", "toggle_policy", "delete_policy",
+                    "settings", "save_settings"}
 
 @app.before_request
 def _require_admin():
@@ -280,11 +297,19 @@ def inject_globals():
             "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
+def _visible(t):
+    """A tool or server is visible to the signed-in person if it is shared or their own."""
+    own = t.get("owner") or ""
+    return (not own) or own == current_owner()
+
 def connected_tools():
-    """All tools across connected servers, with effective governance risk."""
+    """Tools across connected servers this person may use (shared plus their personal
+    connections), with effective governance risk."""
     ovr = store.all_overrides()
     out = []
     for t in cm().all_tools():
+        if not _visible(t):
+            continue
         m = gov.meta(t["key"], t["tool"], t["description"], ovr.get(t["key"]))
         out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(t["key"])})
     return out
@@ -321,25 +346,43 @@ def landing():
 @app.route("/app")
 def home():
     servers = cm().connected_servers()
+    raw = {s["id"]: s for s in servers}
+    personal = []
+    for e in cat.CATALOG:
+        if e.get("personal"):
+            k = store.conn_key(e["id"], current_owner())
+            personal.append({"entry": e, "connected": k in raw and raw[k]["status"] == "connected"})
     return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
-                           pending=_with_team_context(store.pending_approvals(_scope())), servers=servers,
-                           tool_count=len(connected_tools()))
+                           pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
+                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on())
+
+def _my_key(entry):
+    """The connection row a catalog entry maps to for the signed-in person."""
+    return store.conn_key(entry["id"], current_owner() if entry.get("personal") else None)
 
 @app.route("/connections")
 def connections():
-    status = {s["id"]: s for s in cm().connected_servers()}
-    dq = (request.args.get("discover") or "").strip()
+    # status keyed by catalog id, resolved to this person's row for personal connectors
+    raw = {s["id"]: s for s in cm().connected_servers()}
+    status = {}
+    for e in merged_catalog():
+        k = _my_key(e)
+        if k in raw:
+            status[e["id"]] = raw[k]
+    enabled_keys = {c["id"] for c in store.enabled_connections()}
+    enabled = {e["id"] for e in merged_catalog() if _my_key(e) in enabled_keys}
+    dq = (request.args.get("discover") or "").strip() if is_admin() else ""
     discover = registry.search(dq) if dq else None
     oauth_status = {}
     for c_ in store.enabled_connections():
         d_ = oauth.describe(c_.get("token"))
         if d_: oauth_status[c_["id"]] = d_
-    return render_template("connections.html", catalog=merged_catalog(), status=status,
-                           enabled={c["id"] for c in store.enabled_connections()},
+    keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
+    return render_template("connections.html", catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
-                           requests=_requests_for_me(), oauth_status=oauth_status, google_on=GOOGLE_ON,
-                           google_redirect=_oauth_redirect("google") if GOOGLE_ON else "",
+                           requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(),
+                           google_redirect=_oauth_redirect("google"),
                            oauth_error=request.args.get("oauth_error", ""), just_connected=request.args.get("connected", ""),
                            grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
                            connect_id=request.args.get("connect", ""),
@@ -370,6 +413,11 @@ def enable_connection():
 @app.route("/connections/disable", methods=["POST"])
 def disable_connection():
     cid = request.form.get("id")
+    row = store.get_connection(cid)
+    if row and (row.get("owner") or "") and (row.get("owner") != current_owner()) and not is_admin():
+        abort(403)
+    if row and not (row.get("owner") or "") and not is_admin():
+        abort(403)
     store.disable_connection(cid); cm().disconnect(cid)
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}
@@ -477,6 +525,9 @@ AGENT_TEMPLATES = [
     {"id": "warehouse", "name": "Warehouse Analyst",
      "instructions": "You answer questions from the data warehouse. Run read-only queries to investigate, and explain what the numbers mean in plain language. Anything that writes, updates, deletes, or changes schema is held for a human. Never guess at a number you did not query.",
      "servers": ["supabase", "postgres"], "tools": ["execute_sql", "apply_migration"]},
+    {"id": "inbox", "name": "Inbox Prioritizer (your Gmail)",
+     "instructions": "You prioritize the user's Gmail inbox. Read recent threads, group them into needs a reply today, waiting on someone else, FYI, and noise, and write a short digest with the one next action for each item that needs one. Never send or delete mail; drafting is fine only if asked. Quote subject lines exactly.",
+     "servers": ["google_gmail"], "tools": []},
     {"id": "billing_desk", "name": "Billing Desk (team)", "team": True,
      "instructions": "You run the billing desk. For each customer issue, have the Refund Auditor verify the account and the charge against policy first, then hand the verified facts and exact amount to the Billing Resolver to make it right. Never issue a refund yourself; report exactly what each member did.",
      "servers": ["builtin_enterprise"], "tools": ["lookup_customer"],
@@ -490,7 +541,8 @@ def _builder_ctx(edit_agent=None):
     status = {s["id"]: s for s in cm().connected_servers()}
     groups = tools_by_server()
     connected_ids = set(groups.keys())
-    catalog_meta = {c["id"]: {"name": c["name"], "connected": c["id"] in connected_ids}
+    catalog_meta = {c["id"]: {"name": c["name"], "personal": bool(c.get("personal")),
+                              "connected": store.conn_key(c["id"], current_owner() if c.get("personal") else None) in connected_ids}
                     for c in merged_catalog()}
     return dict(groups=groups, catalog=merged_catalog(), status=status,
                 enabled={c["id"] for c in store.enabled_connections()},
@@ -518,7 +570,7 @@ def update_agent(aid):
     name = request.form.get("name", "").strip() or ag["name"]
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
-    skills = request.form.getlist("skills")
+    skills = _allowed_skills(request.form)
     store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""),
                        budget_usd=request.form.get("budget_usd") or 0,
                        members=_member_ids(request.form, self_id=aid))
@@ -535,7 +587,7 @@ def create_agent():
     name = request.form.get("name", "").strip() or "Untitled agent"
     instructions = request.form.get("instructions", "").strip()
     model = request.form.get("model", "").strip() or rt.MODEL_DEFAULT
-    skills = request.form.getlist("skills")
+    skills = _allowed_skills(request.form)
     members = _member_ids(request.form)
     # a team template can bring its own members: create them for the user when none were picked
     tpl = next((t for t in AGENT_TEMPLATES if t["id"] == request.form.get("template")), None)
@@ -984,8 +1036,11 @@ def _open_requests(rid, agent_id):
         matches = []
         for m in d.get("matches", []):
             sid = m.get("id")
-            matches.append({**m, "connected": sid in connected if sid else False,
-                            "granted": sid in granted_servers if sid else False, "sid": sid,
+            entry = cat_by_id(sid) if sid else None
+            personal = bool(entry and entry.get("personal"))
+            key = store.conn_key(sid, ag.get("owner") or "") if (sid and personal) else sid
+            matches.append({**m, "connected": key in connected if key else False,
+                            "granted": key in granted_servers if key else False, "sid": key, "personal": personal,
                             "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid
                                    else url_for("connections", discover=d.get("keywords") or "", grant_to=agent_id, resume=rid)})
         done = any(m["granted"] for m in matches)
@@ -1036,6 +1091,29 @@ def _grant_and_resume(sid, agent_id, rid):
         store.update_run(rid, status="running", transcript=tr)
         _advance_bg(rid)
 
+# ---------------- settings (admin) ----------------
+@app.route("/settings")
+def settings():
+    gcid, gsec = _google_client()
+    byo = bool(store.get_setting("google_client_id"))
+    return render_template("settings.html", google_configured=bool(gcid and gsec), byo=byo,
+                           client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
+                           redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
+                           base_url=os.environ.get("WARDEN_BASE_URL", ""), signin_on=GOOGLE_ON,
+                           personal=[e for e in cat.CATALOG if e.get("personal")],
+                           saved=request.args.get("saved", ""))
+
+@app.route("/settings", methods=["POST"])
+def save_settings():
+    f = request.form
+    if f.get("clear"):
+        store.set_setting("google_client_id", None); store.set_setting("google_client_secret", None)
+    else:
+        cid = (f.get("google_client_id") or "").strip(); sec = (f.get("google_client_secret") or "").strip()
+        if cid: store.set_setting("google_client_id", cid)
+        if sec: store.set_setting("google_client_secret", sec)
+    return redirect(url_for("settings", saved="1"))
+
 # ---------------- OAuth connect flows ----------------
 def _oauth_redirect(kind):
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
@@ -1043,13 +1121,16 @@ def _oauth_redirect(kind):
     return (base + path) if base else url_for("oauth_google_callback" if kind == "google" else "oauth_mcp_callback", _external=True)
 
 def _finish_connection(cid, token_json, grant_to=None, resume=None):
-    """Store the OAuth token, connect, and (if this came from a request) grant and resume."""
+    """Store the OAuth token, connect, and (if this came from a request) grant and resume.
+    Personal connectors are stored under the signed-in person."""
     entry = cat_by_id(cid)
     url = entry.get("run")
-    store.enable_connection(cid, "http", url=url, token=token_json)
-    st = cm().connect_spec({"id": cid, "transport": "http", "url": url, "token": token_json})
+    owner = current_owner() if entry.get("personal") else None
+    key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner)
+    st = cm().connect_spec({"id": key, "transport": "http", "url": url, "token": token_json,
+                            "owner": owner or "", "catalog_id": cid})
     if (st or {}).get("status") == "connected" and grant_to:
-        _grant_and_resume(cid, grant_to, resume)
+        _grant_and_resume(key, grant_to, resume)
         if resume:
             return redirect(url_for("run_view", rid=resume))
     if (st or {}).get("status") != "connected":
@@ -1061,16 +1142,19 @@ def oauth_start():
     cid = request.form.get("id"); entry = cat_by_id(cid)
     if not entry or entry.get("provider") not in ("google", "mcp"):
         abort(404)
+    if not entry.get("personal") and not is_admin():
+        abort(403)                       # shared systems are the admin's to connect
     state = secrets.token_urlsafe(20)
     ctx = {"cid": cid, "grant_to": request.form.get("grant_to") or "", "resume": request.form.get("resume") or ""}
     if entry["provider"] == "google":
-        if not GOOGLE_ON:
-            return redirect(url_for("connections", oauth_error="Google sign-in is not configured on this server (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."))
+        gcid, gsec = _google_client()
+        if not (gcid and gsec):
+            return redirect(url_for("connections", oauth_error="Google connectors are not set up yet. An admin configures the Google client under Settings.") + "#" + cid)
         level = "write" if request.form.get("scope") == "write" else "read"
         scopes = (entry.get("scopes") or {}).get(level) or []
         ctx["scopes"] = scopes
         session["conn_oauth"] = {"state": state, **ctx}
-        return redirect(oauth.google_authorize_url(GOOGLE_CLIENT_ID, _oauth_redirect("google"), scopes, state))
+        return redirect(oauth.google_authorize_url(gcid, _oauth_redirect("google"), scopes, state))
     # MCP-standard: discover, register, PKCE
     try:
         meta = oauth.mcp_discover(entry["run"])
@@ -1097,7 +1181,8 @@ def oauth_google_callback():
     if request.args.get("error") or not request.args.get("code"):
         return redirect(url_for("connections", oauth_error="Google did not grant access: %s" % (request.args.get("error") or "cancelled")) + "#" + ctx["cid"])
     try:
-        tok = oauth.google_exchange(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, _oauth_redirect("google"), request.args["code"], ctx.get("scopes") or [])
+        gcid, gsec = _google_client()
+        tok = oauth.google_exchange(gcid, gsec, _oauth_redirect("google"), request.args["code"], ctx.get("scopes") or [])
     except Exception as ex:
         return redirect(url_for("connections", oauth_error="Could not exchange the Google code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
     return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"))
@@ -1123,6 +1208,9 @@ def grant_connection():
     ag = store.get_agent(aid)
     if not ag: abort(404)
     if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin(): abort(403)
+    row = store.get_connection(sid)
+    if row and (row.get("owner") or "") and row.get("owner") != (ag.get("owner") or ""):
+        abort(403)                       # a personal connection is only ever granted to its owner's agents
     _grant_and_resume(sid, aid, rid)
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "resume_url": url_for("run_view", rid=rid) if rid else url_for("agent", aid=aid)}
