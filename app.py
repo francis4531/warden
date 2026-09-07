@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.10.2"
+WARDEN_VERSION = "0.11"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -432,8 +432,10 @@ def connections():
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
     default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
+    # personal-type sources an admin has provided to the studio (a shared mailbox, a team calendar)
+    shared = {c_["id"]: c_ for c_ in store.enabled_connections() if not c_.get("owner") and (cat.BY_ID.get(c_["catalog_id"]) or {}).get("personal")}
     return render_template("connections.html", catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
-                           default_servers=default_servers,
+                           default_servers=default_servers, shared=shared, raw_status=raw,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
                            requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(), google_verified=_google_verified(),
@@ -477,6 +479,41 @@ def disable_connection():
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}
     return redirect(url_for("connections"))
+
+@app.route("/connections/share", methods=["POST"])
+def share_connection():
+    """Admin promotes one of their own personal connections (a shared mailbox, a team
+    calendar) to studio-provided. Every agent can then use it; the admin's own account is
+    the one behind it, so this is deliberate and reversible."""
+    if not is_admin():
+        abort(403)
+    key = request.form.get("id"); row = store.get_connection(key)
+    if not row or (row.get("owner") or "") != current_owner():
+        abort(404)
+    cid = row.get("catalog_id") or key
+    cm().disconnect(key)
+    new = store.share_connection(key, cid, current_owner())
+    cm().connect_spec({"id": new, "transport": row["transport"], "url": row["url"], "token": row["token"],
+                       "command": row.get("command"), "owner": "", "catalog_id": cid})
+    store.audit(None, None, "connection_shared", detail={"server": cid, "by": current_owner(),
+                                                         "text": "%s provided to the studio by %s" % (cid, current_owner())})
+    return redirect(url_for("connections") + "#" + cid)
+
+@app.route("/connections/unshare", methods=["POST"])
+def unshare_connection():
+    if not is_admin():
+        abort(403)
+    cid = request.form.get("id"); row = store.get_connection(cid)
+    if not row or (row.get("owner") or ""):
+        abort(404)
+    who = row.get("shared_by") or current_owner()
+    cm().disconnect(cid)
+    new = store.unshare_connection(cid, who)
+    cm().connect_spec({"id": new, "transport": row["transport"], "url": row["url"], "token": row["token"],
+                       "command": row.get("command"), "owner": who, "catalog_id": cid})
+    store.audit(None, None, "connection_unshared", detail={"server": cid, "by": current_owner(),
+                                                           "text": "%s taken back from the studio by %s" % (cid, current_owner())})
+    return redirect(url_for("connections") + "#" + cid)
 
 def merged_catalog():
     """Built-in curated catalog plus any servers discovered from the MCP registry,
@@ -597,7 +634,7 @@ def _builder_ctx(edit_agent=None):
     groups = tools_by_server()
     connected_ids = set(groups.keys())
     catalog_meta = {c["id"]: {"name": c["name"], "personal": bool(c.get("personal")),
-                              "connected": store.conn_key(c["id"], current_owner() if c.get("personal") else None) in connected_ids}
+                              "connected": store.conn_key(c["id"], current_owner() if c.get("personal") else None) in connected_ids or c["id"] in connected_ids}
                     for c in merged_catalog()}
     visible_servers = set(connected_ids)
     def tpl_ok(t):
@@ -961,7 +998,9 @@ def architecture():
 
 @app.route("/audit")
 def audit():
-    return render_template("audit.html", events=(store.audit_for_owner(_scope(),300) if _scope() else store.audit_all(300)), integrity=store.verify_audit())
+    # admins see the whole studio's trail (their oversight view is read-only everywhere else too)
+    events = store.audit_all(300) if (not _scope() or is_admin()) else store.audit_for_owner(_scope(), 300)
+    return render_template("audit.html", events=events, integrity=store.verify_audit())
 
 @app.route("/policies")
 def policies():
@@ -1105,6 +1144,8 @@ def _open_requests(rid, agent_id):
             entry = cat_by_id(sid) if sid else None
             personal = bool(entry and entry.get("personal"))
             key = store.conn_key(sid, ag.get("owner") or "") if (sid and personal) else sid
+            if personal and key not in connected and sid in connected:
+                key = sid                      # a studio-provided shared mailbox stands in
             matches.append({**m, "connected": key in connected if key else False,
                             "granted": key in granted_servers if key else False, "sid": key, "personal": personal,
                             "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid

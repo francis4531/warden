@@ -92,6 +92,12 @@ it, nobody else can see or grant it. A first-time user is walked through three s
 the dashboard: connect a source, build an agent from a template, run it. Nothing in that
 path asks for a token, a key, or a configuration file.
 
+A shared mailbox, team calendar, or shared drive is the exception: an admin connects it
+with the shared account and clicks "Provide this account to the studio". It moves to the
+studio-provided list, every agent can use it, and nobody else sees a consent page. The
+button warns against doing this with a personal account, and it is reversible ("Make it
+personal again"). Both moves are audit events.
+
 Admins choose the default tools for new agents under Settings. Every new agent starts
 with exactly those granted; the person building it adds more from their own connections.
 With no defaults set, Warden falls back to granting every read-only tool. The three

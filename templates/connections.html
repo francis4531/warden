@@ -141,6 +141,35 @@
 
 <div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="{{ url_for('settings') }}#defaults">default tools for new agents</a> under Settings{% else %}company systems your agents can already use{% endif %}</span></div>
 <div class="cgrid">
+  {% for cid, c in shared.items() %}
+  {% set e = catalog | selectattr('id','equalto',cid) | first %}
+  {% set st = raw_status.get(cid) %}
+  {% if e %}
+  <div class="conn {{ 'on' if st and st.status=='connected' }}{{ 'err' if st and st.status=='error' }}" id="{{ cid }}-shared" data-id="{{ cid }}">
+    <div class="top">
+      <span class="nm">{{ e.name }}</span>
+      {% if st and st.status=='connected' %}<span class="stamp LOW">{{ st.tool_count }} tools</span>{% elif st and st.status=='error' %}<span class="stamp HIGH">error</span>{% endif %}
+    </div>
+    <div class="tags">
+      <span class="tag cat">{{ e.category }}</span>
+      <span class="tag">{{ mlabel[e.maintainer] }}</span>
+      <span class="tag" style="color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))">shared account &middot; provided by the studio</span>
+    </div>
+    <div class="desc">One {{ e.name.split(' (')[0] }} account, provided by {{ c.shared_by or 'an admin' }}, that every agent in the studio can use. Reads run on their own; anything that changes state asks first.</div>
+    <div class="act">
+      {% set os_ = oauth_status.get(cid) %}
+      {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
+      {% if st and st.status=='error' %}<span class="oauthst" style="color:var(--high)">{{ st.error }}</span>{% endif %}
+      {% if is_admin %}
+      <form method="post" action="{{ url_for('unshare_connection') }}" style="flex:0;margin-left:auto" onsubmit="return confirm('Take {{ e.name.split(' (')[0]|e }} back from the studio? Agents that use it will lose those tools until it is provided again.');">
+        <input type="hidden" name="id" value="{{ cid }}"><button class="btn ghost sm">Make it personal again</button></form>
+      <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0">
+        <input type="hidden" name="id" value="{{ cid }}"><button class="btn ghost sm">Disconnect</button></form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
   {% for e in catalog if not e.personal and (is_admin or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}

@@ -35,7 +35,7 @@
   {%- elif e.detail.input -%}{{ e.detail.input | tojson }}
   {%- else -%}{{ e.detail | tojson }}{%- endif -%}
 {%- endif -%}
-<a href="{{ url_for('run_view', rid=e.run_id) }}" style="color:var(--dim);margin-left:8px">{{ e.run_id }}</a></span>
+{% if e.run_id %}<a href="{{ url_for('run_view', rid=e.run_id) }}" style="color:var(--dim);margin-left:8px">{{ e.run_id }}</a>{% endif %}</span>
   </div>
   {% else %}
   <div class="ev"><span></span><span class="detail" style="color:var(--dim)">No activity yet.</span><span></span></div>
