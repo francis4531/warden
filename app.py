@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.13.1"
+WARDEN_VERSION = "0.13.2"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -587,12 +587,6 @@ AGENT_TEMPLATES = [
      "instructions": "You help maintain a GitHub repository. Read issues, pull requests, and code to understand the request, then propose changes. Any write (a branch, a commit, a pull request) is held for review before it runs. Never merge without explicit approval.",
      "servers": ["github"], "tools": ["get_file_contents", "list_issues", "list_pull_requests", "search_code",
                "create_branch", "create_pull_request", "push_files", "merge_pull_request"]},
-    {"id": "files", "name": "File Organizer",
-     "instructions": "You organize a working folder. List and read files to understand what is there, then propose a tidier structure. Any file you create or overwrite is held for review first.",
-     "servers": ["builtin_files"], "tools": ["list_files", "read_file", "write_file"]},
-    {"id": "self_audit", "name": "Warden Self-Audit",
-     "instructions": "You audit Warden's own source code. List and read the source, run the self-check, and report concrete issues with file and line references. Any fix you propose is held as a patch for a human to review before anything changes.",
-     "servers": ["builtin_code"], "tools": ["list_source", "read_source", "run_selfcheck", "propose_patch"]},
     {"id": "kb", "name": "Knowledge Assistant",
      "instructions": "You answer policy and product questions from the internal knowledge base and public repo docs. Cite the source you used. If the answer is not in the sources, say you do not know rather than guessing.",
      "servers": ["builtin_enterprise", "deepwiki"], "tools": ["search_knowledge", "ask_question", "read_wiki_contents"]},
@@ -821,23 +815,6 @@ def _lang_of(fname):
     return ""
 
 import difflib as _difflib
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-
-def _read_current(filename):
-    """Read the current version of a file, restricted to Warden's own source dir
-    (self-audit's propose_patch targets these). Returns None if not found."""
-    if not filename:
-        return None
-    base = os.path.realpath(_APP_DIR)
-    cand = os.path.realpath(os.path.join(base, os.path.basename(filename)))
-    if not cand.startswith(base):
-        return None
-    try:
-        with open(cand) as f:
-            return f.read()
-    except Exception:
-        return None
-
 def _diff_lines(old, new):
     out, add, rem = [], 0, 0
     for line in _difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=3):
@@ -864,13 +841,7 @@ def format_args(inp):
         if k in ("filename", "file", "path"):
             continue
         if k in _CODE_FIELDS and isinstance(v, str) and ("\n" in v or len(v) > 100):
-            old = _read_current(fname)
-            if old is not None and old != v:
-                lines, add, rem = _diff_lines(old, v)
-                parts.append({"type": "diff", "label": (fname or k), "lang": _lang_of(fname),
-                              "lines": lines, "added": add, "removed": rem})
-            else:
-                parts.append({"type": "code", "label": (fname or k), "lang": _lang_of(fname), "content": v})
+            parts.append({"type": "code", "label": (fname or k), "lang": _lang_of(fname), "content": v})
             used_fname = True
         elif k in _PROSE_FIELDS and isinstance(v, str):
             parts.append({"type": "prose", "label": k, "value": v})

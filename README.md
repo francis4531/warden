@@ -66,7 +66,6 @@ category, and any conversation becomes a case with one click.
 | `catalog.py` | Curated directory of common enterprise MCP servers (metadata, transport, auth) |
 | `connection_manager.py` | Multi-server MCP client: persistent sessions on one loop thread, stdio + HTTP |
 | `mcp_server.py` | Built-in MCP server: lookup_customer, search_knowledge, create_ticket, issue_refund |
-| `mcp_fs_server.py` | Built-in MCP server: sandboxed list_files, read_file, write_file |
 | `governance.py` | Risk registry + auto-classification of external tools + overrides |
 | `agent_runtime.py` | The agent loop, gating, pause/resume on approval, and team delegation |
 | `evals.py` | Eval suites: code assertions, golden comparisons, LLM-as-a-judge, run snapshots and comparison |
@@ -113,7 +112,7 @@ Linear, Notion, Stripe, Sentry, Slack, Postgres, Supabase, Playwright, the Anthr
 reference servers, Google Workspace, and more). Each entry shows who maintains it and how
 it connects, and the card matches the credential the server actually needs:
 
-- Built in (Enterprise Tools, Filesystem): always connected, no setup.
+- Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): always connected, no setup; hidden from users unless an admin makes some of its tools defaults.
 - Personal (Gmail, Drive, Calendar, Docs, Sheets): each person clicks "Connect your Google
   account" for themselves. The token is stored encrypted under that person, only their
   agents can be granted it, and they can disconnect any time. Read-only scopes by default;
