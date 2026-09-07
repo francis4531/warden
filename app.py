@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.11"
+WARDEN_VERSION = "0.12"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -296,7 +296,7 @@ def _auth_ctx():
             "is_admin": is_admin(),
             "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
 
-_ADMIN_ENDPOINTS = {"enable_connection", "tool_risk",
+_ADMIN_ENDPOINTS = {"tool_risk", "share_connection", "unshare_connection", "studio",
                     "discover", "discover_add", "discover_remove", "discover_json",
                     "policies", "create_policy", "toggle_policy", "delete_policy",
                     "settings", "save_settings"}
@@ -417,13 +417,18 @@ def _my_key(entry):
 def connections():
     # status keyed by catalog id, resolved to this person's row for personal connectors
     raw = {s["id"]: s for s in cm().connected_servers()}
-    status = {}
-    for e in merged_catalog():
-        k = _my_key(e)
-        if k in raw:
-            status[e["id"]] = raw[k]
     enabled_keys = {c["id"] for c in store.enabled_connections()}
-    enabled = {e["id"] for e in merged_catalog() if _my_key(e) in enabled_keys}
+    me = current_owner()
+    # every catalog entry can exist twice: once for me (my own account) and once for the studio
+    pkey = {e["id"]: store.conn_key(e["id"], me) for e in merged_catalog()}
+    skey = {e["id"]: e["id"] for e in merged_catalog()}
+    p_status = {e["id"]: raw[pkey[e["id"]]] for e in merged_catalog() if pkey[e["id"]] in raw}
+    s_status = {e["id"]: raw[e["id"]] for e in merged_catalog() if e["id"] in raw}
+    p_enabled = {e["id"] for e in merged_catalog() if pkey[e["id"]] in enabled_keys}
+    s_enabled = {e["id"] for e in merged_catalog() if e["id"] in enabled_keys}
+    # the admin's default view of a company system is the studio one; everyone else's is their own
+    status = {**{k: v for k, v in s_status.items() if is_admin()}, **p_status} if is_admin() else p_status
+    enabled = (s_enabled | p_enabled) if is_admin() else p_enabled
     dq = (request.args.get("discover") or "").strip() if is_admin() else ""
     discover = registry.search(dq) if dq else None
     oauth_status = {}
@@ -435,6 +440,7 @@ def connections():
     # personal-type sources an admin has provided to the studio (a shared mailbox, a team calendar)
     shared = {c_["id"]: c_ for c_ in store.enabled_connections() if not c_.get("owner") and (cat.BY_ID.get(c_["catalog_id"]) or {}).get("personal")}
     return render_template("connections.html", catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
+                           pkey=pkey, skey=skey, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
                            default_servers=default_servers, shared=shared, raw_status=raw,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
@@ -451,21 +457,35 @@ def enable_connection():
     if not entry: abort(404)
     transport = entry["transport"]
     token = request.form.get("token") or None
-    command = request.form.get("command") or None
-    url = request.form.get("url") or entry.get("run")
-    store.enable_connection(cid, transport, command=command, url=url, token=token)
-    st = cm().connect_spec({"id": cid, "transport": transport, "command": command, "url": url, "token": token})
+    if is_admin() and not request.form.get("personal"):
+        # the admin connects a company system once for the whole studio
+        owner = None
+        command = request.form.get("command") or None
+        url = request.form.get("url") or entry.get("run")
+    else:
+        # anyone else connects with their own account: hosted servers only (a stdio server is a
+        # process on Warden's host, so its command line stays the admin's), the catalog URL, their key
+        if transport != "http":
+            abort(403)
+        owner = current_owner(); command = None; url = entry.get("run")
+    key = store.enable_connection(cid, transport, command=command, url=url, token=token, owner=owner)
+    st = cm().connect_spec({"id": key, "transport": transport, "command": command, "url": url, "token": token,
+                            "owner": owner or "", "catalog_id": cid})
+    if (st or {}).get("status") != "connected" and owner:
+        store.disable_connection(key); cm().disconnect(key)     # no half-connected personal rows
     grant_to, resume = request.form.get("grant_to"), request.form.get("resume")
     granted = False
     if grant_to and (st or {}).get("status") == "connected":
-        _grant_and_resume(cid, grant_to, resume); granted = True
+        _grant_and_resume(key, grant_to, resume); granted = True
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "status": (st or {}).get("status"), "error": (st or {}).get("error"),
                 "tool_count": (st or {}).get("tool_count", 0), "granted": granted,
                 "resume_url": url_for("run_view", rid=resume) if (granted and resume) else None}
     if granted and resume:
         return redirect(url_for("run_view", rid=resume))
-    return redirect(url_for("connections"))
+    if (st or {}).get("status") != "connected":
+        return redirect(url_for("connections", oauth_error="%s did not connect: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown")) + "#" + cid)
+    return redirect(url_for("connections", connected=cid) + "#" + cid)
 
 @app.route("/connections/disable", methods=["POST"])
 def disable_connection():
@@ -1143,9 +1163,11 @@ def _open_requests(rid, agent_id):
             sid = m.get("id")
             entry = cat_by_id(sid) if sid else None
             personal = bool(entry and entry.get("personal"))
-            key = store.conn_key(sid, ag.get("owner") or "") if (sid and personal) else sid
-            if personal and key not in connected and sid in connected:
-                key = sid                      # a studio-provided shared mailbox stands in
+            key = None
+            if sid:
+                mine, studio = store.conn_key(sid, ag.get("owner") or ""), sid
+                # prefer the requester's own account, then the studio's; else the one they would connect
+                key = mine if mine in connected else (studio if studio in connected else (mine if personal else studio))
             matches.append({**m, "connected": key in connected if key else False,
                             "granted": key in granted_servers if key else False, "sid": key, "personal": personal,
                             "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid
@@ -1313,12 +1335,14 @@ def _oauth_redirect(kind):
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
     return (base + "/connections/oauth/mcp/callback") if base else url_for("oauth_mcp_callback", _external=True)
 
-def _finish_connection(cid, token_json, grant_to=None, resume=None):
+def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=False):
     """Store the OAuth token, connect, and (if this came from a request) grant and resume.
     Personal connectors are stored under the signed-in person."""
     entry = cat_by_id(cid)
     url = entry.get("run")
-    owner = current_owner() if entry.get("personal") else None
+    # a personal-type source is always the person's own; a company system is the studio's when
+    # the admin signs in, and the person's own when anyone else does
+    owner = current_owner() if (entry.get("personal") or personal or not is_admin()) else None
     missing = oauth.missing_scopes(token_json)
     if missing:
         short = entry["name"].split(" (")[0]
@@ -1342,10 +1366,9 @@ def oauth_start():
     cid = request.form.get("id"); entry = cat_by_id(cid)
     if not entry or entry.get("provider") not in ("google", "mcp"):
         abort(404)
-    if not entry.get("personal") and not is_admin():
-        abort(403)                       # shared systems are the admin's to connect
     state = secrets.token_urlsafe(20)
-    ctx = {"cid": cid, "grant_to": request.form.get("grant_to") or "", "resume": request.form.get("resume") or ""}
+    ctx = {"cid": cid, "grant_to": request.form.get("grant_to") or "", "resume": request.form.get("resume") or "",
+           "personal": bool(request.form.get("personal"))}
     if entry["provider"] == "google":
         gcid, gsec = _google_client()
         if not (gcid and gsec):
@@ -1385,7 +1408,7 @@ def oauth_google_callback():
         tok = oauth.google_exchange(gcid, gsec, _oauth_redirect("google"), request.args["code"], ctx.get("scopes") or [])
     except Exception as ex:
         return redirect(url_for("connections", oauth_error="Could not exchange the Google code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
-    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"))
+    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"), personal=ctx.get("personal"))
 
 @app.route("/connections/oauth/mcp/callback")
 def oauth_mcp_callback():
@@ -1399,7 +1422,7 @@ def oauth_mcp_callback():
                                  request.args["code"], ctx["verifier"], ctx["meta"].get("scopes_supported") or [], resource=ctx.get("resource"))
     except Exception as ex:
         return redirect(url_for("connections", oauth_error="Could not exchange the authorization code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
-    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"))
+    return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"), personal=ctx.get("personal"))
 
 @app.route("/connections/grant", methods=["POST"])
 def grant_connection():

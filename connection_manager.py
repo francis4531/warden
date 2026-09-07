@@ -77,7 +77,7 @@ def _explain(e, cat):
         if status == 401:
             hint = ("Google rejected the token (invalid_token). Check that the %s API is enabled in the Google Cloud project that owns the OAuth client, and that %s access was ticked on the consent page. Then disconnect and connect again."
                     % (vendor, vendor)) if (cat or {}).get("provider") == "google" else \
-                   "%s rejected the token (401). Disconnect and connect again; if it persists, the token lacks the scope this server needs." % vendor
+                   "%s rejected the token (401): check it and try again; if it persists, the token lacks the scope this server needs." % vendor
             return hint + ((" [" + www[:80] + "]") if www else "")
         if status == 403:
             return "%s refused access (403): the account or project is not allowed to use this API. For Google, enable the %s API in the project and check the consent screen's test users." % (vendor, vendor)

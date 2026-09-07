@@ -92,6 +92,12 @@ it, nobody else can see or grant it. A first-time user is walked through three s
 the dashboard: connect a source, build an agent from a template, run it. Nothing in that
 path asks for a token, a key, or a configuration file.
 
+Any catalog server can be connected by any person with their own account (a personal
+GitHub token, their own Atlassian sign-in), stored under their name and usable only by their
+agents; servers that run as a process on the Warden host stay the admin's to enable. The same
+server can exist twice, once for the studio and once for a person, and an agent's request is
+satisfied by the requester's own account first, then the studio's.
+
 A shared mailbox, team calendar, or shared drive is the exception: an admin connects it
 with the shared account and clicks "Provide this account to the studio". It moves to the
 studio-provided list, every agent can use it, and nobody else sees a consent page. The

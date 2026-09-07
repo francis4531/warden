@@ -45,7 +45,7 @@
 <div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow">Connections</div>
   <h1>{{ 'Choose the MCP servers your agents can use.' if is_admin else 'Connect the sources your agents will use.' }}</h1>
-  <p class="sub">{% if is_admin %}Personal sources (Gmail, Drive, Calendar) are connected by each person for themselves. Company systems you connect once and the studio provides to everyone. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated.{% else %}Personal sources like Gmail are yours to connect, in one click, and only your agents can use them. Company systems are provided by your studio and already available. Reads run on their own; anything that changes state asks you first.{% endif %}</p>
+  <p class="sub">{% if is_admin %}Personal sources (Gmail, Drive, Calendar) are connected by each person for themselves. Company systems you connect once and the studio provides to everyone. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated.{% else %}Connect your own accounts (Gmail, GitHub, Jira, anything in the catalog) in one click; only your agents can use them. Company systems your studio provides are already available. Reads run on their own; anything that changes state asks you first.{% endif %}</p>
 </div>
 
 <style>
@@ -129,15 +129,35 @@
 </div>
 {% endif %}
 
-<div class="section-h"><span class="lbl">Your connections</span><span style="font-size:12px;color:var(--dim)">personal sources, connected by you, used only by your agents</span></div>
-<div class="cgrid" style="margin-bottom:26px">
-  {% for e in catalog if e.personal %}
+{# ---- personal view: my own accounts ---- #}
+{% set keyed = pkey %}{% set status = p_status %}{% set enabled = p_enabled %}{% set personal_mode = True %}
+<div class="section-h"><span class="lbl">Your connections</span><span style="font-size:12px;color:var(--dim)">your own accounts, connected by you, used only by your agents</span></div>
+<div class="cgrid" style="margin-bottom:14px">
+  {% for e in catalog if e.personal or (e.id in p_enabled and not e.sample) %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}
   {% set errored = st and st.status=='error' %}
   {% include '_conncard.html' %}
   {% endfor %}
 </div>
+{% set more = catalog | rejectattr('personal') | rejectattr('sample') | selectattr('transport','equalto','http') | rejectattr('id','in',p_enabled) | list %}
+{% if more %}
+<details style="margin-bottom:26px" {{ 'open' if connect_id and (catalog | selectattr('id','equalto',connect_id) | first or {}).transport=='http' and not (catalog | selectattr('id','equalto',connect_id) | first or {}).personal and not is_admin }}>
+  <summary style="cursor:pointer;color:var(--brass);font-size:13px">Connect another source with your own account ({{ more|length }} available)</summary>
+  <div style="color:var(--mut);font-size:12.5px;margin:8px 0 12px">Sign in or paste your own key. Only your agents can use it{% if is_admin %}; as the admin you can also provide any of these to the studio afterwards{% endif %}.</div>
+  <div class="cgrid">
+    {% for e in more %}
+    {% set st = status.get(e.id) %}
+    {% set connected = e.id in enabled and st and st.status=='connected' %}
+    {% set errored = st and st.status=='error' %}
+    {% include '_conncard.html' %}
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{# ---- studio view: what the studio provides to everyone ---- #}
+{% set keyed = skey %}{% set status = s_status %}{% set enabled = s_enabled %}{% set personal_mode = False %}
 
 <div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="{{ url_for('settings') }}#defaults">default tools for new agents</a> under Settings{% else %}company systems your agents can already use{% endif %}</span></div>
 <div class="cgrid">
