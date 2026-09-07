@@ -269,7 +269,13 @@ def _friendly_error(ex):
     if code and 500 <= code < 600:
         return "The model service had a temporary error. Try again in a moment."
     if code == 400:
-        return "The model rejected the request. This run hit a malformed-request error; the transcript has been repaired, please retry."
+        msg = str(ex)
+        try:
+            body = getattr(ex, "body", None) or {}
+            msg = (body.get("error") or {}).get("message") or msg
+        except Exception:
+            pass
+        return "The model rejected the request (400): " + msg[:300]
     return "The run hit an error talking to the model: " + str(ex)[:200]
 
 def _call_model(system, messages, tools):
@@ -281,12 +287,21 @@ def _call_model(system, messages, tools):
         return r
     import anthropic
     client = anthropic.Anthropic()
+    # Tool keys for personal connections look like "google_gmail~1dc87766__search"; the API only
+    # accepts [a-zA-Z0-9_-] in a tool name, so the wire name swaps "~" for "-" and is mapped back.
+    back = {_wire_name(t["name"]): t["name"] for t in tools}
+    wire_tools = [{**t, "name": _wire_name(t["name"])} for t in tools]
+    wire_msgs = _wire_messages(messages)
     last = None
     for attempt in range(3):
         try:
             resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=MAX_TOKENS,
-                                          system=system, messages=messages, tools=tools)
-            return {"stop_reason": resp.stop_reason, "content": [_b2d(b) for b in resp.content],
+                                          system=system, messages=wire_msgs, tools=wire_tools)
+            content = [_b2d(b) for b in resp.content]
+            for b in content:
+                if b.get("type") == "tool_use":
+                    b["name"] = back.get(b["name"], b["name"])
+            return {"stop_reason": resp.stop_reason, "content": content,
                     "usage": {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens},
                     "model": MODEL_DEFAULT, "latency_ms": int((time.time() - t0) * 1000)}
         except Exception as ex:
@@ -294,6 +309,22 @@ def _call_model(system, messages, tools):
             if _is_transient(ex) and attempt < 2:
                 time.sleep(1.5 * (attempt + 1)); continue
             raise last
+
+_WIRE_BAD = re.compile(r"[^a-zA-Z0-9_-]")
+def _wire_name(key):
+    return _WIRE_BAD.sub("-", key)[:64]
+
+def _wire_messages(messages):
+    """The transcript with tool_use names in wire form (real keys stay in the stored transcript)."""
+    out = []
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "tool_use" for b in c):
+            c = [({**b, "name": _wire_name(b["name"])} if isinstance(b, dict) and b.get("type") == "tool_use" else b) for b in c]
+            out.append({**m, "content": c})
+        else:
+            out.append(m)
+    return out
 
 def _b2d(b):
     if b.type == "text": return {"type": "text", "text": b.text}

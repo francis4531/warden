@@ -98,12 +98,6 @@ agents; servers that run as a process on the Warden host stay the admin's to ena
 server can exist twice, once for the studio and once for a person, and an agent's request is
 satisfied by the requester's own account first, then the studio's.
 
-A shared mailbox, team calendar, or shared drive is the exception: an admin connects it
-with the shared account and clicks "Provide this account to the studio". It moves to the
-studio-provided list, every agent can use it, and nobody else sees a consent page. The
-button warns against doing this with a personal account, and it is reversible ("Make it
-personal again"). Both moves are audit events.
-
 Admins choose the default tools for new agents under Settings. Every new agent starts
 with exactly those granted; the person building it adds more from their own connections.
 With no defaults set, Warden falls back to granting every read-only tool. The three

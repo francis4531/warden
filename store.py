@@ -92,8 +92,6 @@ def init():
         c.execute("ALTER TABLE connections ADD COLUMN owner TEXT")
     if "catalog_id" not in ccols:
         c.execute("ALTER TABLE connections ADD COLUMN catalog_id TEXT")
-    if "shared_by" not in ccols:
-        c.execute("ALTER TABLE connections ADD COLUMN shared_by TEXT")
     c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     c.executescript("""
     CREATE TABLE IF NOT EXISTS eval_suites(
@@ -404,24 +402,6 @@ def enable_connection(cid, transport, command=None, url=None, token=None, owner=
     c.commit(); c.close()
     return key
 
-def share_connection(key, cid, by):
-    """Promote a personal connection to studio-provided: it moves to the shared row id
-    (the catalog id), loses its owner, and records who provided it. Returns the new key."""
-    c = _conn()
-    c.execute("DELETE FROM connections WHERE id=?", (cid,))
-    c.execute("UPDATE connections SET id=?, owner='', shared_by=? WHERE id=?", (cid, by, key))
-    c.commit(); c.close()
-    return cid
-
-def unshare_connection(cid, owner):
-    """The reverse: a studio-provided personal-type connection goes back to its provider."""
-    key = conn_key(cid, owner)
-    c = _conn()
-    c.execute("DELETE FROM connections WHERE id=?", (key,))
-    c.execute("UPDATE connections SET id=?, owner=?, shared_by=NULL WHERE id=?", (key, owner, cid))
-    c.commit(); c.close()
-    return key
-
 def update_connection_token(cid, token):
     import vault
     c = _conn(); c.execute("UPDATE connections SET token=? WHERE id=?", (vault.encrypt(token), cid)); c.commit(); c.close()
@@ -448,7 +428,7 @@ def enabled_connections(owner=None):
             continue
         out.append({"id": d["id"], "transport": d["transport"], "command": d["command"],
                     "url": d["url"], "token": vault.decrypt(d["token"]),
-                    "owner": own, "catalog_id": d.get("catalog_id") or d["id"], "shared_by": d.get("shared_by") or ""})
+                    "owner": own, "catalog_id": d.get("catalog_id") or d["id"]})
     return out
 
 # ---- settings (admin-set values that override environment defaults) ----

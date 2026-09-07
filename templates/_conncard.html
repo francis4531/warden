@@ -20,13 +20,6 @@
         {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
         <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ keyed[e.id] }}"><button class="btn ghost sm">Disconnect</button></form>
-        {% if personal_mode and is_admin and connected %}
-        <form method="post" action="{{ url_for('share_connection') }}" style="flex-basis:100%;margin:6px 0 0" onsubmit="return confirm('Provide this {{ e.name.split(' (')[0]|e }} account to the whole studio?\n\nEvery agent anyone builds will be able to use THIS account. Do this for a shared mailbox, team calendar, or shared drive. Do not do it for your personal account.');">
-          <input type="hidden" name="id" value="{{ keyed[e.id] }}">
-          <button class="btn ghost sm" type="submit">Provide this account to the studio</button>
-          <div class="hint" style="margin-top:4px">For a shared mailbox, team calendar, or shared drive. Every agent in the studio gets to use this account, so never do this with your personal one.</div>
-        </form>
-        {% endif %}
       {% elif e.provider=='google' %}
         <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
