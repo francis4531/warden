@@ -236,7 +236,8 @@ function renderChat(events){
     } else if(e.kind==='budget_stop'){
       flush(); html+=`<div class="msg budget"><div class="who">&#9209; ${e.scope==='team'?'team budget reached':'budget reached'}</div>${esc(e.text)}</div>`;
     } else if(e.kind==='tool_result' || e.kind==='tool_result_gated'){
-      chips+=`<span class="chip">used <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
+      const bad = e.outcome==='error';
+      chips+=`<span class="chip" ${bad?'style="border-color:color-mix(in srgb,var(--high) 45%,var(--line));white-space:normal;max-width:100%"':''}>${bad?'<span style="color:var(--high)">failed</span>':'used'} <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r" ${bad?'style="color:var(--high);white-space:normal"':''}>${esc(e.text)}</span></span>`;
     } else if(e.kind==='eval_held'){
       chips+=`<span class="chip held"><span class="h">held</span> <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){

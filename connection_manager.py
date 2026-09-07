@@ -241,7 +241,12 @@ def _tools(resp):
     return [{"name": t.name, "description": t.description or "", "input_schema": t.inputSchema}
             for t in resp.tools]
 def _text(result):
-    return "\n".join(c.text for c in result.content if getattr(c, "type", None) == "text")
+    text = "\n".join(c.text for c in result.content if getattr(c, "type", None) == "text")
+    if getattr(result, "isError", False):
+        # the server answered with an error: say so in a shape the runtime and the model both recognize
+        import json as _j
+        return _j.dumps({"error": "provider_error", "message": text[:1500]})
+    return text
 
 _CM = None
 _CM_LOCK = threading.Lock()

@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.12.3"
+WARDEN_VERSION = "0.12.4"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -778,15 +778,18 @@ def _fmt_event(e):
         text = d.get("task") or d.get("result") or ""
     elif "result" in d:
         res = d["result"]
-        s = res if isinstance(res, str) else _json.dumps(res, ensure_ascii=False)
-        s = " ".join(s.split())               # collapse newlines/whitespace
-        text = "-> " + s[:200]
+        if isinstance(res, dict) and res.get("error"):
+            text = "error: " + " ".join(str(res.get("message") or res.get("error")).split())[:600]
+        else:
+            s = res if isinstance(res, str) else _json.dumps(res, ensure_ascii=False)
+            s = " ".join(s.split())               # collapse newlines/whitespace
+            text = "-> " + s[:200]
     elif "input" in d:
         s = _json.dumps(d["input"], ensure_ascii=False)
         text = " ".join(s.split())[:200]
     else:
         text = ""
-    out = {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"),
+    out = {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"), "outcome": d.get("outcome") if isinstance(d, dict) else None,
            "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
            "text": text}
     if kind in ("delegation", "delegation_result"):

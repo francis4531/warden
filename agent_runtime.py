@@ -493,7 +493,10 @@ def situational_context(agent, tools, idx, run=None):
             "different product.\n"
             "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
             "you will do once it is connected, then stop and wait.\n"
-            "4. Never state that an action happened unless a tool result confirms it.\n\n"
+            "4. Never state that an action happened unless a tool result confirms it.\n"
+            "5. If a granted tool returns an error, that is NOT a missing connection. Quote the error to the user "
+            "word for word, say which system it came from, and stop. Never invent buttons, cards, approvals, or "
+            "admin steps to explain an error.\n\n"
             "How connection requests work, so you can describe them exactly: the request appears as a card in "
             "this conversation directly above your reply, and under Approvals in Warden's left navigation "
             "(the Approvals badge counts it). For a personal source like Gmail the card has a Connect your Google "
@@ -501,6 +504,25 @@ def situational_context(agent, tools, idx, run=None):
             "conversation resumes automatically; the user does not need to type anything or come back to tell you. "
             "Do not speculate about other places it might appear."
             % (agent["name"], "\n".join(lines), _admin_sentence(run)))
+
+def _already_granted(agent, inp, run):
+    """The server name if the requested capability is already connected and granted to this
+    agent (so a request would be wrong), else None."""
+    inp = inp if isinstance(inp, dict) else {}
+    try:
+        matches = find_connections(str(inp.get("keywords") or ""), str(inp.get("need") or ""), owner=(run or {}).get("owner") or "")
+    except Exception:
+        return None
+    granted = {k.split("__", 1)[0] for k in (agent.get("skills") or [])}
+    import store as _st
+    for m in matches:
+        sid = m.get("id")
+        if not sid or not m.get("connected"):
+            continue
+        keys = {sid, _st.conn_key(sid, (run or {}).get("owner") or "")}
+        if keys & granted:
+            return m["name"]
+    return None
 
 def _admin_sentence(run):
     admins = ADMIN_INFO.get("admins") or []
@@ -729,6 +751,13 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
             rtext=json.dumps({"denied":True,"note":"A human approver denied this action. Do not retry; explain and stop."})
             store.audit(run_id, agent["id"], "denied", skill=b["name"], risk=d["risk"],
                         detail={"input":b["input"],"outcome":"denied"})
+        elif b["name"] == REQUEST_KEY and _already_granted(agent, b["input"], run):
+            srv = _already_granted(agent, b["input"], run)
+            rtext = json.dumps({"requested": False, "already_granted": srv,
+                                "note": "%s is connected and its tools are already granted to you; no connection is missing. "
+                                        "If a tool from it returned an error, that error is the real situation: quote the provider's "
+                                        "message to the user word for word, say that it comes from %s and not from Warden, and stop. "
+                                        "Do not describe buttons, cards, approvals, or admin steps." % (srv, srv)})
         elif b["name"] == REQUEST_KEY:
             inp = b["input"] if isinstance(b["input"], dict) else {}
             matches = find_connections(str(inp.get("keywords") or ""), str(inp.get("need") or ""), owner=run.get("owner") or "")
@@ -766,6 +795,13 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                                   "note":"This tool raised an error. Do not assume it ran; explain or try another approach."})
             parsed=_safe(rtext)
             outcome="error" if isinstance(parsed, dict) and parsed.get("error") else "ok"
+            if outcome == "error" and isinstance(parsed, dict) and parsed.get("error") == "provider_error":
+                srv = idx.get(b["name"], {}).get("server", "the provider")
+                parsed["note"] = ("This error came from %s itself. The connection exists and this tool is granted to you, so do NOT "
+                                  "request a connection and do NOT describe cards, buttons, approvals, or admin steps. Tell the user, "
+                                  "quoting the message word for word, that %s refused the call and that the fix is on the %s side; "
+                                  "then stop." % (srv, srv, srv))
+                rtext = json.dumps(parsed)
             det={"input":b["input"],"result":parsed,
                  "latency_ms":int((time.time()-t0)*1000),"outcome":outcome}
             if d["policy"]:                      # policy explicitly allowed this (e.g. below a threshold)
