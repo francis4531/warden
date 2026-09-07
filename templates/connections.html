@@ -129,6 +129,8 @@
 </div>
 {% endif %}
 
+{% if is_admin %}{% include '_admin_google.html' %}{% endif %}
+
 {# ---- personal view: my own accounts ---- #}
 {% set keyed = pkey %}{% set status = p_status %}{% set enabled = p_enabled %}{% set personal_mode = True %}
 <div class="section-h"><span class="lbl">Your connections</span><span style="font-size:12px;color:var(--dim)">your own accounts, connected by you, used only by your agents</span></div>
@@ -159,7 +161,7 @@
 {# ---- studio view: what the studio provides to everyone ---- #}
 {% set keyed = skey %}{% set status = s_status %}{% set enabled = s_enabled %}{% set personal_mode = False %}
 
-<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="{{ url_for('settings') }}#defaults">default tools for new agents</a> under Settings{% else %}company systems your agents can already use{% endif %}</span></div>
+<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="#defaults">default tools for new agents</a> below{% else %}company systems your agents can already use{% endif %}</span></div>
 <div class="cgrid">
   {% for e in catalog if not e.personal and (is_admin or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
   {% set st = status.get(e.id) %}
@@ -208,6 +210,8 @@
 </details>
 {% endfor %}
 {% endif %}
+
+{% if is_admin %}<div style="margin-top:30px"></div>{% include '_admin_defaults.html' %}{% endif %}
 
 <script>
 (function(){

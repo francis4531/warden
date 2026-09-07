@@ -1,0 +1,37 @@
+{# admin-only: default tools for new agents #}
+<div class="section-h" id="defaults"><span class="lbl">Default tools for new agents</span><span style="font-size:12px;color:var(--dim)">{{ defaults|length }} chosen{% if not defaults %} &middot; falling back to every read-only tool{% endif %}</span></div>
+<div class="card" style="margin-bottom:26px">
+  <div style="color:var(--mut);font-size:13px;margin-bottom:12px;line-height:1.55">Every new agent starts with these tools granted; the person building it adds more from their own connections. Leave everything unchecked and Warden falls back to granting every read-only tool. Sample servers are built in so people can try agents before real systems are connected: they stay hidden from non-admins unless one of their tools is a default here.</div>
+  {% if provided %}
+  <form method="post" action="{{ url_for('save_settings') }}">
+    <input type="hidden" name="section" value="defaults">
+    <div id="toolsections">
+    {% for sid, g in provided.items() %}
+    {% set sel = g.tools | selectattr('key','in',defaults) | list | length %}
+    <details class="tsec">
+      <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b>{% if g.sample %} <span class="stamp" style="background:var(--line);color:var(--mut)">sample</span>{% endif %}<span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> default</span></summary>
+      <div class="tbody">
+      {% for s in g.tools %}
+      <label class="skill-row">
+        <input type="checkbox" name="default_tools" value="{{ s.key }}" {{ 'checked' if s.key in defaults }}>
+        <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
+          <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
+          {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
+          <span class="sk-desc">{{ s.description }}</span></span>
+      </label>
+      {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+      <button class="btn brass" type="submit">Save defaults</button>
+      <button class="btn ghost" type="button" onclick="document.querySelectorAll('input[name=default_tools]').forEach(b=>b.checked=false)">Clear</button>
+      <span style="color:var(--dim);font-size:12px">Tip: sample reads plus <code>search_knowledge</code> give a new person a working first agent.</span>
+    </div>
+  </form>
+  {% else %}
+  <div style="color:var(--dim);font-size:13px">No studio-provided servers are connected yet. <a href="{{ url_for('connections') }}" style="color:var(--brass)">Connect one</a> and its tools appear here.</div>
+  {% endif %}
+</div>
+

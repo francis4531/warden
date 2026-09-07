@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.13.2"
+WARDEN_VERSION = "0.13.3"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -442,7 +442,8 @@ def connections():
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
     default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
-    return render_template("connections.html", catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
+    extra = _settings_ctx() if is_admin() else {}
+    return render_template("connections.html", **extra, catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
                            pkey=pkey, skey=skey, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
                            default_servers=default_servers,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
@@ -1248,41 +1249,44 @@ def _studio_summary():
     return rows, totals
 
 # ---------------- settings (admin) ----------------
-@app.route("/settings")
-def settings():
+def _settings_ctx():
+    """Admin configuration shown on the Connections page: the Google client and defaults."""
     gcid, gsec = _google_client()
-    byo = bool(store.get_setting("google_client_id"))
     provided = {}
     for t in connected_tools():
         if t.get("owner"):
             continue
         g = provided.setdefault(t["server_id"], {"name": t["server_name"], "sample": _is_sample(t.get("catalog_id")), "tools": []})
         g["tools"].append(t)
-    return render_template("settings.html", google_configured=bool(gcid and gsec), byo=byo, google_verified=_google_verified(),
-                           provided=provided, defaults=set(default_tools()),
-                           client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
-                           redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
-                           base_url=os.environ.get("WARDEN_BASE_URL", ""), signin_on=GOOGLE_ON,
-                           personal=[e for e in cat.CATALOG if e.get("personal")],
-                           saved=request.args.get("saved", ""))
+    return dict(google_configured=bool(gcid and gsec), byo=bool(store.get_setting("google_client_id")),
+                provided=provided, defaults=set(default_tools()),
+                client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
+                redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
+                base_url=os.environ.get("WARDEN_BASE_URL", ""), signin_on=GOOGLE_ON,
+                gpersonal=[e for e in cat.CATALOG if e.get("personal")],
+                saved=request.args.get("saved", ""))
+
+@app.route("/settings")
+def settings():
+    return redirect(url_for("connections") + "#google")
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
     f = request.form
     if f.get("section") == "verified":
         store.set_setting("google_verified", "1" if f.get("google_verified") == "1" else None)
-        return redirect(url_for("settings", saved="verified"))
+        return redirect(url_for("connections", saved="verified") + "#google")
     if f.get("section") == "defaults":
         ok = {t["key"] for t in connected_tools() if not t.get("owner")}
         store.set_setting("default_tools", _json.dumps([k for k in f.getlist("default_tools") if k in ok]))
-        return redirect(url_for("settings", saved="defaults"))
+        return redirect(url_for("connections", saved="defaults") + "#defaults")
     if f.get("clear"):
         store.set_setting("google_client_id", None); store.set_setting("google_client_secret", None)
     else:
         cid = (f.get("google_client_id") or "").strip(); sec = (f.get("google_client_secret") or "").strip()
         if cid: store.set_setting("google_client_id", cid)
         if sec: store.set_setting("google_client_secret", sec)
-    return redirect(url_for("settings", saved="1"))
+    return redirect(url_for("connections", saved="1") + "#google")
 
 # ---------------- OAuth connect flows ----------------
 def _oauth_redirect(kind):

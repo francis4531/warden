@@ -97,7 +97,7 @@ agents; servers that run as a process on the Warden host stay the admin's to ena
 server can exist twice, once for the studio and once for a person, and an agent's request is
 satisfied by the requester's own account first, then the studio's.
 
-Admins choose the default tools for new agents under Settings. Every new agent starts
+Admins choose the default tools for new agents at the bottom of Connections. Every new agent starts
 with exactly those granted; the person building it adds more from their own connections.
 With no defaults set, Warden falls back to granting every read-only tool. The three
 sample servers built into Warden (enterprise tools, files, code) are tagged as samples and
@@ -117,7 +117,7 @@ it connects, and the card matches the credential the server actually needs:
   account" for themselves. The token is stored encrypted under that person, only their
   agents can be granted it, and they can disconnect any time. Read-only scopes by default;
   a fresh access token is minted before every call. The admin sets up the Google client
-  once under Settings (or brings their own Workspace-internal client, which needs no
+  once on the Connections page (or brings their own Workspace-internal client, which needs no
   Google verification) and never touches a user's connection.
 - MCP-standard OAuth (Linear, Notion, Sentry, Atlassian, Cloudflare, Vercel, GitHub):
   "Sign in with <vendor>". Warden discovers the authorization server, registers itself as

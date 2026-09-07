@@ -47,11 +47,11 @@
     <span class="st {{ 'bad' if health.errored else ('ok' if health.provided else 'todo') }}">{{ '!' if health.errored else ('&#10003;'|safe if health.provided else '1') }}</span>
     <div><h4>Company systems</h4><p>{% if health.errored %}{{ health.errored|length }} of {{ health.provided }} provided server{{ '' if health.provided==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}.{% elif health.provided %}{{ health.provided }} server{{ '' if health.provided==1 else 's' }} provided to everyone. Connect more, or search the MCP Registry.{% else %}Nothing provided yet. Connect the systems (Jira, GitHub, Stripe, a warehouse) every agent should have.{% endif %}</p></div>
   </a>
-  <a class="task" href="{{ url_for('settings') }}#defaults">
+  <a class="task" href="{{ url_for('connections') }}#defaults">
     <span class="st {{ 'ok' if health.defaults else 'todo' }}">{{ '&#10003;'|safe if health.defaults else '2' }}</span>
     <div><h4>Default tools for new agents</h4><p>{% if health.defaults %}{{ health.defaults }} tool{{ '' if health.defaults==1 else 's' }} granted to every new agent; people add more from their own connections.{% else %}Not set: new agents get every read-only tool. Pick a smaller, deliberate starting set.{% endif %}</p></div>
   </a>
-  <a class="task" href="{{ url_for('settings') }}">
+  <a class="task" href="{{ url_for('connections') }}#google">
     <span class="st {{ 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span>
     <div><h4>Google connectors</h4><p>{% if not health.google_on %}Not configured: nobody can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: people see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div>
   </a>
