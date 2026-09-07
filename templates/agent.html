@@ -38,7 +38,7 @@
 <div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between">
     <span>Agent{% if readonly %} <span style="color:var(--dim);letter-spacing:0;text-transform:none;font-weight:500">&middot; owned by {{ agent.owner }} &middot; you are viewing as admin, read-only</span>{% endif %}</span>
-    {% if not readonly %}<form method="post" action="{{ url_for('delete_agent', aid=agent.id) }}" onsubmit="return confirm('Delete {{ agent.name|e }}? Its runs and pending approvals are removed. The audit trail of what it did is kept.');" style="margin:0">
+    {% if not readonly %}<form method="post" action="{{ url_for('delete_agent', aid=agent.id) }}" onsubmit="return confirm('Delete {{ agent.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');" style="margin:0">
       <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete agent</button>
     </form>{% endif %}
   </div>

@@ -146,7 +146,13 @@ def delete_agent(aid):
     audit log is deliberately left intact: erasing what an agent did would break the chain
     and defeat the tamper-evidence. History outlives the agent."""
     c = _conn()
+    suites = [r["id"] for r in c.execute("SELECT id FROM eval_suites WHERE agent_id=?", (aid,)).fetchall()]
+    c.close()
+    for sid in suites:                      # its eval suites go with it: a clean slate is a clean slate
+        delete_suite(sid)
+    c = _conn()
     c.execute("DELETE FROM approvals WHERE agent_id=? AND status='pending'", (aid,))
+    c.execute("DELETE FROM annotations WHERE run_id IN (SELECT id FROM runs WHERE agent_id=?)", (aid,))
     c.execute("DELETE FROM runs WHERE agent_id=?", (aid,))
     c.execute("DELETE FROM agents WHERE id=?", (aid,))
     c.commit(); c.close()

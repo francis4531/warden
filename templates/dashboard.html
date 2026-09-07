@@ -50,15 +50,20 @@
 {% if agents %}
 <div class="list">
   {% for a in agents %}
-  <a class="row" href="{{ url_for('agent', aid=a.id) }}">
-    <span class="aico" style="width:30px;height:30px;margin-right:12px">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
-    <div class="r-main" style="flex:1">
-      <div class="r-title">{{ a.name }}</div>
-      <div class="r-meta">{{ a.skills|length }} skill{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads a team of {{ a.members|length }}{% endif %} &middot; {{ a.model }}</div>
-    </div>
-    {% if a.members %}<span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent);margin-right:6px">team</span>{% endif %}
-    <span class="pill">open &rarr;</span>
-  </a>
+  <div class="row" style="padding:0">
+    <a href="{{ url_for('agent', aid=a.id) }}" style="display:flex;align-items:center;flex:1;min-width:0;padding:14px 16px;color:inherit;text-decoration:none">
+      <span class="aico" style="width:30px;height:30px;margin-right:12px">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
+      <div class="r-main" style="flex:1;min-width:0">
+        <div class="r-title">{{ a.name }}</div>
+        <div class="r-meta">{{ a.skills|length }} skill{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads a team of {{ a.members|length }}{% endif %} &middot; {{ a.model }}</div>
+      </div>
+      {% if a.members %}<span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent);margin-right:6px">team</span>{% endif %}
+      <span class="pill">open &rarr;</span>
+    </a>
+    <form method="post" action="{{ url_for('delete_agent', aid=a.id) }}" style="margin:0 14px 0 0" onsubmit="return confirm('Delete {{ a.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');">
+      <button class="btn ghost sm" type="submit" title="Delete this agent" style="color:var(--high)">Delete</button>
+    </form>
+  </div>
   {% endfor %}
 </div>
 {% else %}
