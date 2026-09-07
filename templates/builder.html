@@ -103,7 +103,7 @@
     <div id="toolsections">
     {% for sid, g in groups.items() %}
     {% if edit_skills is not none %}{% set sel = g.tools | selectattr('key','in',edit_skills) | list | length %}{% elif defaults %}{% set sel = g.tools | selectattr('key','in',defaults) | list | length + (g.tools | selectattr('owner') | selectattr('risk','equalto','LOW') | list | length) %}{% else %}{% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}{% endif %}
-    <details class="tsec" {{ 'open' if g.tools|length <= 6 or sel }}>
+    <details class="tsec">
       <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
       <div class="tbody">
       {% for s in g.tools %}
@@ -189,7 +189,6 @@ function applyGrants(want){
   document.querySelectorAll('details.tsec').forEach(sec=>{
     const n=sec.querySelectorAll('input[name=skills]:checked').length;
     const c=sec.querySelector('.selc'); if(c) c.textContent=n;
-    if(n>0) sec.open=true;
   });
 }
 function renderTplPrompt(t){
@@ -282,8 +281,7 @@ async function refreshTools(){
       return {t, checked};
     });
     const sel = rows.filter(r=>r.checked).length;
-    const open = g.tools.length<=6 ? 'open':'';
-    html += `<details class="tsec" ${open}><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
+    html += `<details class="tsec"><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
       +`<span class="cnt">${g.tools.length} tools &middot; <span class="selc">${sel}</span> granted</span></summary><div class="tbody">`;
     for(const {t,checked} of rows){
       html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" data-risk="${t.risk}" data-personal="${t.personal?'1':'0'}" ${checked?'checked':''}>`

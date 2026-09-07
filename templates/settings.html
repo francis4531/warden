@@ -41,7 +41,7 @@
     <div id="toolsections">
     {% for sid, g in provided.items() %}
     {% set sel = g.tools | selectattr('key','in',defaults) | list | length %}
-    <details class="tsec" {{ 'open' if sel or g.tools|length <= 6 }}>
+    <details class="tsec">
       <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b>{% if g.sample %} <span class="stamp" style="background:var(--line);color:var(--mut)">sample</span>{% endif %}<span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> default</span></summary>
       <div class="tbody">
       {% for s in g.tools %}

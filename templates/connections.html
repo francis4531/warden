@@ -188,7 +188,7 @@
 {% endif %}
 {% for server_name, group in tools|groupby('server_name') %}
 {% set gtools = group|list %}
-<details class="gsec" {{ 'open' if gtools|length <= 6 }}>
+<details class="gsec">
   <summary><span class="chev">&#9654;</span><span class="gname">{{ server_name }}</span><span class="pill">{{ gtools|length }}</span></summary>
   <div class="ledger">
     {% for t in gtools %}

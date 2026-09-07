@@ -46,7 +46,7 @@
 {% if people %}
 <div class="hdr"><span>person</span><span>agents</span><span>conversations</span><span>active</span><span>on hold</span><span>spend</span><span></span></div>
 {% for p in people %}
-<details class="person" {{ 'open' if p.active or p.pending or p.requests }}>
+<details class="person">
   <summary>
     <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}</div>
       <div class="sub">{% if p.last %}last activity {{ p.last[:16].replace('T',' ') }} UTC{% else %}no conversations yet{% endif %} &middot; {{ p.personal }} personal connection{{ '' if p.personal==1 else 's' }}</div></div>
