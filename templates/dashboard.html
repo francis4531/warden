@@ -2,9 +2,9 @@
 {% set active='home' %}
 {% block body %}
 <div class="page-h">
-  <div class="eyebrow">Governed by default</div>
-  <h1>Every agent here runs under human oversight.</h1>
-  <p class="sub">Build an agent, give it tools over MCP, and let it work. Warden runs low-risk actions on its own and holds anything that moves money or changes state for a human to approve, with a full audit trail behind every step.</p>
+  <div class="eyebrow">{{ 'Admin' if is_admin else 'Governed by default' }}</div>
+  <h1>{{ 'Your studio, and your own agents.' if is_admin else 'Every agent here runs under human oversight.' }}</h1>
+  <p class="sub">{% if is_admin %}You run the studio: company systems, defaults, policies, and oversight of everyone's agents. You also build and run agents of your own, with your own connections, like anyone else.{% else %}Build an agent, give it tools over MCP, and let it work. Warden runs low-risk actions on its own and holds anything that moves money or changes state for a human to approve, with a full audit trail behind every step.{% endif %}</p>
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:var(--mut)">
     <span class="mode {{ mode }}" style="letter-spacing:1px"><span class="dot"></span>{{ 'live model' if mode=='live' else 'sandbox' }}</span>
     <span style="color:var(--dim)">&middot;</span><span><b style="color:var(--txt)">{{ servers|length }}</b> server{{ '' if servers|length==1 else 's' }} connected</span>
@@ -15,15 +15,70 @@
   </div>
 </div>
 
+{% if is_admin and studio %}
+<style>
+.g4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:900px){.g4{grid-template-columns:1fr 1fr}}
+.tasks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:1100px){.tasks{grid-template-columns:1fr 1fr}}
+@media (max-width:760px){.tasks{grid-template-columns:1fr}}
+.task{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);text-decoration:none;color:inherit;transition:border-color .12s}
+.task:hover{border-color:var(--brass-dim)}
+.task .st{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:1px}
+.task .st.ok{background:color-mix(in srgb,var(--low) 18%,transparent);color:var(--low)}
+.task .st.todo{background:color-mix(in srgb,var(--med) 18%,transparent);color:var(--med)}
+.task .st.bad{background:color-mix(in srgb,var(--high) 18%,transparent);color:var(--high)}
+.task h4{margin:0 0 3px;font-size:13.5px;font-weight:600}
+.task p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.5}
+</style>
+
+<div class="section-h"><span class="lbl">Studio at a glance</span><a href="{{ url_for('studio') }}" style="color:var(--brass);font-size:12.5px">Everyone's agents &rarr;</a></div>
+<div class="grid g4" style="margin-bottom:18px">
+  <a class="card k" href="{{ url_for('studio') }}"><span class="kv">{{ studio.people }}</span><span class="kl">People</span><span class="kd">{{ studio.agents }} agent{{ '' if studio.agents==1 else 's' }} between them</span></a>
+  <a class="card k" href="{{ url_for('studio') }}"><span class="kv" style="color:{{ 'var(--low)' if studio.active else 'var(--txt)' }}">{{ studio.active }}</span><span class="kl">Active now</span><span class="kd">running or waiting &middot; {{ studio.runs }} conversation{{ '' if studio.runs==1 else 's' }} all time</span></a>
+  {% set nme = pending|length + health.actionable|length %}
+  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nme else 'var(--txt)' }}">{{ nme }}</span><span class="kl">Needs you</span><span class="kd">{{ pending|length }} of your action{{ '' if pending|length==1 else 's' }} on hold &middot; {{ health.actionable|length }} system{{ '' if health.actionable|length==1 else 's' }} to connect{% if health.waiting %} &middot; {{ health.waiting|length }} waiting on other people{% endif %}</span></a>
+  <a class="card k" href="{{ url_for('observability') }}"><span class="kv">${{ '%.2f'|format(studio.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if studio.daily_cap %}of a ${{ '%.2f'|format(studio.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(studio.spend) }} all time</span></a>
+</div>
+
+<div class="section-h"><span class="lbl">Admin tasks</span><span style="font-size:12px;color:var(--dim)">what the studio needs from you</span></div>
+<div class="tasks" style="margin-bottom:26px">
+  <a class="task" href="{{ url_for('connections') }}">
+    <span class="st {{ 'bad' if health.errored else ('ok' if health.provided else 'todo') }}">{{ '!' if health.errored else ('&#10003;'|safe if health.provided else '1') }}</span>
+    <div><h4>Company systems</h4><p>{% if health.errored %}{{ health.errored|length }} of {{ health.provided }} provided server{{ '' if health.provided==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}.{% elif health.provided %}{{ health.provided }} server{{ '' if health.provided==1 else 's' }} provided to everyone. Connect more, or search the MCP Registry.{% else %}Nothing provided yet. Connect the systems (Jira, GitHub, Stripe, a warehouse) every agent should have.{% endif %}</p></div>
+  </a>
+  <a class="task" href="{{ url_for('settings') }}#defaults">
+    <span class="st {{ 'ok' if health.defaults else 'todo' }}">{{ '&#10003;'|safe if health.defaults else '2' }}</span>
+    <div><h4>Default tools for new agents</h4><p>{% if health.defaults %}{{ health.defaults }} tool{{ '' if health.defaults==1 else 's' }} granted to every new agent; people add more from their own connections.{% else %}Not set: new agents get every read-only tool. Pick a smaller, deliberate starting set.{% endif %}</p></div>
+  </a>
+  <a class="task" href="{{ url_for('settings') }}">
+    <span class="st {{ 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span>
+    <div><h4>Google connectors</h4><p>{% if not health.google_on %}Not configured: nobody can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: people see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div>
+  </a>
+  <a class="task" href="{{ url_for('approvals') }}">
+    <span class="st {{ 'todo' if health.actionable else 'ok' }}">{{ health.actionable|length if health.actionable else '&#10003;'|safe }}</span>
+    <div><h4>Connection requests</h4><p>{% if health.actionable %}{{ health.actionable|length }} agent{{ '' if health.actionable|length==1 else 's' }} waiting for a system only you can connect: {{ health.actionable|map(attribute='agent')|map(attribute='name')|join(', ') }}.{% else %}No agent is waiting on you for a connection.{% endif %}</p></div>
+  </a>
+  <a class="task" href="{{ url_for('policies') }}">
+    <span class="st {{ 'ok' if health.policies else 'todo' }}">{{ '&#10003;'|safe if health.policies else '4' }}</span>
+    <div><h4>Policies</h4><p>{% if health.policies %}{{ health.policies }} polic{{ 'y' if health.policies==1 else 'ies' }} in force on top of the risk tiers.{% else %}Only the risk tiers apply. Add spend caps, rate limits, time windows, or per-agent rules.{% endif %}</p></div>
+  </a>
+  <a class="task" href="{{ url_for('audit') }}">
+    <span class="st {{ 'ok' if health.audit_ok else 'bad' }}">{{ '&#10003;'|safe if health.audit_ok else '!' }}</span>
+    <div><h4>Audit integrity</h4><p>{% if health.audit_ok %}Hash chain verified across {{ health.audit.total }} event{{ '' if health.audit.total==1 else 's' }}. Nothing altered.{% else %}Chain broken at {{ health.audit.broken_at }}. Investigate before trusting the log.{% endif %}</p></div>
+  </a>
+</div>
+{% else %}
 <div class="grid g3">
-  <a class="card k" href="#agents"><span class="kv">{{ agents|length }}</span><span class="kl">Agents</span><span class="kd">defined in the studio</span></a>
+  <a class="card k" href="#agents"><span class="kv">{{ agents|length }}</span><span class="kl">Agents</span><span class="kd">yours in the studio</span></a>
   {% set nwait = pending|length + open_requests|length %}
   <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nwait else 'var(--txt)' }}">{{ nwait }}</span><span class="kl">Waiting on a human</span><span class="kd">{{ pending|length }} action{{ '' if pending|length==1 else 's' }} on hold &middot; {{ open_requests|length }} connection request{{ '' if open_requests|length==1 else 's' }}</span></a>
   <a class="card k" href="{{ url_for('connections') }}"><span class="kv">{{ tool_count }}</span><span class="kl">Governed tools</span><span class="kd">across {{ servers|length }} connected server{{ '' if servers|length==1 else 's' }}</span></a>
 </div>
+{% endif %}
 
 {% if pending|length or open_requests|length %}
-<div class="section-h"><span class="lbl">On hold, needs a human</span></div>
+<div class="section-h"><span class="lbl">On hold, needs you</span></div>
 <div class="list">
   {% for q in open_requests %}
   <div class="row">
@@ -46,7 +101,7 @@
 </div>
 {% endif %}
 
-<div class="section-h" id="agents"><span class="lbl">Agents</span><a class="btn ghost sm" href="{{ url_for('new_agent') }}">+ New agent</a></div>
+<div class="section-h" id="agents"><span class="lbl">{{ 'Your agents' if is_admin else 'Agents' }}</span><a class="btn ghost sm" href="{{ url_for('new_agent') }}">+ New agent</a></div>
 {% if agents %}
 <div class="list">
   {% for a in agents %}
@@ -82,7 +137,7 @@
 </style>
 <div class="card" style="padding:22px">
   <div class="eyebrow" style="margin-bottom:6px">Start here</div>
-  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">Your first agent in three steps.</h2>
+  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">{{ 'Your own first agent, in three steps.' if is_admin else 'Your first agent in three steps.' }}</h2>
   <p style="color:var(--mut);font-size:13.5px;margin:0 0 16px">Nothing here needs a token, a key, or a config file. Connect a source with one click, pick a template, run it.</p>
   <div class="guide">
     {% set anyp = personal|selectattr('connected')|list|length %}
@@ -119,7 +174,7 @@
 {% endif %}
 
 {% if runs %}
-<div class="section-h"><span class="lbl">Recent runs</span></div>
+<div class="section-h"><span class="lbl">{{ "Your recent runs" if is_admin else "Recent runs" }}</span></div>
 <div class="list">
   {% for r in runs %}
   <a class="row" href="{{ url_for('run_view', rid=r.id) }}">

@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.12.4"
+WARDEN_VERSION = "0.13"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -405,9 +405,14 @@ def home():
         if e.get("personal"):
             k = store.conn_key(e["id"], current_owner())
             personal.append({"entry": e, "connected": k in raw and raw[k]["status"] == "connected"})
+    studio_totals = health = None
+    if is_admin():
+        _rows, studio_totals = _studio_summary()
+        health = _admin_health()
     return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
                            pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
-                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified())
+                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified(),
+                           studio=studio_totals, health=health)
 
 def _my_key(entry):
     """The connection row a catalog entry maps to for the signed-in person."""
@@ -1209,6 +1214,23 @@ def _grant_and_resume(sid, agent_id, rid):
 def studio():
     if not is_admin():
         abort(404)
+    rows, totals = _studio_summary()
+    return render_template("studio.html", people=rows, totals=totals)
+
+def _admin_health():
+    """The admin's checklist: what is set up, what is broken, what needs them."""
+    servers = cm().connected_servers()
+    provided = [s_ for s_ in servers if not s_.get("owner") and not _is_sample(s_.get("catalog_id") or s_["id"])]
+    errored = [s_ for s_ in provided if s_.get("status") == "error"]
+    integ = store.verify_audit()
+    return {"provided": len(provided), "errored": errored,
+            "defaults": len(default_tools()),
+            "google_on": _google_connectors_on(), "google_verified": _google_verified(),
+            "policies": len(store.list_policies()),
+            "audit_ok": bool(integ.get("ok")), "audit": integ,
+            "actionable": _requests_for_me(), "waiting": _requests_waiting_on_people()}
+
+def _studio_summary():
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     spend_all = store.cost_by_agent(); spend_today = store.cost_by_agent(today)
     rc = store.run_counts_by_agent()
@@ -1252,7 +1274,7 @@ def studio():
               "active": sum(p["active"] for p in rows), "spend": sum(p["spend"] for p in rows),
               "today": sum(p["today"] for p in rows), "pending": len(pend), "requests": len(reqs),
               "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
-    return render_template("studio.html", people=rows, totals=totals)
+    return rows, totals
 
 # ---------------- settings (admin) ----------------
 @app.route("/settings")
