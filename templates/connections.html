@@ -42,66 +42,11 @@
 .act .hint a{color:var(--brass)}
 </style>
 
-<div class="page-h" style="margin-bottom:20px">
+<div class="page-h">
   <div class="eyebrow">Connections</div>
-  <h1>{{ 'Company systems, provided to every user.' if admin_view else 'Connect the sources your agents will use.' }}</h1>
-  <p class="sub">{% if admin_view %}Connect a system once and every agent in the studio can be granted its tools. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated. Personal sources (Gmail, Drive, your own GitHub) are each user's own; yours are under My agents.{% else %}Connect your own accounts (Gmail, GitHub, Jira, anything in the catalog) in one click; only your agents can use them. Company systems your studio provides are already available.{% endif %}</p>
+  <h1>Connect the sources your agents will use.</h1>
+  <p class="sub">Every connection here is yours: connected with your own account or key, used only by your agents, disconnected whenever you like. Nobody else in the studio, admins included, can see or use it. Reads run on their own; anything that changes state asks you first.</p>
 </div>
-
-<style>
-.disco{border:1px solid var(--line);border-radius:14px;background:var(--ink2);padding:16px 18px;margin-bottom:22px}
-.disco form{display:flex;gap:10px}
-.disco input[type=text]{flex:1}
-.dres{display:flex;flex-direction:column;gap:10px;margin-top:14px}
-.dcard{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--ink)}
-.dcard .dn{font-weight:600}
-.dcard .dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;border-radius:5px;padding:2px 7px;margin-left:8px}
-.dcard .dt.remote{color:var(--low);border:1px solid color-mix(in srgb,var(--low) 40%,var(--line2))}
-.dcard .dt.stdio{color:var(--med);border:1px solid color-mix(in srgb,var(--med) 40%,var(--line2))}
-.dcard .dd{color:var(--mut);font-size:12.5px;margin-top:3px}
-.dcard .dr{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:4px}
-.disco .hint{color:var(--dim);font-size:11.5px;margin-top:8px}
-</style>
-
-{% if admin_view %}
-<div class="disco">
-  <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
-  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
-  <form method="get" action="{{ url_for('connections') }}">
-    <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar">
-    <button class="btn brass">Search registry</button>
-  </form>
-  {% if discover is not none %}
-    {% if not discover.ok %}
-      <div class="hint">Couldn't reach the registry just now ({{ discover.error }}). Try again in a moment.</div>
-    {% elif not discover.results %}
-      <div class="hint">No official first-party server for &ldquo;{{ discover_q }}&rdquo; is in the registry yet. Check the catalog below, its owner may already be listed there.</div>
-    {% else %}
-    <div class="dres">
-      {% for r in discover.results %}
-      <div class="dcard">
-        <div>
-          <div><span class="dn">{{ r.display }}</span>
-            <span class="dt {{ 'remote' if r.transport=='remote' else 'stdio' }}">{{ 'remote HTTP' if r.transport=='remote' else 'local package' }}</span>
-            <span class="dt" style="color:var(--brass-b);border:1px solid color-mix(in srgb,var(--brass-b) 35%,var(--line2))">&#10003; {{ r.publisher }}</span></div>
-          {% if r.description %}<div class="dd">{{ r.description }}</div>{% endif %}
-          {% if r.run_hint %}<div class="dr">{{ r.run_hint }}</div>{% endif %}
-        </div>
-        <form method="post" action="{{ url_for('discover_add') }}">
-          <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="display" value="{{ r.display }}">
-          <input type="hidden" name="transport" value="{{ r.transport }}"><input type="hidden" name="endpoint" value="{{ r.endpoint }}">
-          <input type="hidden" name="desc" value="{{ r.description }}"><input type="hidden" name="repo" value="{{ r.repo }}">
-          <button class="btn sm">Add &rarr;</button>
-        </form>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="hint">Remote servers connect on your current runtime. Local packages need the Docker runtime.</div>
-    {% endif %}
-  {% endif %}
-</div>
-{% endif %}
-
 
 {% if oauth_error %}<div class="card" style="margin-bottom:14px;border-color:color-mix(in srgb,var(--high) 45%,var(--line));color:var(--high);font-size:13.5px">{{ oauth_error }}</div>{% endif %}
 {% if just_connected %}<div class="card" style="margin-bottom:14px;border-color:color-mix(in srgb,var(--low) 45%,var(--line));font-size:13.5px"><b>Connected.</b> Its tools are governed like any other; grant them to an agent in the builder.</div>{% endif %}
@@ -129,21 +74,18 @@
 </div>
 {% endif %}
 
-{% if admin_view %}{% include '_admin_google.html' %}{% endif %}
-
-{% if not admin_view %}
 {# ---- personal view: my own accounts ---- #}
 {% set keyed = pkey %}{% set status = p_status %}{% set enabled = p_enabled %}{% set personal_mode = True %}
 <div class="section-h"><span class="lbl">Your connections</span><span style="font-size:12px;color:var(--dim)">your own accounts, connected by you, used only by your agents</span></div>
 <div class="cgrid" style="margin-bottom:14px">
-  {% for e in catalog if e.personal or (e.id in p_enabled and not e.sample) %}
+  {% for e in catalog if e.personal or e.id in p_enabled or e.transport=='builtin' %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}
   {% set errored = st and st.status=='error' %}
   {% include '_conncard.html' %}
   {% endfor %}
 </div>
-{% set more = catalog | rejectattr('personal') | rejectattr('sample') | selectattr('transport','equalto','http') | rejectattr('id','in',p_enabled) | list %}
+{% set more = catalog | rejectattr('personal') | rejectattr('transport','equalto','builtin') | rejectattr('id','in',p_enabled) | list %}{% if not is_admin %}{% set more = more | selectattr('transport','equalto','http') | list %}{% endif %}
 {% if more %}
 <details style="margin-bottom:26px" {{ 'open' if connect_id and (catalog | selectattr('id','equalto',connect_id) | first or {}).transport=='http' and not (catalog | selectattr('id','equalto',connect_id) | first or {}).personal and not admin_view }}>
   <summary style="cursor:pointer;color:var(--brass);font-size:13px">Connect another source with your own account ({{ more|length }} available)</summary>
@@ -159,61 +101,6 @@
 </details>
 {% endif %}
 
-{% endif %}
-{# ---- studio view: what the studio provides to everyone ---- #}
-{% set keyed = skey %}{% set status = s_status %}{% set enabled = s_enabled %}{% set personal_mode = False %}
-
-<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if admin_view else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if admin_view %}connected once, available to everyone &middot; pick the <a href="#defaults">default tools for new agents</a> below{% else %}company systems your agents can already use{% endif %}</span></div>
-<div class="cgrid">
-  {% for e in catalog if not e.personal and (admin_view or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
-  {% set st = status.get(e.id) %}
-  {% set connected = e.id in enabled and st and st.status=='connected' %}
-  {% set errored = st and st.status=='error' %}
-  {% include '_conncard.html' %}
-  {% endfor %}
-</div>
-
-{% if admin_view %}
-<div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
-{% set gated = tools|selectattr('gate','equalto','approval')|list %}
-{% set auto = tools|rejectattr('gate','equalto','approval')|list %}
-{% if tools %}
-<div class="card" style="margin-bottom:16px">
-  <div class="ebar" title="run freely / need approval">
-    {% if auto|length %}<span class="eseg a" style="flex:{{ auto|length }}"></span>{% endif %}
-    {% if gated|length %}<span class="eseg g" style="flex:{{ gated|length }}"></span>{% endif %}
-  </div>
-  <div class="esum">
-    <span><b class="a">{{ auto|length }}</b> run freely <span style="color:var(--dim)">(reads &amp; reversible)</span></span>
-    <span><b class="g">{{ gated|length }}</b> need approval <span style="color:var(--dim)">(writes &amp; unrecognized)</span></span>
-  </div>
-  <div style="color:var(--dim);font-size:11.5px;margin-top:8px">This is the default posture across every connected server. Each agent draws a subset; override any tool&rsquo;s tier below.</div>
-</div>
-{% endif %}
-{% for server_name, group in tools|groupby('server_name') %}
-{% set gtools = group|list %}
-<details class="gsec">
-  <summary><span class="chev">&#9654;</span><span class="gname">{{ server_name }}</span><span class="pill">{{ gtools|length }}</span></summary>
-  <div class="ledger">
-    {% for t in gtools %}
-    <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
-      <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
-      <span>
-        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
-          <input type="hidden" name="key" value="{{ t.key }}"><input type="hidden" name="back" value="{{ url_for('connections') }}">
-          <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
-            {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
-          </select><button class="btn sm">Set</button>
-        </form>
-      </span>
-    </div>
-    {% endfor %}
-  </div>
-</details>
-{% endfor %}
-{% endif %}
-
-{% if admin_view %}<div style="margin-top:30px"></div>{% include '_admin_defaults.html' %}{% endif %}
 
 <script>
 (function(){

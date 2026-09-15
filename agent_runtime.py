@@ -486,11 +486,10 @@ def situational_context(agent, tools, idx, run=None):
             "1. Reason only from the tools listed above. Do not claim abilities you do not have, and do not "
             "deny abilities Warden can add.\n"
             "2. If the task needs a capability you lack (an inbox, calendar, CRM, database, ticketing, files, "
-            "the web, anything), call request_connection with what you need. Personal sources such as Gmail, "
-            "Drive, and Calendar are connected by the user themselves with one click (Connect your Google "
-            "account); shared systems are connected by the Warden admin. Either way Warden grants you the "
-            "tools in one step. Never tell the user to install software, edit configuration files, or use a "
-            "different product.\n"
+            "the web, anything), call request_connection with what you need. The user connects it themselves, "
+            "with their own account or key, in one click from the card Warden shows them; nobody else can do it "
+            "for them, admins included. Warden then grants you the tools in one step. Never tell the user to "
+            "install software, edit configuration files, or use a different product.\n"
             "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
             "you will do once it is connected, then stop and wait.\n"
             "4. Never state that an action happened unless a tool result confirms it.\n"
@@ -499,11 +498,11 @@ def situational_context(agent, tools, idx, run=None):
             "admin steps to explain an error.\n\n"
             "How connection requests work, so you can describe them exactly: the request appears as a card in "
             "this conversation directly above your reply, and under Approvals in Warden's left navigation "
-            "(the Approvals badge counts it). For a personal source like Gmail the card has a Connect your Google "
-            "account button the user clicks themselves. %s When it is connected, its tools are granted to you and this "
+            "(the Approvals badge counts it). The card has a Connect button (for Google sources, Connect your Google "
+            "account) that the user clicks themselves. When it is connected, its tools are granted to you and this "
             "conversation resumes automatically; the user does not need to type anything or come back to tell you. "
-            "Do not speculate about other places it might appear."
-            % (agent["name"], "\n".join(lines), _admin_sentence(run)))
+            "Do not speculate about other places it might appear, and never say an admin has to approve or connect it."
+            % (agent["name"], "\n".join(lines)))
 
 def _already_granted(agent, inp, run):
     """The server name if the requested capability is already connected and granted to this
@@ -524,15 +523,6 @@ def _already_granted(agent, inp, run):
             return m["name"]
     return None
 
-def _admin_sentence(run):
-    admins = ADMIN_INFO.get("admins") or []
-    if run is not None and _requester_is_admin(run):
-        return ("The user you are talking to IS the Warden admin: they can connect it from the card or from "
-                "Approvals with one click.")
-    if admins:
-        return ("The user you are talking to is not an admin. The Warden admin is %s; the card shows them "
-                "that name and the request is already waiting for the admin under Approvals." % ", ".join(admins))
-    return "A Warden admin connects it from Approvals."
 
 def _advance_once(run_id):
     run = store.get_run(run_id); agent = store.get_agent(run["agent_id"])

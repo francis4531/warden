@@ -416,6 +416,12 @@ def enable_connection(cid, transport, command=None, url=None, token=None, owner=
     c.commit(); c.close()
     return key
 
+def reown_connection(old_key, new_key, owner):
+    c = _conn()
+    c.execute("DELETE FROM connections WHERE id=? AND id<>?", (new_key, old_key))
+    c.execute("UPDATE connections SET id=?, owner=?, connected_by=COALESCE(NULLIF(connected_by,''),?) WHERE id=?", (new_key, owner, owner, old_key))
+    c.commit(); c.close()
+
 def update_connection_identity(cid, identity):
     c = _conn(); c.execute("UPDATE connections SET identity=? WHERE id=?", (identity, cid)); c.commit(); c.close()
 

@@ -75,67 +75,51 @@ category, and any conversation becomes a case with one click.
 ## Two hats for the admin
 
 An admin has two jobs, so Warden gives them two places. A switch at the top of the sidebar
-picks between the Admin console (Overview, Users, Connections, Policies, Approvals, Audit
-log, Observability, Architecture: the studio as a whole) and My agents (Dashboard, Build an
+picks between the Admin console (Overview, Users, Catalog, Policies, Approvals, Audit log,
+Observability, Architecture: the studio as a whole) and My agents (Dashboard, Build an
 agent, Connections, Approvals, Evals: exactly what every user gets, scoped to the admin's
 own agents and accounts). Permissions never depend on the switch; only what a page shows.
 Users never see it.
 
 ## The admin's view
 
-Admins get a Studio page: every user, their agents, conversations, what is active, what
-is on hold, and spend today and all time. Any agent or conversation opens read-only, so an
+Admins get a Users page: every user, their agents, conversations, what is active, what is
+on hold, and spend today and all time. Any agent or conversation opens read-only, so an
 admin can see exactly what an agent did without being able to reply, approve, edit, or mark
 answers on the owner's behalf; opening someone else's conversation writes an `admin_view`
-event to that run's audit trail, visible to the owner. Approvals separates what the admin
-can act on (studio-provided systems to connect) from what is waiting on other users (a
-personal source only its owner can connect), and only the first counts toward the badge.
+event to that run's audit trail, visible to the owner. The console's Approvals page is
+read-only too: what is waiting on users, and which high-risk actions their owners have yet
+to decide.
 
-## Whose credential is it
+## Every connection is someone's own
 
-A studio-provided system runs on whatever credential the admin connected it with, and every
-agent that uses it acts as that identity. Each provided card says what that is: no
-credential (anonymous), an API key (with the account it acts as, when Warden can tell, as it
-can for GitHub), or a sign-in (named). The connect forms say it up front: use an organization
-key or a dedicated service user, never a personal login. Personal sources never get this
-treatment because they are never shared.
+The studio provides no connections. Every connection, admins included, belongs to the user
+who made it: their Google account, their GitHub token, their Atlassian sign-in. It is stored
+encrypted under their name, only their agents can be granted it, nobody else can see, grant,
+or disconnect it, and an agent that needs a source it lacks asks its owner, never an admin.
+Servers that run as a process on the Warden host (stdio) can only be enabled by an admin,
+and even then only for the admin's own agents. The one thing every user gets without
+connecting anything is the built-in sample server (fake customers, a knowledge base,
+tickets, refunds), so a first agent works in one click.
 
-## Provided by the studio vs your own
-
-Connections come in two kinds. Studio-provided ones (Stripe, Jira, GitHub, a data
-warehouse) are connected once by an admin and available to everyone. Personal ones (Gmail,
-Drive, Calendar) belong to one user: they connect their own account, their agents use
-it, nobody else can see or grant it. A first-time user is walked through three steps on
-the dashboard: connect a source, build an agent from a template, run it. Nothing in that
-path asks for a token, a key, or a configuration file.
-
-Any catalog server can be connected by any user with their own account (a personal
-GitHub token, their own Atlassian sign-in), stored under their name and usable only by their
-agents; servers that run as a process on the Warden host stay the admin's to enable. The same
-server can exist twice, once for the studio and once for a user, and an agent's request is
-satisfied by the requester's own account first, then the studio's.
-
-Admins choose the default tools for new agents at the bottom of Connections. Every new agent starts
-with exactly those granted; the user building it adds more from their own connections.
-With no defaults set, Warden falls back to granting every read-only tool. The three
-sample servers built into Warden (enterprise tools, files, code) are tagged as samples and
-stay hidden from non-admins unless one of their tools is a default, so a real studio never
-shows made-up systems to its users, and a new studio can still hand users a working
-first agent in one click.
+What the admin does decide, on the Catalog page, is which servers are on offer (the curated
+catalog plus anything added from the MCP Registry), how each tool is risk-classified for
+everyone (a risk override applies to every user's copy of that tool), and the Google client
+that makes one-click Google connections possible.
 
 ## Connections
 
-The Connections page lists common enterprise MCP servers grouped by category (GitHub,
+The catalog lists common enterprise MCP servers grouped by category (GitHub,
 Linear, Notion, Stripe, Sentry, Slack, Postgres, Supabase, Playwright, the Anthropic
 reference servers, Google Workspace, and more). Each entry shows who maintains it and how
 it connects, and the card matches the credential the server actually needs:
 
-- Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): always connected, no setup; hidden from users unless an admin makes some of its tools defaults.
+- Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): always connected for everyone, no setup.
 - Personal (Gmail, Drive, Calendar, Docs, Sheets): each user clicks "Connect your Google
   account" for themselves. The token is stored encrypted under that user, only their
   agents can be granted it, and they can disconnect any time. Read-only scopes by default;
   a fresh access token is minted before every call. The admin sets up the Google client
-  once on the Connections page (or brings their own Workspace-internal client, which needs no
+  once on the Catalog page (or brings their own Workspace-internal client, which needs no
   Google verification) and never touches a user's connection.
 - MCP-standard OAuth (Linear, Notion, Sentry, Atlassian, Cloudflare, Vercel, GitHub):
   "Sign in with <vendor>". Warden discovers the authorization server, registers itself as

@@ -14,18 +14,12 @@
     <div class="desc">{{ e.desc }}</div>
     <div class="act">
       {% if e.transport=='builtin' %}
-        <span class="pill done" style="margin-left:auto">always on</span>
+        <span class="pill done" style="margin-left:auto">always on &middot; sample data</span>
       {% elif e.id in enabled %}
         {% set os_ = oauth_status.get(keyed[e.id]) %}
         {% set cr = (cred or {}).get(keyed[e.id]) %}
         {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
-        {% if not personal_mode and cr %}
-        <div class="hint" style="flex-basis:100%;margin:0 0 4px">
-          {% if cr.credential == 'signin' %}<span style="color:var(--med);font-weight:600">Signed in as {{ cr.identity or cr.connected_by }}.</span> Every agent using this acts as that account. For a company system, sign in once as a dedicated service user, not a personal login.
-          {% elif cr.credential == 'api_key' %}Connected with an API key{% if cr.identity %}, acting as <b>{{ cr.identity }}</b>{% endif %}{% if cr.connected_by %}, added by {{ cr.connected_by }}{% endif %}. {% if cr.identity and '(bot)' not in cr.identity %}<span style="color:var(--med)">Make sure this key belongs to a machine or service account, not a person: agents act as it.</span>{% else %}Use an organization or service-account key so agents never act as a person.{% endif %}
-          {% else %}No credential: this server is used anonymously{% if cr.connected_by %}, added by {{ cr.connected_by }}{% endif %}.{% endif %}
-        </div>
-        {% endif %}
+        {% if cr and cr.credential == 'api_key' and cr.identity %}<div class="hint" style="flex-basis:100%;margin:0 0 4px">API key, acting as <b>{{ cr.identity }}</b>.</div>{% endif %}
         <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ keyed[e.id] }}"><button class="btn ghost sm">Disconnect</button></form>
       {% elif e.provider=='google' %}
@@ -37,13 +31,10 @@
           </div>
           <button class="btn brass sm" type="submit" {{ 'disabled' if not google_on }}><svg width="14" height="14" viewBox="0 0 48 48" style="margin-right:2px"><path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></svg>Connect your Google account</button>
         </form>
-        <div class="hint" style="flex-basis:100%">Personal: only your agents can use it, and you can disconnect any time.{% if google_on and not google_verified %} Google may show a red "Google hasn't verified this app" page the first time: click <b>Advanced</b>, then <b>Go to Warden</b>, and the normal consent page follows.{% endif %}{% if not google_on %} {% if admin_view %}Not available yet: set up the Google client above.{% else %}Not available yet: ask your admin to set up the Google client.{% endif %}{% endif %}</div>
-      {% elif not admin_view and not personal_mode %}
-        <span class="hint" style="margin-left:auto">Provided by your studio: your admin connects it once for everyone.</span>
-      {% elif not admin_view and e.transport != 'http' %}
-        <span class="hint" style="margin-left:auto">Runs on the Warden host, so your admin enables it.</span>
+        <div class="hint" style="flex-basis:100%">Personal: only your agents can use it, and you can disconnect any time.{% if google_on and not google_verified %} Google may show a red "Google hasn't verified this app" page the first time: click <b>Advanced</b>, then <b>Go to Warden</b>, and the normal consent page follows.{% endif %}{% if not google_on %} {% if is_admin %}Not available yet: set up the Google client under Catalog in the Admin console.{% else %}Not available yet: ask your admin to set up the Google client.{% endif %}{% endif %}</div>
+      {% elif not is_admin and e.transport != 'http' %}
+        <span class="hint" style="margin-left:auto">Runs on the Warden host, so only an admin can enable it.</span>
       {% elif e.provider=='mcp' %}
-        {% if not personal_mode %}<div class="hint" style="flex-basis:100%;margin:0 0 6px">For the studio: sign in as a dedicated service user (for example warden-bot@yourcompany), not your own login. Agents act as whoever signs in.</div>{% endif %}
         <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform" style="margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <button class="btn brass sm" type="submit">Sign in with {{ e.name.split(' (')[0] }}</button>
@@ -53,19 +44,18 @@
           <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px;margin-top:6px">
             <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
             <input type="password" name="token" placeholder="{{ e.token_label or 'token' }}"><button class="btn sm">Connect</button></form>
-          <div class="hint"><a href="{{ e.token_url }}" target="_blank" rel="noopener">Get a {{ e.token_label or 'token' }} &rarr;</a>{% if e.env and admin_view %} &middot; or set <code>${{ e.env }}</code> on the server{% endif %}</div>
+          <div class="hint"><a href="{{ e.token_url }}" target="_blank" rel="noopener">Get a {{ e.token_label or 'token' }} &rarr;</a>{% if e.env and is_admin %} &middot; or set <code>${{ e.env }}</code> on the server{% endif %}</div>
         </details>
         {% endif %}
       {% elif e.transport=='http' and e.auth=='none' %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}<button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
-        {% if not personal_mode %}<div class="hint" style="flex-basis:100%;margin:0 0 6px">For the studio: use an organization or service-account key, not a key tied to your own login. Agents act as whatever the key belongs to.</div>{% endif %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <input type="password" name="token" placeholder="{{ e.token_label or 'API key' }}">
           <button class="btn brass sm">Connect</button></form>
-        <div class="hint" style="flex-basis:100%">{% if e.token_url %}<a href="{{ e.token_url }}" target="_blank" rel="noopener">Get an API key &rarr;</a>{% endif %}{% if e.env and admin_view %}{{ ' &middot; '|safe if e.token_url }}or set <code>${{ e.env }}</code> on the server{% endif %}</div>
+        <div class="hint" style="flex-basis:100%">{% if e.token_url %}<a href="{{ e.token_url }}" target="_blank" rel="noopener">Get an API key &rarr;</a>{% endif %}{% if e.env and is_admin %}{{ ' &middot; '|safe if e.token_url }}or set <code>${{ e.env }}</code> on the server{% endif %}</div>
       {% else %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}

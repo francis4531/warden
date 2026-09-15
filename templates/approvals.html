@@ -5,7 +5,7 @@
 <div class="page-h">
   <div class="eyebrow">Approvals</div>
   <h1>Actions on hold for a human.</h1>
-  <p class="sub">{% if admin_view %}Everything waiting on a human across the studio. Studio-provided systems are yours to connect; personal sources and high-risk actions are decided by the agent's owner.{% else %}Everything an agent is waiting on a human for. High-risk actions pause here before they run; connection requests wait here for whoever can connect them: an admin for studio-provided systems, the agent's owner for personal sources. Every decision lands in the audit log.{% endif %}</p>
+  <p class="sub">{% if admin_view %}Everything waiting on a human across the studio, read-only. Connections and high-risk actions are decided by the agent's owner; the console connects nothing on anyone's behalf.{% else %}Everything an agent is waiting on a human for. High-risk actions pause here before they run; connection requests wait here for you to connect with your own account. Every decision lands in the audit log.{% endif %}</p>
 </div>
 
 {% if requests %}
@@ -15,9 +15,7 @@
   <div class="g-eye" style="color:var(--brass)"><span>&#9673; needs a connection</span></div>
   <div class="g-title" style="display:flex;align-items:center;gap:10px"><span class="aico" style="width:26px;height:26px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>{{ q.agent.name }} needs: {{ q.need }}</div>
   <div style="color:var(--mut);font-size:13px">
-    {% if q.matches and q.matches[0].personal %}A personal source: the user who owns the agent connects their own account, read-only, and the conversation resumes on its own.
-    {% elif admin_view %}Connect it and its tools are granted to {{ q.agent.name }}; the conversation resumes on its own.
-    {% else %}Waiting for a Warden admin{% if admin_emails %} ({{ admin_emails|join(', ') }}){% endif %} to connect it. The conversation resumes on its own once granted.{% endif %}
+    Connect it with your own account and its tools are granted to {{ q.agent.name }}; the conversation resumes on its own.
   </div>
   <div class="args" style="display:flex;flex-direction:column;gap:8px">
     {% for m in q.matches %}
@@ -25,16 +23,14 @@
       <div><div style="font-weight:600;font-size:13.5px">{{ m.name }}{% if m.connected %} <span class="pill done">connected, not granted</span>{% endif %}</div><div style="color:var(--mut);font-size:12px">{{ 'official server in the Warden catalog' if m.source=='catalog' else 'found in the MCP Registry' }}</div></div>
       {% if m.connected %}
       <form method="post" action="{{ url_for('grant_connection') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.sid }}"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Grant to {{ q.agent.name }} &rarr;</button></form>
-      {% elif m.personal and q.agent.owner == user_email %}
-      <form method="post" action="{{ url_for('oauth_start') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Connect your {{ m.name.split(' (')[0] }} &rarr;</button></form>
       {% elif m.personal %}
-      <span style="margin-left:auto;color:var(--dim);font-size:12px">personal: {{ q.agent.owner }} connects their own</span>
-      {% elif admin_view %}
+      <form method="post" action="{{ url_for('oauth_start') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Connect your {{ m.name.split(' (')[0] }} &rarr;</button></form>
+      {% else %}
       <a class="btn brass sm" style="margin-left:auto" href="{{ m.url }}">Connect &amp; grant &rarr;</a>
       {% endif %}
     </div>
     {% else %}
-    <div style="color:var(--mut);font-size:13px">No catalog match for &ldquo;{{ q.keywords }}&rdquo;.{% if admin_view %} <a href="{{ url_for('connections', discover=q.keywords, grant_to=q.agent.id, resume=q.run_id) }}" style="color:var(--brass)">Search the MCP Registry &rarr;</a>{% endif %}</div>
+    <div style="color:var(--mut);font-size:13px">No catalog match for &ldquo;{{ q.keywords }}&rdquo;.{% if is_admin %} <a href="{{ url_for('catalog', discover=q.keywords) }}" style="color:var(--brass)">Search the MCP Registry &rarr;</a>{% else %} Ask your admin to add it to the catalog.{% endif %}</div>
     {% endfor %}
   </div>
   <div class="g-actions"><a class="btn ghost" href="{{ url_for('run_view', rid=q.run_id) }}">Open conversation</a></div>
@@ -43,7 +39,7 @@
 {% endif %}
 
 {% if waiting %}
-<div class="section-h"><span class="lbl">Waiting on users</span><span style="font-size:12px;color:var(--dim)">{{ waiting|length }} personal source{{ '' if waiting|length==1 else 's' }} their owners have to connect &middot; nothing for you to do</span></div>
+<div class="section-h"><span class="lbl">Waiting on users</span><span style="font-size:12px;color:var(--dim)">{{ waiting|length }} source{{ '' if waiting|length==1 else 's' }} their owners have to connect &middot; nothing for you to do</span></div>
 <div class="list" style="margin-bottom:22px">
   {% for q in waiting %}
   <a class="row" href="{{ url_for('run_view', rid=q.run_id) }}">

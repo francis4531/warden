@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% set active='catalog' %}
+{% block title %}Catalog · Warden{% endblock %}
+{% block body %}
+<style>
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:stretch}
+.conn{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;padding:15px 16px;background:var(--ink2);min-height:172px}
+.conn .top{display:flex;align-items:center;gap:8px}
+.conn .nm{font-weight:600;font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conn .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+.tag.cat{color:var(--brass);border-color:color-mix(in srgb,var(--brass) 35%,var(--line))}
+.conn .desc{color:var(--mut);font-size:12.5px;line-height:1.45;margin-top:11px;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conn .act{margin-top:13px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.conn .act form{display:flex;gap:7px;flex:1}
+.conn .act input:not([type=radio]){flex:1;min-width:0;background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:10.5px;padding:8px 10px}
+.conn .act .btn{flex-shrink:0}
+.conn .cstatus{font-family:var(--mono);font-size:10.5px;margin-right:auto}
+.conn.on{border-color:color-mix(in srgb,var(--low) 45%,var(--line))}
+.conn.err{border-color:color-mix(in srgb,var(--high) 45%,var(--line))}
+.gsec{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:10px;background:var(--ink2)}
+.gsec>summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;gap:10px}
+.gsec>summary::-webkit-details-marker{display:none}
+.gsec>summary .gname{font-family:var(--disp);font-size:15px;font-weight:600}
+.gsec>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
+.gsec[open]>summary .chev{transform:rotate(90deg)}
+.gsec .ledger{border:none;border-radius:0;border-top:1px solid var(--line)}
+.gsec .ev:last-child{border-bottom:none}
+.oauthform{display:flex;flex-direction:column;gap:8px;flex:1}
+.scopes{display:flex;gap:14px;font-size:12.5px;color:var(--mut)}
+.scopes label{display:flex;align-items:center;gap:5px;margin:0;font-weight:500;text-transform:none;letter-spacing:0}
+.scopes input{margin:0}
+.setup{flex-basis:100%;font-size:12px;color:var(--mut);margin-top:4px}
+.setup summary{cursor:pointer;color:var(--brass);list-style:none}
+.setup summary::-webkit-details-marker{display:none}
+.setup>div{margin-top:6px;line-height:1.55}
+.setup code{font-family:var(--mono);font-size:11px;background:var(--ink3);padding:1px 5px;border-radius:4px;word-break:break-all}
+.oauthst{font-size:12px;color:var(--low);flex:1}
+.act .hint{font-size:11.5px;color:var(--dim)}
+.act .hint a{color:var(--brass)}
+</style>
+
+<div class="page-h">
+  <div class="eyebrow">Admin console</div>
+  <h1>The catalog, and how its tools are governed.</h1>
+  <p class="sub">The studio provides no connections. Every user, admins included, connects the sources their own agents use. What you decide here is which servers are on offer, how each tool is risk-classified for everyone, and the Google client that makes one-click Google connections possible.</p>
+</div>
+
+{% include '_admin_google.html' %}
+
+<div class="disco">
+  <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
+  <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
+  <form method="get" action="{{ url_for('catalog') }}">
+    <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar">
+    <button class="btn brass">Search registry</button>
+  </form>
+  {% if discover is not none %}
+    {% if not discover.ok %}
+      <div class="hint">Couldn't reach the registry just now ({{ discover.error }}). Try again in a moment.</div>
+    {% elif not discover.results %}
+      <div class="hint">No official first-party server for &ldquo;{{ discover_q }}&rdquo; is in the registry yet. Check the catalog below, its owner may already be listed there.</div>
+    {% else %}
+    <div class="dres">
+      {% for r in discover.results %}
+      <div class="dcard">
+        <div>
+          <div><span class="dn">{{ r.display }}</span>
+            <span class="dt {{ 'remote' if r.transport=='remote' else 'stdio' }}">{{ 'remote HTTP' if r.transport=='remote' else 'local package' }}</span>
+            <span class="dt" style="color:var(--brass-b);border:1px solid color-mix(in srgb,var(--brass-b) 35%,var(--line2))">&#10003; {{ r.publisher }}</span></div>
+          {% if r.description %}<div class="dd">{{ r.description }}</div>{% endif %}
+          {% if r.run_hint %}<div class="dr">{{ r.run_hint }}</div>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('discover_add') }}">
+          <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="display" value="{{ r.display }}">
+          <input type="hidden" name="transport" value="{{ r.transport }}"><input type="hidden" name="endpoint" value="{{ r.endpoint }}">
+          <input type="hidden" name="desc" value="{{ r.description }}"><input type="hidden" name="repo" value="{{ r.repo }}">
+          <button class="btn sm">Add &rarr;</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="hint">Remote servers connect on your current runtime. Local packages need the Docker runtime.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="section-h"><span class="lbl">Catalog</span><span style="font-size:12px;color:var(--dim)">{{ catalog|length }} servers users can connect with their own accounts &middot; sample and stdio servers are admin-only</span></div>
+<div class="cgrid" style="margin-bottom:26px">
+  {% for e in catalog %}
+  <div class="conn" id="{{ e.id }}">
+    <div class="top"><span class="nm">{{ e.name }}</span>{% if e.custom %}<span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">discovered</span>{% endif %}{% if e.sample %}<span class="stamp" style="background:var(--line);color:var(--mut)">sample</span>{% endif %}
+      {% if users_connected.get(e.id) %}<span class="stamp LOW">{{ users_connected[e.id] }} user{{ '' if users_connected[e.id]==1 else 's' }} connected</span>{% endif %}</div>
+    <div class="tags"><span class="tag cat">{{ e.category }}</span><span class="tag">{{ mlabel[e.maintainer] }}</span><span class="tag">{{ 'personal Google' if e.personal else ('remote (sign in)' if e.provider=='mcp' else slabel[e.status]) }}</span></div>
+    <div class="desc">{{ e.desc }}</div>
+    {% if e.custom %}<div class="act"><form method="post" action="{{ url_for('discover_remove') }}" style="margin-left:auto"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Remove from catalog</button></form></div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
+{% set gated = tools|selectattr('gate','equalto','approval')|list %}
+{% set auto = tools|rejectattr('gate','equalto','approval')|list %}
+{% if tools %}
+<div class="card" style="margin-bottom:16px">
+  <div class="ebar" title="run freely / need approval">
+    {% if auto|length %}<span class="eseg a" style="flex:{{ auto|length }}"></span>{% endif %}
+    {% if gated|length %}<span class="eseg g" style="flex:{{ gated|length }}"></span>{% endif %}
+  </div>
+  <div class="esum">
+    <span><b class="a">{{ auto|length }}</b> run freely <span style="color:var(--dim)">(reads &amp; reversible)</span></span>
+    <span><b class="g">{{ gated|length }}</b> need approval <span style="color:var(--dim)">(writes &amp; unrecognized)</span></span>
+  </div>
+  <div style="color:var(--dim);font-size:11.5px;margin-top:8px">This is the default posture across every connected server. Each agent draws a subset; override any tool&rsquo;s tier below.</div>
+</div>
+{% endif %}
+{% for server_name, group in tools|groupby('server_name') %}
+{% set gtools = group|list %}
+<details class="gsec">
+  <summary><span class="chev">&#9654;</span><span class="gname">{{ server_name }}</span><span class="pill">{{ gtools|length }}</span></summary>
+  <div class="ledger">
+    {% for t in gtools %}
+    <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
+      <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
+      <span>
+        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
+          <input type="hidden" name="key" value="{{ t.model_key }}"><input type="hidden" name="back" value="{{ url_for('catalog') }}">
+          <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
+            {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}
+          </select><button class="btn sm">Set</button>
+        </form>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endfor %}
+{% endblock %}

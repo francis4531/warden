@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.14.4"
+WARDEN_VERSION = "0.15"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -309,7 +309,7 @@ def _auth_ctx():
             "is_admin": is_admin(),
             "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
 
-_ADMIN_ENDPOINTS = {"tool_risk", "studio",
+_ADMIN_ENDPOINTS = {"tool_risk", "studio", "catalog",
                     "discover", "discover_add", "discover_remove", "discover_json",
                     "policies", "create_policy", "toggle_policy", "delete_policy",
                     "settings", "save_settings"}
@@ -348,30 +348,12 @@ def inject_globals():
             "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
-def default_tools():
-    """Tool keys an admin chose as the starting grant for every new agent."""
-    try:
-        v = store.get_setting("default_tools")
-        return [k for k in _json.loads(v) if isinstance(k, str)] if v else []
-    except Exception:
-        return []
-
-def _is_sample(catalog_id):
-    e = cat.BY_ID.get(catalog_id or "")
-    return bool(e and e.get("sample"))
-
 def _visible(t):
-    """A tool or server is visible to the signed-in person if it is provided by the studio
-    or their own. Sample servers are admin-only unless an admin put one of their tools in
-    the defaults; then the whole server shows, defaults pre-checked, so people can add more."""
+    """A tool or server is visible to the signed-in user if it is their own. The only
+    exception is the built-in sample server, which has no owner and is there so a new user
+    can try an agent before connecting anything real."""
     own = t.get("owner") or ""
-    if own and own != current_owner():
-        return False
-    cid = t.get("catalog_id") or t.get("id") or t.get("server_id") or ""
-    if _is_sample(cid) and not is_admin():
-        sid = t.get("server_id") or t.get("id") or cid
-        return any(k.startswith(sid + "__") for k in default_tools())
-    return True
+    return (not own) or own == current_owner()
 
 def connected_tools():
     """Tools across connected servers this person may use (shared plus their personal
@@ -381,9 +363,38 @@ def connected_tools():
     for t in cm().all_tools():
         if not _visible(t):
             continue
-        m = gov.meta(t["key"], t["tool"], t["description"], ovr.get(t["key"]))
-        out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(t["key"])})
+        mk = _model_key(t)
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk})
     return out
+
+def _migrate_shared_connections():
+    """Before v0.15 an admin could connect a system for the whole studio. Those rows become
+    the admin's own personal connections (nothing is shared any more), and agents that held
+    their tools keep them only if the same user owns the agent."""
+    import store as _st
+    for c_ in _st.enabled_connections():
+        if c_.get("owner") or c_["transport"] == "builtin":
+            continue
+        cid = c_["catalog_id"]
+        owner = c_.get("connected_by") or (sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "operator")
+        new_key = _st.conn_key(cid, owner)
+        _st.reown_connection(c_["id"], new_key, owner)
+        for ag in _st.list_agents(None):
+            skills = ag.get("skills") or []
+            if not any(k.startswith(c_["id"] + "__") for k in skills):
+                continue
+            if (ag.get("owner") or "operator") == owner:
+                skills = [new_key + k[len(c_["id"]):] if k.startswith(c_["id"] + "__") else k for k in skills]
+            else:
+                skills = [k for k in skills if not k.startswith(c_["id"] + "__")]
+            _st.update_agent(ag["id"], ag["name"], ag["instructions"], ag["model"], skills)
+        _st.audit(None, None, "connection_reowned", detail={"server": cid, "owner": owner,
+                  "text": "%s was studio-provided; it is now %s's own connection" % (cid, owner)})
+
+def _model_key(t):
+    """Risk overrides are per catalog server and tool, not per user's copy of it."""
+    return "%s__%s" % (t.get("catalog_id") or t.get("server_id") or "", t.get("tool") or "")
 
 def tools_by_server():
     groups = {}
@@ -459,49 +470,57 @@ def _my_key(entry):
 
 @app.route("/connections")
 def connections():
-    # status keyed by catalog id, resolved to this person's row for personal connectors
+    """My connections: every row here belongs to the signed-in user. Admins in the console
+    are sent to the Catalog, which is the studio-level view."""
+    if admin_view():
+        return redirect(url_for("catalog"))
     raw = {s["id"]: s for s in cm().connected_servers()}
     enabled_keys = {c["id"] for c in store.enabled_connections()}
     me = current_owner()
-    # every catalog entry can exist twice: once for me (my own account) and once for the studio
-    pkey = {e["id"]: store.conn_key(e["id"], me) for e in merged_catalog()}
-    skey = {e["id"]: e["id"] for e in merged_catalog()}
+    pkey = {e["id"]: (e["id"] if e["transport"] == "builtin" else store.conn_key(e["id"], me)) for e in merged_catalog()}
     p_status = {e["id"]: raw[pkey[e["id"]]] for e in merged_catalog() if pkey[e["id"]] in raw}
-    s_status = {e["id"]: raw[e["id"]] for e in merged_catalog() if e["id"] in raw}
     p_enabled = {e["id"] for e in merged_catalog() if pkey[e["id"]] in enabled_keys}
-    s_enabled = {e["id"] for e in merged_catalog() if e["id"] in enabled_keys}
-    # the admin's default view of a company system is the studio one; everyone else's is their own
-    av = admin_view()
-    status = {**s_status, **p_status} if av else p_status
-    enabled = (s_enabled | p_enabled) if av else p_enabled
-    dq = (request.args.get("discover") or "").strip() if av else ""
-    discover = registry.search(dq) if dq else None
-    oauth_status = {}
-    for c_ in store.enabled_connections():
+    oauth_status, cred = {}, {}
+    for c_ in store.enabled_connections(me):
+        cred[c_["id"]] = c_
         d_ = oauth.describe(c_.get("token"))
         if d_: oauth_status[c_["id"]] = d_
-    keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
-    cred = {c_["id"]: c_ for c_ in store.enabled_connections()}   # credential kind, identity, who connected it
-    if av:
-        # connections made before identity was recorded: resolve once now, where the vendor allows it
-        for c_ in cred.values():
-            if not c_.get("owner") and c_.get("credential") == "api_key" and not c_.get("identity"):
-                ident = _credential_identity(c_["catalog_id"], c_.get("token"))
-                if ident:
-                    store.update_connection_identity(c_["id"], ident); c_["identity"] = ident
-    default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
-    extra = _settings_ctx() if av else {}
-    return render_template("connections.html", **extra, catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
-                           pkey=pkey, skey=skey, cred=cred, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
-                           default_servers=default_servers,
+    return render_template("connections.html", catalog=merged_catalog(), status=p_status, enabled=p_enabled, keyed=pkey,
+                           pkey=pkey, p_status=p_status, p_enabled=p_enabled, cred=cred,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
-                           tools=connected_tools(), discover=discover, discover_q=dq,
                            requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(), google_verified=_google_verified(),
-                           google_redirect=_oauth_redirect("google"),
                            oauth_error=request.args.get("oauth_error", ""), just_connected=request.args.get("connected", ""),
                            grant_to=request.args.get("grant_to", ""), resume=request.args.get("resume", ""),
                            connect_id=request.args.get("connect", ""),
                            grant_agent=store.get_agent(request.args.get("grant_to", "")) if request.args.get("grant_to") else None)
+
+@app.route("/catalog")
+def catalog():
+    """Admin console: which servers are on offer, how their tools are risk-classified for
+    everyone, and the Google client. No connections are made here."""
+    if not is_admin():
+        abort(404)
+    dq = (request.args.get("discover") or "").strip()
+    discover = registry.search(dq) if dq else None
+    users_connected = {}
+    for c_ in store.enabled_connections():
+        if c_.get("owner"):
+            users_connected[c_["catalog_id"]] = users_connected.get(c_["catalog_id"], 0) + 1
+    # governed tools: one row per catalog server and tool, whichever users hold it
+    seen, tools = set(), []
+    ovr = store.all_overrides()
+    for t in cm().all_tools():
+        mk = _model_key(t)
+        if mk in seen:
+            continue
+        seen.add(mk)
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        entry = cat.BY_ID.get(t.get("catalog_id") or "", {})
+        tools.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk,
+                      "server_name": entry.get("name") or t["server_name"]})
+    return render_template("catalog.html", **_settings_ctx(), catalog=merged_catalog(), users_connected=users_connected,
+                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL, tools=tools,
+                           discover=discover, discover_q=dq, google_on=_google_connectors_on(), google_verified=_google_verified())
 
 @app.route("/connections/enable", methods=["POST"])
 def enable_connection():
@@ -509,24 +528,23 @@ def enable_connection():
     if not entry: abort(404)
     transport = entry["transport"]
     token = request.form.get("token") or None
-    if admin_view() and not request.form.get("personal"):
-        # the admin connects a company system once for the whole studio
-        owner = None
+    # Every connection belongs to the user who makes it, admins included. A server that runs as
+    # a process on Warden's host (stdio) is admin-only, since its command line executes here.
+    owner = current_owner()
+    if transport != "http":
+        if not is_admin():
+            abort(403)
         command = request.form.get("command") or None
         url = request.form.get("url") or entry.get("run")
     else:
-        # anyone else connects with their own account: hosted servers only (a stdio server is a
-        # process on Warden's host, so its command line stays the admin's), the catalog URL, their key
-        if transport != "http":
-            abort(403)
-        owner = current_owner(); command = None; url = entry.get("run")
+        command = None; url = entry.get("run")
     key = store.enable_connection(cid, transport, command=command, url=url, token=token, owner=owner,
-                                  connected_by=current_owner(), credential=("api_key" if token else "none"),
-                                  identity=_credential_identity(cid, token) if not owner else "")
+                                  connected_by=owner, credential=("api_key" if token else "none"),
+                                  identity=_credential_identity(cid, token))
     st = cm().connect_spec({"id": key, "transport": transport, "command": command, "url": url, "token": token,
                             "owner": owner or "", "catalog_id": cid})
-    if (st or {}).get("status") != "connected" and owner:
-        store.disable_connection(key); cm().disconnect(key)     # no half-connected personal rows
+    if (st or {}).get("status") != "connected":
+        store.disable_connection(key); cm().disconnect(key)     # no half-connected rows
     grant_to, resume = request.form.get("grant_to"), request.form.get("resume")
     granted = False
     if grant_to and (st or {}).get("status") == "connected":
@@ -593,17 +611,17 @@ def discover_add():
         store.add_custom_server(sid, name, "Discovered", "stdio_node", command=endpoint, description=desc, repo=repo)
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "id": sid}
-    return redirect(url_for("connections") + "#" + sid)
+    return redirect(url_for("catalog") + "#" + sid)
 
 @app.route("/discover/remove", methods=["POST"])
 def discover_remove():
     store.delete_custom_server(request.form.get("id"))
-    return redirect(url_for("connections"))
+    return redirect(url_for("catalog"))
 
 @app.route("/tool-risk", methods=["POST"])
 def tool_risk():
     store.set_override(request.form.get("key"), request.form.get("risk"))
-    return redirect(request.form.get("back") or url_for("connections"))
+    return redirect(request.form.get("back") or url_for("catalog"))
 
 @app.route("/connlist")
 def connlist():
@@ -617,7 +635,7 @@ def tools_json():
     groups = {}
     for t in connected_tools():
         g = groups.setdefault(t["server_id"], {"server": t["server_name"], "tools": []})
-        g["tools"].append({"key": t["key"], "tool": t["tool"], "risk": t["risk"], "personal": bool(t.get("owner")),
+        g["tools"].append({"key": t["key"], "tool": t["tool"], "risk": t["risk"], "personal": True,
                            "gate": t["gate"], "description": t["description"]})
     return {"groups": list(groups.values())}
 
@@ -667,22 +685,15 @@ def _builder_ctx(edit_agent=None):
     groups = tools_by_server()
     connected_ids = set(groups.keys())
     catalog_meta = {c["id"]: {"name": c["name"], "personal": bool(c.get("personal")),
-                              "connected": store.conn_key(c["id"], current_owner() if c.get("personal") else None) in connected_ids or c["id"] in connected_ids}
+                              "connected": store.conn_key(c["id"], current_owner()) in connected_ids or c["id"] in connected_ids}
                     for c in merged_catalog()}
     visible_servers = set(connected_ids)
     def tpl_ok(t):
-        if is_admin():
-            return True
-        for sid in t.get("servers") or []:
-            e = cat.BY_ID.get(sid, {})
-            if e.get("sample") and store.conn_key(sid) not in visible_servers:
-                return False
         return True
     return dict(groups=groups, catalog=merged_catalog(), status=status,
                 enabled={c["id"] for c in store.enabled_connections()},
                 mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                 templates=[t for t in AGENT_TEMPLATES if tpl_ok(t)], catalog_meta=catalog_meta,
-                defaults=default_tools(),
                 edit_agent=edit_agent,
                 edit_skills=set(edit_agent["skills"]) if edit_agent else None,
                 candidates=[a for a in store.list_agents(_scope())
@@ -1161,11 +1172,7 @@ def _open_requests(rid, agent_id):
             sid = m.get("id")
             entry = cat_by_id(sid) if sid else None
             personal = bool(entry and entry.get("personal"))
-            key = None
-            if sid:
-                mine, studio = store.conn_key(sid, ag.get("owner") or ""), sid
-                # prefer the requester's own account, then the studio's; else the one they would connect
-                key = mine if mine in connected else (studio if studio in connected else (mine if personal else studio))
+            key = store.conn_key(sid, ag.get("owner") or "") if sid else None   # the requester's own copy
             matches.append({**m, "connected": key in connected if key else False,
                             "granted": key in granted_servers if key else False, "sid": key, "personal": personal,
                             "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid
@@ -1193,26 +1200,23 @@ def _all_open_requests(owner=None):
     return sorted(seen.values(), key=lambda q: q["ts"], reverse=True)[:20]
 
 def _actionable(q):
-    """Whether the signed-in person is the one who can satisfy a connection request. A
-    personal source is only ever connected by the agent's owner; a studio-provided one by
-    an admin. Anything else is informational for this viewer."""
-    personal = bool(q.get("matches")) and bool(q["matches"][0].get("personal"))   # best match decides
-    if personal:
-        return (q["agent"].get("owner") or "") == current_owner()
-    return admin_view()
+    """Whether the signed-in user is the one who can satisfy a connection request: only
+    the agent's owner ever connects anything."""
+    return (q["agent"].get("owner") or "") == current_owner()   # only the owner connects anything
 
 def _requests_for_me():
-    """Open requests this signed-in person can act on: their own agents' requests for a
-    user; for an admin, the studio-provided ones from every agent."""
-    scope = None if admin_view() else _scope()
-    return [q for q in _all_open_requests(scope) if _actionable(q)]
+    """Open requests this signed-in user can act on: their own agents' requests. The admin
+    console lists everyone's for awareness but acts on none."""
+    if admin_view():
+        return []                      # the console connects nothing; requests belong to their owners
+    return [q for q in _all_open_requests(_scope()) if _actionable(q)]
 
 def _requests_waiting_on_people():
     """Admin-only: open requests that someone else has to satisfy (their own Gmail, for
     example). Shown for awareness, never counted as the admin's to-do."""
     if not admin_view():
         return []
-    return [q for q in _all_open_requests(None) if not _actionable(q)]
+    return _all_open_requests(None)
 
 def _grant_and_resume(sid, agent_id, rid):
     """After a requested server connects: grant its tools to the requesting agent, note it on
@@ -1246,16 +1250,13 @@ def studio():
 
 def _admin_health():
     """The admin's checklist: what is set up, what is broken, what needs them."""
-    servers = cm().connected_servers()
-    provided = [s_ for s_ in servers if not s_.get("owner") and not _is_sample(s_.get("catalog_id") or s_["id"])]
-    errored = [s_ for s_ in provided if s_.get("status") == "error"]
     integ = store.verify_audit()
-    return {"provided": len(provided), "errored": errored,
-            "defaults": len(default_tools()),
+    errored = [s_ for s_ in cm().connected_servers() if s_.get("status") == "error"]
+    return {"errored": errored, "catalog": len(merged_catalog()),
             "google_on": _google_connectors_on(), "google_verified": _google_verified(),
             "policies": len(store.list_policies()),
             "audit_ok": bool(integ.get("ok")), "audit": integ,
-            "actionable": _requests_for_me(), "waiting": _requests_waiting_on_people()}
+            "actionable": [], "waiting": _requests_waiting_on_people()}
 
 def _studio_summary():
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -1305,16 +1306,9 @@ def _studio_summary():
 
 # ---------------- settings (admin) ----------------
 def _settings_ctx():
-    """Admin configuration shown on the Connections page: the Google client and defaults."""
+    """The Google client, shown on the Catalog page."""
     gcid, gsec = _google_client()
-    provided = {}
-    for t in connected_tools():
-        if t.get("owner"):
-            continue
-        g = provided.setdefault(t["server_id"], {"name": t["server_name"], "sample": _is_sample(t.get("catalog_id")), "tools": []})
-        g["tools"].append(t)
     return dict(google_configured=bool(gcid and gsec), byo=bool(store.get_setting("google_client_id")),
-                provided=provided, defaults=set(default_tools()),
                 client_id_hint=(gcid[:14] + "…" + gcid[-18:]) if gcid and len(gcid) > 34 else (gcid or ""),
                 redirect_uri=_oauth_redirect("google"), signin_redirect=_redirect_uri(),
                 base_url=os.environ.get("WARDEN_BASE_URL", ""), signin_on=GOOGLE_ON,
@@ -1323,25 +1317,21 @@ def _settings_ctx():
 
 @app.route("/settings")
 def settings():
-    return redirect(url_for("connections") + "#google")
+    return redirect(url_for("catalog") + "#google")
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
     f = request.form
     if f.get("section") == "verified":
         store.set_setting("google_verified", "1" if f.get("google_verified") == "1" else None)
-        return redirect(url_for("connections", saved="verified") + "#google")
-    if f.get("section") == "defaults":
-        ok = {t["key"] for t in connected_tools() if not t.get("owner")}
-        store.set_setting("default_tools", _json.dumps([k for k in f.getlist("default_tools") if k in ok]))
-        return redirect(url_for("connections", saved="defaults") + "#defaults")
+        return redirect(url_for("catalog", saved="verified") + "#google")
     if f.get("clear"):
         store.set_setting("google_client_id", None); store.set_setting("google_client_secret", None)
     else:
         cid = (f.get("google_client_id") or "").strip(); sec = (f.get("google_client_secret") or "").strip()
         if cid: store.set_setting("google_client_id", cid)
         if sec: store.set_setting("google_client_secret", sec)
-    return redirect(url_for("connections", saved="1") + "#google")
+    return redirect(url_for("catalog", saved="1") + "#google")
 
 # ---------------- OAuth connect flows ----------------
 def _oauth_redirect(kind):
@@ -1360,15 +1350,14 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=Fal
     url = entry.get("run")
     # a personal-type source is always the person's own; a company system is the studio's when
     # the admin signs in, and the person's own when anyone else does
-    owner = current_owner() if (entry.get("personal") or personal or not admin_view()) else None
+    owner = current_owner()          # every connection is the connecting user's own
     missing = oauth.missing_scopes(token_json)
     if missing:
         short = entry["name"].split(" (")[0]
         return redirect(url_for("connections", oauth_error="Google signed you in but did not grant %s access (%s was left unticked on the consent page). Connect again and tick the %s box."
                                 % (short, ", ".join(m.split("/")[-1] for m in missing), short)) + "#" + cid)
     key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner,
-                                  connected_by=current_owner(), credential="signin",
-                                  identity=("" if owner else current_owner()))   # a studio sign-in acts as whoever signed in
+                                  connected_by=owner, credential="signin", identity="")
     st = cm().connect_spec({"id": key, "transport": "http", "url": url, "token": token_json,
                             "owner": owner or "", "catalog_id": cid})
     if (st or {}).get("status") == "connected" and grant_to:
@@ -1702,6 +1691,11 @@ def healthz():
                 "agents_saved": len(store.list_agents()),
                 "orphaned_agents": sum(1 for a in store.list_agents() if not (a.get("owner") or "")),
             }}
+
+try:
+    _migrate_shared_connections()
+except Exception as _mx:
+    print("shared-connection migration skipped:", _mx)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=False, threaded=True)

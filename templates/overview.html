@@ -32,32 +32,27 @@
 <div class="grid g4" style="margin-bottom:18px">
   <a class="card k" href="{{ url_for('studio') }}"><span class="kv">{{ studio.users }}</span><span class="kl">Users</span><span class="kd">{{ studio.agents }} agent{{ '' if studio.agents==1 else 's' }} between them</span></a>
   <a class="card k" href="{{ url_for('studio') }}"><span class="kv" style="color:{{ 'var(--low)' if studio.active else 'var(--txt)' }}">{{ studio.active }}</span><span class="kl">Active now</span><span class="kd">running or waiting &middot; {{ studio.runs }} conversation{{ '' if studio.runs==1 else 's' }} all time</span></a>
-  {% set nme = health.actionable|length %}
-  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nme else 'var(--txt)' }}">{{ nme }}</span><span class="kl">Needs you</span><span class="kd">{{ nme }} system{{ '' if nme==1 else 's' }} to connect &middot; {{ studio.pending }} action{{ '' if studio.pending==1 else 's' }} waiting on their owners{% if health.waiting %} &middot; {{ health.waiting|length }} source{{ '' if health.waiting|length==1 else 's' }} waiting on users{% endif %}</span></a>
+  {% set nme = studio.pending + health.waiting|length %}
+  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nme else 'var(--txt)' }}">{{ nme }}</span><span class="kl">Waiting on users</span><span class="kd">{{ studio.pending }} action{{ '' if studio.pending==1 else 's' }} waiting on their owners{% if health.waiting %} &middot; {{ health.waiting|length }} connection{{ '' if health.waiting|length==1 else 's' }} waiting on users{% endif %}</span></a>
   <a class="card k" href="{{ url_for('observability') }}"><span class="kv">${{ '%.2f'|format(studio.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if studio.daily_cap %}of a ${{ '%.2f'|format(studio.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(studio.spend) }} all time</span></a>
 </div>
 
 <div class="section-h"><span class="lbl">Admin tasks</span><span style="font-size:12px;color:var(--dim)">what the studio needs from you</span></div>
 <div class="tasks" style="margin-bottom:26px">
-  {% set st = 'bad' if health.errored else ('ok' if health.provided else 'todo') %}
+  {% set st = 'bad' if health.errored else 'ok' %}
   <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '!' if health.errored else ('&#10003;'|safe if health.provided else '1') }}</span><div><h4>Company systems</h4><p>{% if health.errored %}{{ health.errored|length }} of {{ health.provided }} provided server{{ '' if health.provided==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}.{% elif health.provided %}{{ health.provided }} server{{ '' if health.provided==1 else 's' }} provided to everyone. Connect more, or search the MCP Registry.{% else %}Nothing provided yet. Connect the systems (Jira, GitHub, Stripe, a warehouse) every agent should have.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}">Connect a system</a>{% endif %}</div>
-  </div>
-  {% set st = 'ok' if health.defaults else 'todo' %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.defaults else '2' }}</span><div><h4>Default tools for new agents</h4><p>{% if health.defaults %}{{ health.defaults }} tool{{ '' if health.defaults==1 else 's' }} granted to every new agent; users add more from their own connections.{% else %}Not set: new agents get every read-only tool. Pick a smaller, deliberate starting set.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}#defaults">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}#defaults">Set defaults</a>{% endif %}</div>
+    <div class="top"><span class="st {{ st }}">{{ '!' if health.errored else '&#10003;'|safe }}</span><div><h4>Catalog</h4><p>{% if health.errored %}{{ health.errored|length }} connection{{ '' if health.errored|length==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}. Their owners see it on their Connections page.{% else %}{{ health.catalog }} servers on offer. Users connect what their own agents need; the studio provides nothing on their behalf. Add servers from the MCP Registry, set risk tiers.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('catalog') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('catalog') }}">Open catalog</a>{% endif %}</div>
   </div>
   {% set st = 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') %}
   <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span><div><h4>Google connectors</h4><p>{% if not health.google_on %}Not configured: no user can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: users see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}#google">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}#google">Open Google client</a>{% endif %}</div>
+    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span><div><h4>Google client</h4><p>{% if not health.google_on %}Not configured: no user can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: users see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('catalog') }}#google">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('catalog') }}#google">Open Google client</a>{% endif %}</div>
   </div>
-  {% set st = 'todo' if health.actionable else 'ok' %}
+  {% set st = 'ok' %}
   <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ health.actionable|length if health.actionable else '&#10003;'|safe }}</span><div><h4>Connection requests</h4><p>{% if health.actionable %}{{ health.actionable|length }} agent{{ '' if health.actionable|length==1 else 's' }} waiting for a system only you can connect: {{ health.actionable|map(attribute='agent')|map(attribute='name')|join(', ') }}.{% else %}No agent is waiting on you for a connection.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('approvals') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('approvals') }}">Review requests</a>{% endif %}</div>
+    <div class="top"><span class="st ok">&#10003;</span><div><h4>Connection requests</h4><p>{% if health.waiting %}{{ health.waiting|length }} agent{{ '' if health.waiting|length==1 else 's' }} waiting for a source only its owner can connect: {{ health.waiting|map(attribute='agent')|map(attribute='name')|join(', ') }}. Nothing for you to do.{% else %}No agent is waiting on a connection.{% endif %}</p></div></div>
+    <div class="cta"><a class="q" href="{{ url_for('approvals') }}">See requests &rarr;</a></div>
   </div>
   {% set st = 'ok' if health.policies else 'todo' %}
   <div class="task">

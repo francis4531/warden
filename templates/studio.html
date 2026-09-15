@@ -72,7 +72,7 @@
     <div class="arow" style="color:var(--dim)">No agents yet.</div>
     {% endfor %}
     {% for q in p.requests %}
-    <div class="reqline">&#9673; <b>{{ q.agent.name }}</b> is waiting for {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }}{% if q.matches and q.matches[0].personal %} (personal, {{ p.email }} connects it){% else %} (studio-provided, <a href="{{ url_for('approvals') }}">yours to connect</a>){% endif %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}">open conversation</a></div>
+    <div class="reqline">&#9673; <b>{{ q.agent.name }}</b> is waiting for {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} ({{ p.email }} connects it) &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}">open conversation</a></div>
     {% endfor %}
   </div>
 </details>
