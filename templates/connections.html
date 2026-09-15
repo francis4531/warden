@@ -68,7 +68,7 @@
   <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
   <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
   <form method="get" action="{{ url_for('connections') }}">
-    <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar" autofocus>
+    <input type="text" name="discover" value="{{ discover_q }}" placeholder="e.g. gmail, notion, snowflake, calendar">
     <button class="btn brass">Search registry</button>
   </form>
   {% if discover is not none %}

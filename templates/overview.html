@@ -9,8 +9,10 @@
 .tasks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 @media (max-width:1100px){.tasks{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){.tasks{grid-template-columns:1fr}}
-.task{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);text-decoration:none;color:inherit;transition:border-color .12s}
-.task:hover{border-color:var(--brass-dim)}
+.task{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+.task .top{display:flex;gap:12px;align-items:flex-start}
+.task .cta{margin-top:auto;display:flex;align-items:center;gap:10px;padding-left:34px}
+.task .cta a.q{color:var(--brass);font-size:12.5px;text-decoration:none}
 .task .st{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:1px}
 .task .st.ok{background:color-mix(in srgb,var(--low) 18%,transparent);color:var(--low)}
 .task .st.todo{background:color-mix(in srgb,var(--med) 18%,transparent);color:var(--med)}
@@ -37,30 +39,36 @@
 
 <div class="section-h"><span class="lbl">Admin tasks</span><span style="font-size:12px;color:var(--dim)">what the studio needs from you</span></div>
 <div class="tasks" style="margin-bottom:26px">
-  <a class="task" href="{{ url_for('connections') }}">
-    <span class="st {{ 'bad' if health.errored else ('ok' if health.provided else 'todo') }}">{{ '!' if health.errored else ('&#10003;'|safe if health.provided else '1') }}</span>
-    <div><h4>Company systems</h4><p>{% if health.errored %}{{ health.errored|length }} of {{ health.provided }} provided server{{ '' if health.provided==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}.{% elif health.provided %}{{ health.provided }} server{{ '' if health.provided==1 else 's' }} provided to everyone. Connect more, or search the MCP Registry.{% else %}Nothing provided yet. Connect the systems (Jira, GitHub, Stripe, a warehouse) every agent should have.{% endif %}</p></div>
-  </a>
-  <a class="task" href="{{ url_for('connections') }}#defaults">
-    <span class="st {{ 'ok' if health.defaults else 'todo' }}">{{ '&#10003;'|safe if health.defaults else '2' }}</span>
-    <div><h4>Default tools for new agents</h4><p>{% if health.defaults %}{{ health.defaults }} tool{{ '' if health.defaults==1 else 's' }} granted to every new agent; users add more from their own connections.{% else %}Not set: new agents get every read-only tool. Pick a smaller, deliberate starting set.{% endif %}</p></div>
-  </a>
-  <a class="task" href="{{ url_for('connections') }}#google">
-    <span class="st {{ 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span>
-    <div><h4>Google connectors</h4><p>{% if not health.google_on %}Not configured: no user can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: users see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div>
-  </a>
-  <a class="task" href="{{ url_for('approvals') }}">
-    <span class="st {{ 'todo' if health.actionable else 'ok' }}">{{ health.actionable|length if health.actionable else '&#10003;'|safe }}</span>
-    <div><h4>Connection requests</h4><p>{% if health.actionable %}{{ health.actionable|length }} agent{{ '' if health.actionable|length==1 else 's' }} waiting for a system only you can connect: {{ health.actionable|map(attribute='agent')|map(attribute='name')|join(', ') }}.{% else %}No agent is waiting on you for a connection.{% endif %}</p></div>
-  </a>
-  <a class="task" href="{{ url_for('policies') }}">
-    <span class="st {{ 'ok' if health.policies else 'todo' }}">{{ '&#10003;'|safe if health.policies else '4' }}</span>
-    <div><h4>Policies</h4><p>{% if health.policies %}{{ health.policies }} polic{{ 'y' if health.policies==1 else 'ies' }} in force on top of the risk tiers.{% else %}Only the risk tiers apply. Add spend caps, rate limits, time windows, or per-agent rules.{% endif %}</p></div>
-  </a>
-  <a class="task" href="{{ url_for('audit') }}">
-    <span class="st {{ 'ok' if health.audit_ok else 'bad' }}">{{ '&#10003;'|safe if health.audit_ok else '!' }}</span>
-    <div><h4>Audit integrity</h4><p>{% if health.audit_ok %}Hash chain verified across {{ health.audit.total }} event{{ '' if health.audit.total==1 else 's' }}. Nothing altered.{% else %}Chain broken at {{ health.audit.broken_at }}. Investigate before trusting the log.{% endif %}</p></div>
-  </a>
+  {% set st = 'bad' if health.errored else ('ok' if health.provided else 'todo') %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '!' if health.errored else ('&#10003;'|safe if health.provided else '1') }}</span><div><h4>Company systems</h4><p>{% if health.errored %}{{ health.errored|length }} of {{ health.provided }} provided server{{ '' if health.provided==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}.{% elif health.provided %}{{ health.provided }} server{{ '' if health.provided==1 else 's' }} provided to everyone. Connect more, or search the MCP Registry.{% else %}Nothing provided yet. Connect the systems (Jira, GitHub, Stripe, a warehouse) every agent should have.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}">Connect a system</a>{% endif %}</div>
+  </div>
+  {% set st = 'ok' if health.defaults else 'todo' %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.defaults else '2' }}</span><div><h4>Default tools for new agents</h4><p>{% if health.defaults %}{{ health.defaults }} tool{{ '' if health.defaults==1 else 's' }} granted to every new agent; users add more from their own connections.{% else %}Not set: new agents get every read-only tool. Pick a smaller, deliberate starting set.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}#defaults">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}#defaults">Set defaults</a>{% endif %}</div>
+  </div>
+  {% set st = 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span><div><h4>Google connectors</h4><p>{% if not health.google_on %}Not configured: no user can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: users see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('connections') }}#google">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('connections') }}#google">Open Google client</a>{% endif %}</div>
+  </div>
+  {% set st = 'todo' if health.actionable else 'ok' %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ health.actionable|length if health.actionable else '&#10003;'|safe }}</span><div><h4>Connection requests</h4><p>{% if health.actionable %}{{ health.actionable|length }} agent{{ '' if health.actionable|length==1 else 's' }} waiting for a system only you can connect: {{ health.actionable|map(attribute='agent')|map(attribute='name')|join(', ') }}.{% else %}No agent is waiting on you for a connection.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('approvals') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('approvals') }}">Review requests</a>{% endif %}</div>
+  </div>
+  {% set st = 'ok' if health.policies else 'todo' %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.policies else '4' }}</span><div><h4>Policies</h4><p>{% if health.policies %}{{ health.policies }} polic{{ 'y' if health.policies==1 else 'ies' }} in force on top of the risk tiers.{% else %}Only the risk tiers apply. Add spend caps, rate limits, time windows, or per-agent rules.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('policies') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('policies') }}">Add a policy</a>{% endif %}</div>
+  </div>
+  {% set st = 'ok' if health.audit_ok else 'bad' %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.audit_ok else '!' }}</span><div><h4>Audit integrity</h4><p>{% if health.audit_ok %}Hash chain verified across {{ health.audit.total }} event{{ '' if health.audit.total==1 else 's' }}. Nothing altered.{% else %}Chain broken at {{ health.audit.broken_at }}. Investigate before trusting the log.{% endif %}</p></div></div>
+    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('audit') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('audit') }}">Open audit log</a>{% endif %}</div>
+  </div>
 </div>
 
 {% if recent %}

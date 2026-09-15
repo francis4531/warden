@@ -27,6 +27,10 @@
   --low:#4ecb93;--med:#e3ab5b;--high:#f2757f;
   --stripe:rgba(255,255,255,.02);
 }
+/* Admin console: same system, its own accent, so the hat is visible from any page */
+body.console{--brass:#1f6f7a;--brass-b:#27818e;--brass-dim:#7fb2ba;--accent-ink:#ffffff}
+:root[data-theme="dark"] body.console{--brass:#5cc3cf;--brass-b:#7ad3dd;--brass-dim:#2d5f66;--accent-ink:#0b0e13}
+body.console .rail{background:color-mix(in srgb,var(--brass) 6%,var(--ink2))}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--ink);color:var(--txt);font-family:var(--body);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
 a{color:inherit;text-decoration:none}
@@ -42,7 +46,7 @@ a{color:inherit;text-decoration:none}
 .hats a{flex:1;text-align:center;font-size:11.5px;font-weight:600;letter-spacing:.02em;padding:6px 4px;border-radius:7px;color:var(--mut);text-decoration:none}
 .hats a.on{background:var(--brass);color:var(--accent-ink)}
 .nav a{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:var(--mut);font-size:14px;font-weight:500}
-.nav a:hover{background:var(--ink3);color:var(--txt)}
+.nav a:hover{color:var(--txt)}
 .nav a.active{background:var(--ink3);color:var(--brass)}
 :root[data-theme="dark"] .nav a.active{color:var(--txt)}
 .nav .badge{font-size:11px;font-weight:600;background:var(--high);color:#fff;border-radius:20px;padding:1px 8px}
@@ -204,7 +208,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
 }
 </style>
 </head>
-<body>
+<body class="{{ 'console' if admin_view }}">
 <div class="wrap">
   <aside class="rail">
     <a href="{{ url_for('home') }}" class="seal">
