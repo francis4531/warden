@@ -416,6 +416,9 @@ def enable_connection(cid, transport, command=None, url=None, token=None, owner=
     c.commit(); c.close()
     return key
 
+def update_connection_identity(cid, identity):
+    c = _conn(); c.execute("UPDATE connections SET identity=? WHERE id=?", (identity, cid)); c.commit(); c.close()
+
 def update_connection_token(cid, token):
     import vault
     c = _conn(); c.execute("UPDATE connections SET token=? WHERE id=?", (vault.encrypt(token), cid)); c.commit(); c.close()

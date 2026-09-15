@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.14.3"
+WARDEN_VERSION = "0.14.4"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -482,6 +482,13 @@ def connections():
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
     cred = {c_["id"]: c_ for c_ in store.enabled_connections()}   # credential kind, identity, who connected it
+    if av:
+        # connections made before identity was recorded: resolve once now, where the vendor allows it
+        for c_ in cred.values():
+            if not c_.get("owner") and c_.get("credential") == "api_key" and not c_.get("identity"):
+                ident = _credential_identity(c_["catalog_id"], c_.get("token"))
+                if ident:
+                    store.update_connection_identity(c_["id"], ident); c_["identity"] = ident
     default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
     extra = _settings_ctx() if av else {}
     return render_template("connections.html", **extra, catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
