@@ -17,7 +17,15 @@
         <span class="pill done" style="margin-left:auto">always on</span>
       {% elif e.id in enabled %}
         {% set os_ = oauth_status.get(keyed[e.id]) %}
+        {% set cr = (cred or {}).get(keyed[e.id]) %}
         {% if os_ %}<span class="oauthst">{{ 'Connected with Google' if os_.provider=='google' else 'Signed in' }}{% if os_.scopes %} &middot; {{ 'read-only' if 'readonly' in (os_.scopes|join(' ')) else 'read and write' }}{% endif %} &middot; {{ 'refreshes automatically' if os_.refreshable else 'expires in ' ~ os_.expires_in_min ~ ' min' }}</span>{% endif %}
+        {% if not personal_mode and cr %}
+        <div class="hint" style="flex-basis:100%;margin:0 0 4px">
+          {% if cr.credential == 'signin' %}<span style="color:var(--med);font-weight:600">Signed in as {{ cr.identity or cr.connected_by }}.</span> Every agent using this acts as that account. For a company system, sign in once as a dedicated service user, not a personal login.
+          {% elif cr.credential == 'api_key' %}Connected with an API key{% if cr.identity %}, acting as <b>{{ cr.identity }}</b>{% endif %}{% if cr.connected_by %}, added by {{ cr.connected_by }}{% endif %}. {% if cr.identity and '(bot)' not in cr.identity %}<span style="color:var(--med)">Make sure this key belongs to a machine or service account, not a person: agents act as it.</span>{% else %}Use an organization or service-account key so agents never act as a person.{% endif %}
+          {% else %}No credential: this server is used anonymously{% if cr.connected_by %}, added by {{ cr.connected_by }}{% endif %}.{% endif %}
+        </div>
+        {% endif %}
         <form class="connform" data-busy="disconnecting" method="post" action="{{ url_for('disable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ keyed[e.id] }}"><button class="btn ghost sm">Disconnect</button></form>
       {% elif e.provider=='google' %}
@@ -35,6 +43,7 @@
       {% elif not admin_view and e.transport != 'http' %}
         <span class="hint" style="margin-left:auto">Runs on the Warden host, so your admin enables it.</span>
       {% elif e.provider=='mcp' %}
+        {% if not personal_mode %}<div class="hint" style="flex-basis:100%;margin:0 0 6px">For the studio: sign in as a dedicated service user (for example warden-bot@yourcompany), not your own login. Agents act as whoever signs in.</div>{% endif %}
         <form method="post" action="{{ url_for('oauth_start') }}" class="oauthform" style="margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <button class="btn brass sm" type="submit">Sign in with {{ e.name.split(' (')[0] }}</button>
@@ -51,6 +60,7 @@
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}" style="flex:0;margin-left:auto">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}<button class="btn brass sm">Connect</button></form>
       {% elif e.transport=='http' %}
+        {% if not personal_mode %}<div class="hint" style="flex-basis:100%;margin:0 0 6px">For the studio: use an organization or service-account key, not a key tied to your own login. Agents act as whatever the key belongs to.</div>{% endif %}
         <form class="connform" data-busy="connecting" method="post" action="{{ url_for('enable_connection') }}">
           <input type="hidden" name="id" value="{{ e.id }}">{% if personal_mode %}<input type="hidden" name="personal" value="1">{% endif %}{% if grant_to %}<input type="hidden" name="grant_to" value="{{ grant_to }}"><input type="hidden" name="resume" value="{{ resume }}">{% endif %}
           <input type="password" name="token" placeholder="{{ e.token_label or 'API key' }}">

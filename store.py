@@ -92,6 +92,12 @@ def init():
         c.execute("ALTER TABLE connections ADD COLUMN owner TEXT")
     if "catalog_id" not in ccols:
         c.execute("ALTER TABLE connections ADD COLUMN catalog_id TEXT")
+    if "connected_by" not in ccols:
+        c.execute("ALTER TABLE connections ADD COLUMN connected_by TEXT")
+    if "credential" not in ccols:
+        c.execute("ALTER TABLE connections ADD COLUMN credential TEXT")     # none | api_key | signin
+    if "identity" not in ccols:
+        c.execute("ALTER TABLE connections ADD COLUMN identity TEXT")       # who the credential acts as, when known
     c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     c.executescript("""
     CREATE TABLE IF NOT EXISTS eval_suites(
@@ -398,13 +404,15 @@ def conn_key(cid, owner=None):
         return cid
     return cid + "~" + hashlib.sha1(owner.lower().encode()).hexdigest()[:8]
 
-def enable_connection(cid, transport, command=None, url=None, token=None, owner=None):
+def enable_connection(cid, transport, command=None, url=None, token=None, owner=None,
+                      connected_by=None, credential=None, identity=None):
     import vault
     key = conn_key(cid, owner)
     c = _conn()
-    c.execute("INSERT OR REPLACE INTO connections(id,transport,command,url,token,enabled,created_at,owner,catalog_id) "
-              "VALUES(?,?,?,?,?,?,?,?,?)",
-              (key, transport, command, url, vault.encrypt(token), 1, now(), owner or "", cid))
+    c.execute("INSERT OR REPLACE INTO connections(id,transport,command,url,token,enabled,created_at,owner,catalog_id,connected_by,credential,identity) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              (key, transport, command, url, vault.encrypt(token), 1, now(), owner or "", cid,
+               connected_by or "", credential or ("none" if not token else "api_key"), identity or ""))
     c.commit(); c.close()
     return key
 
@@ -432,9 +440,15 @@ def enabled_connections(owner=None):
         own = d.get("owner") or ""
         if owner is not None and own and own != owner:
             continue
+        tok = vault.decrypt(d["token"])
+        cred = d.get("credential") or ""
+        if not cred:   # rows from before this was recorded: infer from the stored token
+            cred = "signin" if (tok or "").lstrip().startswith("{") else ("api_key" if tok else "none")
         out.append({"id": d["id"], "transport": d["transport"], "command": d["command"],
-                    "url": d["url"], "token": vault.decrypt(d["token"]),
-                    "owner": own, "catalog_id": d.get("catalog_id") or d["id"]})
+                    "url": d["url"], "token": tok,
+                    "owner": own, "catalog_id": d.get("catalog_id") or d["id"],
+                    "connected_by": d.get("connected_by") or "", "credential": cred,
+                    "identity": d.get("identity") or ""})
     return out
 
 # ---- settings (admin-set values that override environment defaults) ----

@@ -91,6 +91,15 @@ event to that run's audit trail, visible to the owner. Approvals separates what 
 can act on (studio-provided systems to connect) from what is waiting on other users (a
 personal source only its owner can connect), and only the first counts toward the badge.
 
+## Whose credential is it
+
+A studio-provided system runs on whatever credential the admin connected it with, and every
+agent that uses it acts as that identity. Each provided card says what that is: no
+credential (anonymous), an API key (with the account it acts as, when Warden can tell, as it
+can for GitHub), or a sign-in (named). The connect forms say it up front: use an organization
+key or a dedicated service user, never a personal login. Personal sources never get this
+treatment because they are never shared.
+
 ## Provided by the studio vs your own
 
 Connections come in two kinds. Studio-provided ones (Stripe, Jira, GitHub, a data

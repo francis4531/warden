@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.14.2"
+WARDEN_VERSION = "0.14.3"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -439,6 +439,20 @@ def _recent_studio_runs(n):
         out.append({**r, "agent_name": ag["name"] if ag else "deleted agent", "owner": r.get("owner") or "operator"})
     return out
 
+def _credential_identity(cid, token):
+    """Best effort: who a pasted key acts as, for vendors with a cheap whoami. GitHub only for now."""
+    if not token or cid != "github":
+        return ""
+    try:
+        req = urllib.request.Request("https://api.github.com/user", headers={"Authorization": "Bearer " + token.strip(),
+                                                                             "Accept": "application/vnd.github+json", "User-Agent": "Warden"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = _json.loads(r.read())
+        login = d.get("login") or ""
+        return (login + (" (bot)" if d.get("type") == "Bot" else "")) if login else ""
+    except Exception:
+        return ""
+
 def _my_key(entry):
     """The connection row a catalog entry maps to for the signed-in person."""
     return store.conn_key(entry["id"], current_owner() if entry.get("personal") else None)
@@ -467,10 +481,11 @@ def connections():
         d_ = oauth.describe(c_.get("token"))
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
+    cred = {c_["id"]: c_ for c_ in store.enabled_connections()}   # credential kind, identity, who connected it
     default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
     extra = _settings_ctx() if av else {}
     return render_template("connections.html", **extra, catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
-                           pkey=pkey, skey=skey, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
+                           pkey=pkey, skey=skey, cred=cred, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
                            default_servers=default_servers,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            tools=connected_tools(), discover=discover, discover_q=dq,
@@ -498,7 +513,9 @@ def enable_connection():
         if transport != "http":
             abort(403)
         owner = current_owner(); command = None; url = entry.get("run")
-    key = store.enable_connection(cid, transport, command=command, url=url, token=token, owner=owner)
+    key = store.enable_connection(cid, transport, command=command, url=url, token=token, owner=owner,
+                                  connected_by=current_owner(), credential=("api_key" if token else "none"),
+                                  identity=_credential_identity(cid, token) if not owner else "")
     st = cm().connect_spec({"id": key, "transport": transport, "command": command, "url": url, "token": token,
                             "owner": owner or "", "catalog_id": cid})
     if (st or {}).get("status") != "connected" and owner:
@@ -1342,7 +1359,9 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=Fal
         short = entry["name"].split(" (")[0]
         return redirect(url_for("connections", oauth_error="Google signed you in but did not grant %s access (%s was left unticked on the consent page). Connect again and tick the %s box."
                                 % (short, ", ".join(m.split("/")[-1] for m in missing), short)) + "#" + cid)
-    key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner)
+    key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner,
+                                  connected_by=current_owner(), credential="signin",
+                                  identity=("" if owner else current_owner()))   # a studio sign-in acts as whoever signed in
     st = cm().connect_spec({"id": key, "transport": "http", "url": url, "token": token_json,
                             "owner": owner or "", "catalog_id": cid})
     if (st or {}).get("status") == "connected" and grant_to:
