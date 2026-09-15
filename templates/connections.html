@@ -44,8 +44,8 @@
 
 <div class="page-h" style="margin-bottom:20px">
   <div class="eyebrow">Connections</div>
-  <h1>{{ 'Choose the MCP servers your agents can use.' if is_admin else 'Connect the sources your agents will use.' }}</h1>
-  <p class="sub">{% if is_admin %}Personal sources (Gmail, Drive, Calendar) are connected by each person for themselves. Company systems you connect once and the studio provides to everyone. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated.{% else %}Connect your own accounts (Gmail, GitHub, Jira, anything in the catalog) in one click; only your agents can use them. Company systems your studio provides are already available. Reads run on their own; anything that changes state asks you first.{% endif %}</p>
+  <h1>{{ 'Company systems, provided to every user.' if admin_view else 'Connect the sources your agents will use.' }}</h1>
+  <p class="sub">{% if admin_view %}Connect a system once and every agent in the studio can be granted its tools. Every tool is risk-classified the moment a server connects: reads run on their own, writes and anything unrecognized are gated. Personal sources (Gmail, Drive, your own GitHub) are each user's own; yours are under My agents.{% else %}Connect your own accounts (Gmail, GitHub, Jira, anything in the catalog) in one click; only your agents can use them. Company systems your studio provides are already available.{% endif %}</p>
 </div>
 
 <style>
@@ -63,7 +63,7 @@
 .disco .hint{color:var(--dim);font-size:11.5px;margin-top:8px}
 </style>
 
-{% if is_admin %}
+{% if admin_view %}
 <div class="disco">
   <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
   <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
@@ -129,8 +129,9 @@
 </div>
 {% endif %}
 
-{% if is_admin %}{% include '_admin_google.html' %}{% endif %}
+{% if admin_view %}{% include '_admin_google.html' %}{% endif %}
 
+{% if not admin_view %}
 {# ---- personal view: my own accounts ---- #}
 {% set keyed = pkey %}{% set status = p_status %}{% set enabled = p_enabled %}{% set personal_mode = True %}
 <div class="section-h"><span class="lbl">Your connections</span><span style="font-size:12px;color:var(--dim)">your own accounts, connected by you, used only by your agents</span></div>
@@ -144,7 +145,7 @@
 </div>
 {% set more = catalog | rejectattr('personal') | rejectattr('sample') | selectattr('transport','equalto','http') | rejectattr('id','in',p_enabled) | list %}
 {% if more %}
-<details style="margin-bottom:26px" {{ 'open' if connect_id and (catalog | selectattr('id','equalto',connect_id) | first or {}).transport=='http' and not (catalog | selectattr('id','equalto',connect_id) | first or {}).personal and not is_admin }}>
+<details style="margin-bottom:26px" {{ 'open' if connect_id and (catalog | selectattr('id','equalto',connect_id) | first or {}).transport=='http' and not (catalog | selectattr('id','equalto',connect_id) | first or {}).personal and not admin_view }}>
   <summary style="cursor:pointer;color:var(--brass);font-size:13px">Connect another source with your own account ({{ more|length }} available)</summary>
   <div style="color:var(--mut);font-size:12.5px;margin:8px 0 12px">Sign in or paste your own key. Only your agents can use it.</div>
   <div class="cgrid">
@@ -158,12 +159,13 @@
 </details>
 {% endif %}
 
+{% endif %}
 {# ---- studio view: what the studio provides to everyone ---- #}
 {% set keyed = skey %}{% set status = s_status %}{% set enabled = s_enabled %}{% set personal_mode = False %}
 
-<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if is_admin else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if is_admin %}connected once, available to everyone &middot; pick the <a href="#defaults">default tools for new agents</a> below{% else %}company systems your agents can already use{% endif %}</span></div>
+<div class="section-h"><span class="lbl">{{ 'Provided by the studio' if admin_view else 'Provided by your studio' }}</span><span style="font-size:12px;color:var(--dim)">{% if admin_view %}connected once, available to everyone &middot; pick the <a href="#defaults">default tools for new agents</a> below{% else %}company systems your agents can already use{% endif %}</span></div>
 <div class="cgrid">
-  {% for e in catalog if not e.personal and (is_admin or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
+  {% for e in catalog if not e.personal and (admin_view or (e.id in enabled and not e.sample) or (e.transport=='builtin' and (not e.sample or e.id in default_servers))) %}
   {% set st = status.get(e.id) %}
   {% set connected = e.id in enabled and st and st.status=='connected' %}
   {% set errored = st and st.status=='error' %}
@@ -171,7 +173,7 @@
   {% endfor %}
 </div>
 
-{% if is_admin %}
+{% if admin_view %}
 <div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
 {% set gated = tools|selectattr('gate','equalto','approval')|list %}
 {% set auto = tools|rejectattr('gate','equalto','approval')|list %}
@@ -211,7 +213,7 @@
 {% endfor %}
 {% endif %}
 
-{% if is_admin %}<div style="margin-top:30px"></div>{% include '_admin_defaults.html' %}{% endif %}
+{% if admin_view %}<div style="margin-top:30px"></div>{% include '_admin_defaults.html' %}{% endif %}
 
 <script>
 (function(){

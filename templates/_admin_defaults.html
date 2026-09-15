@@ -1,7 +1,7 @@
 {# admin-only: default tools for new agents #}
 <div class="section-h" id="defaults"><span class="lbl">Default tools for new agents</span><span style="font-size:12px;color:var(--dim)">{{ defaults|length }} chosen{% if not defaults %} &middot; falling back to every read-only tool{% endif %}</span></div>
 <div class="card" style="margin-bottom:26px">
-  <div style="color:var(--mut);font-size:13px;margin-bottom:12px;line-height:1.55">Every new agent starts with these tools granted; the person building it adds more from their own connections. Leave everything unchecked and Warden falls back to granting every read-only tool. Sample servers are built in so people can try agents before real systems are connected: they stay hidden from non-admins unless one of their tools is a default here.</div>
+  <div style="color:var(--mut);font-size:13px;margin-bottom:12px;line-height:1.55">Every new agent starts with these tools granted; the user building it adds more from their own connections. Leave everything unchecked and Warden falls back to granting every read-only tool. Sample servers are built in so users can try agents before real systems are connected: they stay hidden from non-admins unless one of their tools is a default here.</div>
   {% if provided %}
   <form method="post" action="{{ url_for('save_settings') }}">
     <input type="hidden" name="section" value="defaults">
@@ -27,7 +27,7 @@
     <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
       <button class="btn brass" type="submit">Save defaults</button>
       <button class="btn ghost" type="button" onclick="document.querySelectorAll('input[name=default_tools]').forEach(b=>b.checked=false)">Clear</button>
-      <span style="color:var(--dim);font-size:12px">Tip: sample reads plus <code>search_knowledge</code> give a new person a working first agent.</span>
+      <span style="color:var(--dim);font-size:12px">Tip: sample reads plus <code>search_knowledge</code> give a new user a working first agent.</span>
     </div>
   </form>
   {% else %}

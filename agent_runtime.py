@@ -417,7 +417,7 @@ def _sandbox_model(messages, tools):
     if was_denied:
         final += "The high-risk action was denied by a human approver and was not executed. I have stopped there."
     elif was_held:
-        final += "The high-risk action is held for human approval and has not been executed; nothing further happens until a person decides."
+        final += "The high-risk action is held for human approval and has not been executed; nothing further happens until a user decides."
     elif was_gated:
         final += "Gated action executed after human approval; every step is in the audit log."
     else:
@@ -527,10 +527,10 @@ def _already_granted(agent, inp, run):
 def _admin_sentence(run):
     admins = ADMIN_INFO.get("admins") or []
     if run is not None and _requester_is_admin(run):
-        return ("The person you are talking to IS the Warden admin: they can connect it from the card or from "
+        return ("The user you are talking to IS the Warden admin: they can connect it from the card or from "
                 "Approvals with one click.")
     if admins:
-        return ("The person you are talking to is not an admin. The Warden admin is %s; the card shows them "
+        return ("The user you are talking to is not an admin. The Warden admin is %s; the card shows them "
                 "that name and the request is already waiting for the admin under Approvals." % ", ".join(admins))
     return "A Warden admin connects it from Approvals."
 

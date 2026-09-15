@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.13.3"
+WARDEN_VERSION = "0.14"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -118,6 +118,19 @@ def is_admin():
     if ADMIN_EMAILS:
         return e in ADMIN_EMAILS
     return e in ALLOWED_EMAILS if ALLOWED_EMAILS else False
+
+def admin_view():
+    """Which hat an admin is wearing. Admins switch between the Admin console (the studio) and
+    My agents (the same experience every user gets). Permissions never depend on this; only
+    what a page shows. Regular users are always in the My agents view."""
+    return is_admin() and session.get("hat", "admin") == "admin"
+
+@app.route("/hat/<name>")
+def set_hat(name):
+    if not is_admin() or name not in ("admin", "agents"):
+        abort(404)
+    session["hat"] = name
+    return redirect(url_for("home"))
 
 def _scope():
     """Owner to filter lists by. None means no filter (single-user / auth off)."""
@@ -326,7 +339,12 @@ def inject_globals():
         open_requests = _requests_for_me() if _authed() else []
     except Exception:
         open_requests = []
-    return {"pending": store.pending_approvals(_scope()), "mode": rt.mode(),
+    try:
+        av = admin_view() if _authed() else False
+    except Exception:
+        av = False
+    return {"pending": [] if av else store.pending_approvals(_scope()), "mode": rt.mode(), "admin_view": av,
+            "hat": (session.get("hat", "admin") if av or is_admin() else "agents") if _authed() else "agents",
             "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
@@ -405,14 +423,21 @@ def home():
         if e.get("personal"):
             k = store.conn_key(e["id"], current_owner())
             personal.append({"entry": e, "connected": k in raw and raw[k]["status"] == "connected"})
-    studio_totals = health = None
-    if is_admin():
+    if admin_view():
         _rows, studio_totals = _studio_summary()
-        health = _admin_health()
+        return render_template("overview.html", studio=studio_totals, health=_admin_health(),
+                               recent=_recent_studio_runs(10))
     return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
                            pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
-                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified(),
-                           studio=studio_totals, health=health)
+                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified())
+
+def _recent_studio_runs(n):
+    """Latest conversations across every user, for the admin's overview (read-only links)."""
+    out = []
+    for r in store.list_runs(n, None):
+        ag = store.get_agent(r["agent_id"])
+        out.append({**r, "agent_name": ag["name"] if ag else "deleted agent", "owner": r.get("owner") or "operator"})
+    return out
 
 def _my_key(entry):
     """The connection row a catalog entry maps to for the signed-in person."""
@@ -432,9 +457,10 @@ def connections():
     p_enabled = {e["id"] for e in merged_catalog() if pkey[e["id"]] in enabled_keys}
     s_enabled = {e["id"] for e in merged_catalog() if e["id"] in enabled_keys}
     # the admin's default view of a company system is the studio one; everyone else's is their own
-    status = {**{k: v for k, v in s_status.items() if is_admin()}, **p_status} if is_admin() else p_status
-    enabled = (s_enabled | p_enabled) if is_admin() else p_enabled
-    dq = (request.args.get("discover") or "").strip() if is_admin() else ""
+    av = admin_view()
+    status = {**s_status, **p_status} if av else p_status
+    enabled = (s_enabled | p_enabled) if av else p_enabled
+    dq = (request.args.get("discover") or "").strip() if av else ""
     discover = registry.search(dq) if dq else None
     oauth_status = {}
     for c_ in store.enabled_connections():
@@ -442,7 +468,7 @@ def connections():
         if d_: oauth_status[c_["id"]] = d_
     keyed = {e["id"]: _my_key(e) for e in merged_catalog()}
     default_servers = {k.split("__", 1)[0] for k in default_tools() if "__" in k}
-    extra = _settings_ctx() if is_admin() else {}
+    extra = _settings_ctx() if av else {}
     return render_template("connections.html", **extra, catalog=merged_catalog(), status=status, enabled=enabled, keyed=keyed,
                            pkey=pkey, skey=skey, p_status=p_status, s_status=s_status, p_enabled=p_enabled, s_enabled=s_enabled,
                            default_servers=default_servers,
@@ -461,7 +487,7 @@ def enable_connection():
     if not entry: abort(404)
     transport = entry["transport"]
     token = request.form.get("token") or None
-    if is_admin() and not request.form.get("personal"):
+    if admin_view() and not request.form.get("personal"):
         # the admin connects a company system once for the whole studio
         owner = None
         command = request.form.get("command") or None
@@ -951,8 +977,12 @@ def _with_team_context(pending):
 
 @app.route("/approvals")
 def approvals():
+    if admin_view():
+        # the console: what only the admin can do, plus what is waiting on users (read-only)
+        return render_template("approvals.html", pending=[], requests=_requests_for_me(), waiting=_requests_waiting_on_people(),
+                               others=_with_team_context(store.pending_approvals(None)))
     return render_template("approvals.html", pending=_with_team_context(store.pending_approvals(_scope())),
-                           requests=_requests_for_me(), waiting=_requests_waiting_on_people())
+                           requests=_requests_for_me(), waiting=[], others=[])
 
 @app.route("/architecture")
 def architecture():
@@ -962,7 +992,7 @@ def architecture():
 @app.route("/audit")
 def audit():
     # admins see the whole studio's trail (their oversight view is read-only everywhere else too)
-    events = store.audit_all(300) if (not _scope() or is_admin()) else store.audit_for_owner(_scope(), 300)
+    events = store.audit_all(300) if (not _scope() or admin_view()) else store.audit_for_owner(_scope(), 300)
     return render_template("audit.html", events=events, integrity=store.verify_audit())
 
 @app.route("/policies")
@@ -999,9 +1029,10 @@ def delete_policy(pid):
 @app.route("/observability")
 def observability():
     from collections import Counter, defaultdict
-    events = store.audit_for_owner(_scope(), 4000) if _scope() else store.audit_all(4000)
-    runs = store.list_runs(500, _scope())
-    agents = {a["id"]: a["name"] for a in store.list_agents(_scope())}
+    sc = None if admin_view() else _scope()
+    events = store.audit_for_owner(sc, 4000) if sc else store.audit_all(4000)
+    runs = store.list_runs(500, sc)
+    agents = {a["id"]: a["name"] for a in store.list_agents(sc)}
 
     model_calls = [e for e in events if e["kind"] == "model_call"]
     tool_calls = [e for e in events if e["kind"] in ("tool_result", "tool_result_gated")]
@@ -1144,18 +1175,18 @@ def _actionable(q):
     personal = bool(q.get("matches")) and bool(q["matches"][0].get("personal"))   # best match decides
     if personal:
         return (q["agent"].get("owner") or "") == current_owner()
-    return is_admin()
+    return admin_view()
 
 def _requests_for_me():
     """Open requests this signed-in person can act on: their own agents' requests for a
     user; for an admin, the studio-provided ones from every agent."""
-    scope = None if is_admin() else _scope()
+    scope = None if admin_view() else _scope()
     return [q for q in _all_open_requests(scope) if _actionable(q)]
 
 def _requests_waiting_on_people():
     """Admin-only: open requests that someone else has to satisfy (their own Gmail, for
     example). Shown for awareness, never counted as the admin's to-do."""
-    if not is_admin():
+    if not admin_view():
         return []
     return [q for q in _all_open_requests(None) if not _actionable(q)]
 
@@ -1187,7 +1218,7 @@ def studio():
     if not is_admin():
         abort(404)
     rows, totals = _studio_summary()
-    return render_template("studio.html", people=rows, totals=totals)
+    return render_template("studio.html", users=rows, totals=totals)
 
 def _admin_health():
     """The admin's checklist: what is set up, what is broken, what needs them."""
@@ -1242,7 +1273,7 @@ def _studio_summary():
     rows = sorted(people.values(), key=lambda p: (p["last"] or ""), reverse=True)
     for p in rows:
         p["agents"].sort(key=lambda a: (a["last"] or ""), reverse=True)
-    totals = {"people": len(rows), "agents": sum(len(p["agents"]) for p in rows), "runs": sum(p["runs"] for p in rows),
+    totals = {"people": len(rows), "users": len(rows), "agents": sum(len(p["agents"]) for p in rows), "runs": sum(p["runs"] for p in rows),
               "active": sum(p["active"] for p in rows), "spend": sum(p["spend"] for p in rows),
               "today": sum(p["today"] for p in rows), "pending": len(pend), "requests": len(reqs),
               "daily_cap": float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)}
@@ -1305,7 +1336,7 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=Fal
     url = entry.get("run")
     # a personal-type source is always the person's own; a company system is the studio's when
     # the admin signs in, and the person's own when anyone else does
-    owner = current_owner() if (entry.get("personal") or personal or not is_admin()) else None
+    owner = current_owner() if (entry.get("personal") or personal or not admin_view()) else None
     missing = oauth.missing_scopes(token_json)
     if missing:
         short = entry["name"].split(" (")[0]

@@ -38,6 +38,9 @@ a{color:inherit;text-decoration:none}
 .seal .mark{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--brass);display:grid;place-items:center;color:var(--brass);font-family:var(--disp);font-weight:700;font-size:18px;flex-shrink:0}
 .seal .wm{font-family:var(--disp);font-size:21px;font-weight:var(--dweight);letter-spacing:.2px}
 .seal .wm small{display:block;font-size:9px;font-weight:600;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-top:2px}
+.hats{display:flex;border:1px solid var(--line2);border-radius:9px;padding:3px;margin:0 0 12px;gap:3px}
+.hats a{flex:1;text-align:center;font-size:11.5px;font-weight:600;letter-spacing:.02em;padding:6px 4px;border-radius:7px;color:var(--mut);text-decoration:none}
+.hats a.on{background:var(--brass);color:var(--accent-ink)}
 .nav a{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:var(--mut);font-size:14px;font-weight:500}
 .nav a:hover{background:var(--ink3);color:var(--txt)}
 .nav a.active{background:var(--ink3);color:var(--brass)}
@@ -208,19 +211,35 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
       <span class="mark">W</span>
       <span class="wm">Warden<small>Agent Studio</small></span>
     </a>
+    {% if is_admin %}
+    <div class="hats" title="Switch between running the studio and building your own agents">
+      <a href="{{ url_for('set_hat', name='admin') }}" class="{{ 'on' if admin_view }}">Admin console</a>
+      <a href="{{ url_for('set_hat', name='agents') }}" class="{{ 'on' if not admin_view }}">My agents</a>
+    </div>
+    {% endif %}
     <nav class="nav">
+      {% if admin_view %}
+      <a href="{{ url_for('home') }}" class="{{ 'active' if active=='home' }}">Overview</a>
+      <a href="{{ url_for('studio') }}" class="{{ 'active' if active=='studio' }}">Users</a>
+      <a href="{{ url_for('connections') }}" class="{{ 'active' if active=='connections' }}">Connections</a>
+      <a href="{{ url_for('policies') }}" class="{{ 'active' if active=='policies' }}">Policies</a>
+      <a href="{{ url_for('approvals') }}" class="{{ 'active' if active=='approvals' }}">Approvals
+        {% set nwait = (open_requests|length if open_requests else 0) %}
+        {% if nwait %}<span class="badge">{{ nwait }}</span>{% endif %}</a>
+      <a href="{{ url_for('audit') }}" class="{{ 'active' if active=='audit' }}">Audit log</a>
+      <a href="{{ url_for('observability') }}" class="{{ 'active' if active=='observability' }}">Observability</a>
+      <a href="{{ url_for('architecture') }}" class="{{ 'active' if active=='architecture' }}">Architecture</a>
+      {% else %}
       <a href="{{ url_for('home') }}" class="{{ 'active' if active=='home' }}">Dashboard</a>
       <a href="{{ url_for('connections') }}" class="{{ 'active' if active=='connections' }}">Connections</a>
       <a href="{{ url_for('new_agent') }}" class="{{ 'active' if active=='build' }}">Build an agent</a>
       <a href="{{ url_for('approvals') }}" class="{{ 'active' if active=='approvals' }}">Approvals
         {% set nwait = (pending|length if pending else 0) + (open_requests|length if open_requests else 0) %}
         {% if nwait %}<span class="badge">{{ nwait }}</span>{% endif %}</a>
-      {% if is_admin %}<a href="{{ url_for('policies') }}" class="{{ 'active' if active=='policies' }}">Policies</a>{% endif %}
       <a href="{{ url_for('evals_home') }}" class="{{ 'active' if active=='evals' }}">Evals</a>
       <a href="{{ url_for('audit') }}" class="{{ 'active' if active=='audit' }}">Audit log</a>
       <a href="{{ url_for('observability') }}" class="{{ 'active' if active=='observability' }}">Observability</a>
-      <a href="{{ url_for('architecture') }}" class="{{ 'active' if active=='architecture' }}">Architecture</a>
-      {% if is_admin %}<a href="{{ url_for('studio') }}" class="{{ 'active' if active=='studio' }}">Studio</a>{% endif %}
+      {% endif %}
     </nav>
     <div class="foot">
       <div class="themetoggle" title="Light or dark">

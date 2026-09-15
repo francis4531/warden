@@ -72,37 +72,46 @@ category, and any conversation becomes a case with one click.
 | `store.py` | SQLite: agents, runs, audit, approvals, connections, tool overrides, eval suites, annotations |
 | `app.py` | Flask app: dashboard, connections, builder, run console, approvals, audit |
 
+## Two hats for the admin
+
+An admin has two jobs, so Warden gives them two places. A switch at the top of the sidebar
+picks between the Admin console (Overview, Users, Connections, Policies, Approvals, Audit
+log, Observability, Architecture: the studio as a whole) and My agents (Dashboard, Build an
+agent, Connections, Approvals, Evals: exactly what every user gets, scoped to the admin's
+own agents and accounts). Permissions never depend on the switch; only what a page shows.
+Users never see it.
+
 ## The admin's view
 
-Admins get a Studio page: every person, their agents, conversations, what is active, what
+Admins get a Studio page: every user, their agents, conversations, what is active, what
 is on hold, and spend today and all time. Any agent or conversation opens read-only, so an
 admin can see exactly what an agent did without being able to reply, approve, edit, or mark
 answers on the owner's behalf; opening someone else's conversation writes an `admin_view`
 event to that run's audit trail, visible to the owner. Approvals separates what the admin
-can act on (studio-provided systems to connect) from what is waiting on other people (a
+can act on (studio-provided systems to connect) from what is waiting on other users (a
 personal source only its owner can connect), and only the first counts toward the badge.
 
 ## Provided by the studio vs your own
 
 Connections come in two kinds. Studio-provided ones (Stripe, Jira, GitHub, a data
 warehouse) are connected once by an admin and available to everyone. Personal ones (Gmail,
-Drive, Calendar) belong to one person: they connect their own account, their agents use
+Drive, Calendar) belong to one user: they connect their own account, their agents use
 it, nobody else can see or grant it. A first-time user is walked through three steps on
 the dashboard: connect a source, build an agent from a template, run it. Nothing in that
 path asks for a token, a key, or a configuration file.
 
-Any catalog server can be connected by any person with their own account (a personal
+Any catalog server can be connected by any user with their own account (a personal
 GitHub token, their own Atlassian sign-in), stored under their name and usable only by their
 agents; servers that run as a process on the Warden host stay the admin's to enable. The same
-server can exist twice, once for the studio and once for a person, and an agent's request is
+server can exist twice, once for the studio and once for a user, and an agent's request is
 satisfied by the requester's own account first, then the studio's.
 
 Admins choose the default tools for new agents at the bottom of Connections. Every new agent starts
-with exactly those granted; the person building it adds more from their own connections.
+with exactly those granted; the user building it adds more from their own connections.
 With no defaults set, Warden falls back to granting every read-only tool. The three
 sample servers built into Warden (enterprise tools, files, code) are tagged as samples and
 stay hidden from non-admins unless one of their tools is a default, so a real studio never
-shows made-up systems to its users, and a new studio can still hand people a working
+shows made-up systems to its users, and a new studio can still hand users a working
 first agent in one click.
 
 ## Connections
@@ -113,8 +122,8 @@ reference servers, Google Workspace, and more). Each entry shows who maintains i
 it connects, and the card matches the credential the server actually needs:
 
 - Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): always connected, no setup; hidden from users unless an admin makes some of its tools defaults.
-- Personal (Gmail, Drive, Calendar, Docs, Sheets): each person clicks "Connect your Google
-  account" for themselves. The token is stored encrypted under that person, only their
+- Personal (Gmail, Drive, Calendar, Docs, Sheets): each user clicks "Connect your Google
+  account" for themselves. The token is stored encrypted under that user, only their
   agents can be granted it, and they can disconnect any time. Read-only scopes by default;
   a fresh access token is minted before every call. The admin sets up the Google client
   once on the Connections page (or brings their own Workspace-internal client, which needs no

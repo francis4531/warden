@@ -32,23 +32,23 @@
 
 <div class="page-h">
   <div class="eyebrow">Studio</div>
-  <h1>Everyone's agents, in one place.</h1>
-  <p class="sub">Every person in the studio, what they have built, what it is doing, and what it costs. Open any agent or conversation to read it; acting on it (replying, approving, editing) stays with its owner, and opening someone else's conversation is itself an audit event.</p>
+  <h1>All users and their agents.</h1>
+  <p class="sub">Every user in the studio, what they have built, what it is doing, and what it costs. Open any agent or conversation to read it; acting on it (replying, approving, editing) stays with its owner, and opening someone else's conversation is itself an audit event.</p>
 </div>
 
 <div class="grid g4" style="margin-bottom:22px">
-  <div class="card k"><span class="kv">{{ totals.people }}</span><span class="kl">People</span><span class="kd">{{ totals.agents }} agent{{ '' if totals.agents==1 else 's' }} between them</span></div>
+  <div class="card k"><span class="kv">{{ totals.users }}</span><span class="kl">Users</span><span class="kd">{{ totals.agents }} agent{{ '' if totals.agents==1 else 's' }} between them</span></div>
   <div class="card k"><span class="kv" style="color:{{ 'var(--low)' if totals.active else 'var(--txt)' }}">{{ totals.active }}</span><span class="kl">Active now</span><span class="kd">running or waiting &middot; {{ totals.runs }} conversation{{ '' if totals.runs==1 else 's' }} all time</span></div>
   <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if (totals.pending or totals.requests) else 'var(--txt)' }}">{{ totals.pending + totals.requests }}</span><span class="kl">Waiting on a human</span><span class="kd">{{ totals.pending }} action{{ '' if totals.pending==1 else 's' }} on hold &middot; {{ totals.requests }} connection request{{ '' if totals.requests==1 else 's' }}</span></a>
   <div class="card k"><span class="kv">${{ '%.2f'|format(totals.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if totals.daily_cap %}of a ${{ '%.2f'|format(totals.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(totals.spend) }} all time</span></div>
 </div>
 
-{% if people %}
-<div class="hdr"><span>person</span><span>agents</span><span>conversations</span><span>active</span><span>on hold</span><span>spend</span><span></span></div>
-{% for p in people %}
+{% if users %}
+<div class="hdr"><span>user</span><span>agents</span><span>conversations</span><span>active</span><span>on hold</span><span>spend</span><span></span></div>
+{% for p in users %}
 <details class="person">
   <summary>
-    <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}</div>
+    <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}{% if p.email == 'operator' %}<span class="tag" title="Agents created through the password sign-in or before Google sign-in was enabled">password sign-in</span>{% endif %}</div>
       <div class="sub">{% if p.last %}last activity {{ p.last[:16].replace('T',' ') }} UTC{% else %}no conversations yet{% endif %} &middot; {{ p.personal }} personal connection{{ '' if p.personal==1 else 's' }}</div></div>
     <div class="n">{{ p.agents|length }}<small>agents</small></div>
     <div class="n">{{ p.runs }}<small>conversations</small></div>
@@ -78,6 +78,6 @@
 </details>
 {% endfor %}
 {% else %}
-<div class="empty"><h2>Nobody has built anything yet</h2>People appear here as soon as they create an agent or connect a personal source.</div>
+<div class="empty"><h2>No users yet</h2>Users appear here as soon as they create an agent or connect a personal source.</div>
 {% endif %}
 {% endblock %}
