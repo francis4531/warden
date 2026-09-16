@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.15"
+WARDEN_VERSION = "0.15.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -100,6 +100,7 @@ ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAI
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
 rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
+rt.HIDDEN_CATALOG = lambda: hidden_catalog()
 _PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
 # OAuth callbacks for connections come back from a provider with a state we issued; auth is
 # still required (the operator started the flow while signed in), they are just not admin-gated twice
@@ -477,15 +478,16 @@ def connections():
     raw = {s["id"]: s for s in cm().connected_servers()}
     enabled_keys = {c["id"] for c in store.enabled_connections()}
     me = current_owner()
-    pkey = {e["id"]: (e["id"] if e["transport"] == "builtin" else store.conn_key(e["id"], me)) for e in merged_catalog()}
-    p_status = {e["id"]: raw[pkey[e["id"]]] for e in merged_catalog() if pkey[e["id"]] in raw}
-    p_enabled = {e["id"] for e in merged_catalog() if pkey[e["id"]] in enabled_keys}
+    mine = user_catalog()
+    pkey = {e["id"]: (e["id"] if e["transport"] == "builtin" else store.conn_key(e["id"], me)) for e in mine}
+    p_status = {e["id"]: raw[pkey[e["id"]]] for e in mine if pkey[e["id"]] in raw}
+    p_enabled = {e["id"] for e in mine if pkey[e["id"]] in enabled_keys}
     oauth_status, cred = {}, {}
     for c_ in store.enabled_connections(me):
         cred[c_["id"]] = c_
         d_ = oauth.describe(c_.get("token"))
         if d_: oauth_status[c_["id"]] = d_
-    return render_template("connections.html", catalog=merged_catalog(), status=p_status, enabled=p_enabled, keyed=pkey,
+    return render_template("connections.html", catalog=mine, status=p_status, enabled=p_enabled, keyed=pkey,
                            pkey=pkey, p_status=p_status, p_enabled=p_enabled, cred=cred,
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
                            requests=_requests_for_me(), oauth_status=oauth_status, google_on=_google_connectors_on(), google_verified=_google_verified(),
@@ -518,7 +520,7 @@ def catalog():
         entry = cat.BY_ID.get(t.get("catalog_id") or "", {})
         tools.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk,
                       "server_name": entry.get("name") or t["server_name"]})
-    return render_template("catalog.html", **_settings_ctx(), catalog=merged_catalog(), users_connected=users_connected,
+    return render_template("catalog.html", **_settings_ctx(), catalog=merged_catalog(), users_connected=users_connected, hidden=hidden_catalog(),
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL, tools=tools,
                            discover=discover, discover_q=dq, google_on=_google_connectors_on(), google_verified=_google_verified())
 
@@ -526,6 +528,7 @@ def catalog():
 def enable_connection():
     cid = request.form.get("id"); entry = cat_by_id(cid)
     if not entry: abort(404)
+    if not is_admin() and cid in hidden_catalog(): abort(403)
     transport = entry["transport"]
     token = request.form.get("token") or None
     # Every connection belongs to the user who makes it, admins included. A server that runs as
@@ -585,6 +588,34 @@ def merged_catalog():
                       "env": "", "desc": cs["description"] or "", "repo": cs.get("repo") or "",
                       "custom": True})
     return list(cat.CATALOG) + extra
+
+def hidden_catalog():
+    """Catalog ids an admin has taken off offer for users. Admins can still connect them."""
+    try:
+        v = store.get_setting("catalog_hidden")
+        return set(_json.loads(v)) if v else set()
+    except Exception:
+        return set()
+
+def user_catalog():
+    """What the signed-in user may connect: the whole catalog for admins, minus anything an
+    admin has hidden for everyone else."""
+    if is_admin():
+        return merged_catalog()
+    hidden = hidden_catalog()
+    return [e for e in merged_catalog() if e["id"] not in hidden]
+
+@app.route("/catalog/availability", methods=["POST"])
+def catalog_availability():
+    if not is_admin():
+        abort(403)
+    cid = request.form.get("id"); on = request.form.get("available") == "1"
+    hidden = hidden_catalog()
+    (hidden.discard if on else hidden.add)(cid)
+    store.set_setting("catalog_hidden", _json.dumps(sorted(hidden)))
+    store.audit(None, None, "catalog_availability", detail={"server": cid, "available": on,
+                "text": "%s is %s to users" % (cid, "available" if on else "no longer available")})
+    return redirect(url_for("catalog") + "#" + cid)
 
 def cat_by_id(cid):
     for c in merged_catalog():
@@ -1375,6 +1406,8 @@ def oauth_start():
     cid = request.form.get("id"); entry = cat_by_id(cid)
     if not entry or entry.get("provider") not in ("google", "mcp"):
         abort(404)
+    if not is_admin() and cid in hidden_catalog():
+        abort(403)
     state = secrets.token_urlsafe(20)
     ctx = {"cid": cid, "grant_to": request.form.get("grant_to") or "", "resume": request.form.get("resume") or "",
            "personal": bool(request.form.get("personal"))}

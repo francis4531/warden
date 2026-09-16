@@ -41,15 +41,57 @@
 .act .hint{font-size:11.5px;color:var(--dim)}
 .act .hint a{color:var(--brass)}
 </style>
+<style>
+.ctab{width:100%;border-collapse:collapse;font-size:13px}
+.ctab th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);font-weight:600}
+.ctab td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ctab tr:last-child td{border-bottom:none}
+.ctab .nm{font-weight:600}
+.ctab .sub{color:var(--dim);font-size:11.5px}
+.ctab tr.off td{opacity:.55}
+.ctab tr.off td:last-child{opacity:1}
+.sw{display:inline-flex;align-items:center;gap:6px}
+.sw button{font-size:11.5px;padding:4px 10px}
+.ctab .n{font-family:var(--mono);font-size:12px;color:var(--mut)}
+</style>
 
 <div class="page-h">
   <div class="eyebrow">Admin console</div>
-  <h1>The catalog, and how its tools are governed.</h1>
-  <p class="sub">The studio provides no connections. Every user, admins included, connects the sources their own agents use. What you decide here is which servers are on offer, how each tool is risk-classified for everyone, and the Google client that makes one-click Google connections possible.</p>
+  <h1>What users can connect, and how it is governed.</h1>
+  <p class="sub">The studio provides no connections. Every user, admins included, connects the sources their own agents use. Here you decide which servers are on offer, how each tool is risk-classified for everyone, and the Google client that makes one-click Google connections possible.</p>
 </div>
 
-{% include '_admin_google.html' %}
-
+<div class="section-h"><span class="lbl">Catalog</span><span style="font-size:12px;color:var(--dim)">{{ catalog|length }} servers &middot; {{ hidden|length }} hidden from users &middot; sample and host-run servers are admin-only</span></div>
+<div class="card" style="padding:0 0 4px;margin-bottom:12px;overflow-x:auto">
+<table class="ctab">
+  <tr><th>Server</th><th>Category</th><th>Connects with</th><th>Users</th><th>Available to users</th></tr>
+  {% for e in catalog %}
+  {% set adminonly = e.transport != 'http' %}
+  {% set off = e.id in hidden %}
+  <tr id="{{ e.id }}" class="{{ 'off' if off }}">
+    <td><div class="nm">{{ e.name }}{% if e.sample %} <span class="stamp" style="background:var(--line);color:var(--mut)">sample</span>{% endif %}{% if e.custom %} <span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">from registry</span>{% endif %}</div><div class="sub">{{ e.desc[:110] }}{{ '…' if e.desc|length>110 }}</div></td>
+    <td><span class="tag cat">{{ e.category }}</span> <span class="sub">{{ mlabel[e.maintainer] }}</span></td>
+    <td class="n">{% if e.transport=='builtin' %}built in{% elif e.personal %}Google sign-in{% elif e.provider=='mcp' %}sign in{% elif e.transport=='http' and e.auth=='none' %}no credential{% elif e.transport=='http' %}API key{% else %}runs on host{% endif %}</td>
+    <td class="n">{{ users_connected.get(e.id, 0) }}</td>
+    <td>
+      {% if e.transport=='builtin' %}<span class="sub">always on for everyone</span>
+      {% elif adminonly %}<span class="sub">admins only</span>
+      {% else %}
+      <form method="post" action="{{ url_for('catalog_availability') }}" class="sw" style="margin:0">
+        <input type="hidden" name="id" value="{{ e.id }}"><input type="hidden" name="available" value="{{ '1' if off else '0' }}">
+        <span class="{{ 'ok' if not off else 'bad' }}" style="font-size:12px;font-weight:600">{{ 'on' if not off else 'off' }}</span>
+        <button class="btn ghost sm" type="submit">{{ 'Hide' if not off else 'Offer' }}</button>
+        {% if e.custom %}<button class="btn ghost sm" type="submit" formaction="{{ url_for('discover_remove') }}" onclick="return confirm('Remove {{ e.name|e }} from the catalog?')">Remove</button>{% endif %}
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<details style="margin-bottom:30px" {{ 'open' if discover_q }}>
+  <summary style="cursor:pointer;color:var(--brass);font-size:13px">Add a server from the MCP Registry</summary>
+  <div style="margin-top:10px">
 <div class="disco">
   <div style="font-family:var(--disp);font-weight:600;margin-bottom:4px">Find a server</div>
   <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Describe what you want to connect. Warden searches the official MCP Registry live and shows only <b>official, first-party servers</b>, published by the vendor that owns the service (Stripe, Notion, GitHub&hellip;), never third-party connectors or community re-hosts. Add the best match and it drops into the catalog below to connect.</div>
@@ -86,21 +128,10 @@
     {% endif %}
   {% endif %}
 </div>
-
-<div class="section-h"><span class="lbl">Catalog</span><span style="font-size:12px;color:var(--dim)">{{ catalog|length }} servers users can connect with their own accounts &middot; sample and stdio servers are admin-only</span></div>
-<div class="cgrid" style="margin-bottom:26px">
-  {% for e in catalog %}
-  <div class="conn" id="{{ e.id }}">
-    <div class="top"><span class="nm">{{ e.name }}</span>{% if e.custom %}<span class="stamp" style="background:color-mix(in srgb,var(--brass) 12%,transparent);color:var(--brass-b)">discovered</span>{% endif %}{% if e.sample %}<span class="stamp" style="background:var(--line);color:var(--mut)">sample</span>{% endif %}
-      {% if users_connected.get(e.id) %}<span class="stamp LOW">{{ users_connected[e.id] }} user{{ '' if users_connected[e.id]==1 else 's' }} connected</span>{% endif %}</div>
-    <div class="tags"><span class="tag cat">{{ e.category }}</span><span class="tag">{{ mlabel[e.maintainer] }}</span><span class="tag">{{ 'personal Google' if e.personal else ('remote (sign in)' if e.provider=='mcp' else slabel[e.status]) }}</span></div>
-    <div class="desc">{{ e.desc }}</div>
-    {% if e.custom %}<div class="act"><form method="post" action="{{ url_for('discover_remove') }}" style="margin-left:auto"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Remove from catalog</button></form></div>{% endif %}
   </div>
-  {% endfor %}
-</div>
+</details>
 
-<div class="section-h" style="margin-top:30px"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
+<div class="section-h"><span class="lbl">Governed tools</span><span style="font-family:var(--mono);font-size:11px;color:var(--dim)">{{ tools|length }} across connected servers</span></div>
 {% set gated = tools|selectattr('gate','equalto','approval')|list %}
 {% set auto = tools|rejectattr('gate','equalto','approval')|list %}
 {% if tools %}
@@ -137,4 +168,7 @@
   </div>
 </details>
 {% endfor %}
+
+<div style="margin-top:30px"></div>
+{% include '_admin_google.html' %}
 {% endblock %}

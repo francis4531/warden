@@ -103,7 +103,7 @@ connecting anything is the built-in sample server (fake customers, a knowledge b
 tickets, refunds), so a first agent works in one click.
 
 What the admin does decide, on the Catalog page, is which servers are on offer (the curated
-catalog plus anything added from the MCP Registry), how each tool is risk-classified for
+catalog plus anything added from the MCP Registry, each of which can be hidden from users), how each tool is risk-classified for
 everyone (a risk override applies to every user's copy of that tool), and the Google client
 that makes one-click Google connections possible.
 

@@ -25,6 +25,7 @@ DELEGATE_KEY = "team__delegate"
 REQUEST_KEY = "warden__request_connection"
 # set by the app at import: who administers this studio, so agents can say so precisely
 ADMIN_INFO = {"auth_on": False, "admins": []}
+HIDDEN_CATALOG = lambda: set()      # app installs this: catalog ids an admin took off offer for users
 MAX_DEPTH = int(os.environ.get("WARDEN_MAX_DELEGATION_DEPTH", "1"))      # lead -> member only
 MAX_DELEGATIONS = int(os.environ.get("WARDEN_MAX_DELEGATIONS", "8"))     # per lead run
 
@@ -117,7 +118,10 @@ def find_connections(keywords, need="", owner=None):
             continue
         st[s_.get("catalog_id") or s_["id"]] = s_
     scored = []
+    hidden = set() if (owner or "").lower() in [a.lower() for a in ADMIN_INFO.get("admins") or []] else HIDDEN_CATALOG()
     for e in cat.CATALOG:
+        if e["id"] in hidden:
+            continue
         # whole-word matching: "for" must not light up "terraform", "mail" must not light up "gmail"
         strong = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e["id"]).lower()))
         hay = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()))
