@@ -87,8 +87,8 @@
 </div>
 {% set more = catalog | rejectattr('personal') | rejectattr('transport','equalto','builtin') | rejectattr('id','in',p_enabled) | list %}{% if not is_admin %}{% set more = more | selectattr('transport','equalto','http') | list %}{% endif %}
 {% if more %}
-<details style="margin-bottom:26px" {{ 'open' if connect_id and (catalog | selectattr('id','equalto',connect_id) | first or {}).transport=='http' and not (catalog | selectattr('id','equalto',connect_id) | first or {}).personal and not admin_view }}>
-  <summary style="cursor:pointer;color:var(--brass);font-size:13px">Connect another source with your own account ({{ more|length }} available)</summary>
+<details id="more" style="margin-bottom:26px" {{ 'open' if connect_id and (more | selectattr('id','equalto',connect_id) | list) }}>
+<summary style="cursor:pointer;color:var(--brass);font-size:13px">Connect another source with your own account ({{ more|length }} available)</summary>
   <div style="color:var(--mut);font-size:12.5px;margin:8px 0 12px">Sign in or paste your own key. Only your agents can use it.</div>
   <div class="cgrid">
     {% for e in more %}
@@ -105,7 +105,7 @@
 <script>
 (function(){
   const want={{ connect_id|tojson }};
-  if(want){ const card=document.getElementById(want); if(card){ card.style.boxShadow='0 0 0 2px var(--brass)'; card.scrollIntoView({block:'center',behavior:'smooth'}); const inp=card.querySelector('input[name=token],input[name=command]'); if(inp) setTimeout(()=>inp.focus(),400); } }
+  if(want){ const card=document.getElementById(want+'-mine')||document.getElementById(want); if(card){ const fold=card.closest('details'); if(fold) fold.open=true; card.style.boxShadow='0 0 0 2px var(--brass)'; setTimeout(()=>card.scrollIntoView({block:'center',behavior:'smooth'}),50); const inp=card.querySelector('input[name=token],input[name=command]'); if(inp) setTimeout(()=>inp.focus(),450); } }
 })();
 document.querySelectorAll('form.connform').forEach(f=>{
   f.addEventListener('submit', async e=>{

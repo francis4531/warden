@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.15.1"
+WARDEN_VERSION = "0.15.2"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1199,14 +1199,17 @@ def _open_requests(rid, agent_id):
             continue
         d = e.get("detail") or {}
         matches = []
+        owner_is_admin = (ag.get("owner") or "") in ADMIN_EMAILS
         for m in d.get("matches", []):
             sid = m.get("id")
             entry = cat_by_id(sid) if sid else None
+            if entry and entry.get("transport") != "http" and not owner_is_admin:
+                continue   # stdio servers run on the host; only admins may connect them
             personal = bool(entry and entry.get("personal"))
             key = store.conn_key(sid, ag.get("owner") or "") if sid else None   # the requester's own copy
             matches.append({**m, "connected": key in connected if key else False,
                             "granted": key in granted_servers if key else False, "sid": key, "personal": personal,
-                            "url": (url_for("connections", connect=sid, grant_to=agent_id, resume=rid) + "#" + sid) if sid
+                            "url": url_for("connections", connect=sid, grant_to=agent_id, resume=rid) if sid
                                    else url_for("connections", discover=d.get("keywords") or "", grant_to=agent_id, resume=rid)})
         done = any(m["granted"] for m in matches)
         out.append({"ts": e["ts"], "need": d.get("need"), "keywords": d.get("keywords"), "matches": matches, "fulfilled": done})

@@ -118,10 +118,13 @@ def find_connections(keywords, need="", owner=None):
             continue
         st[s_.get("catalog_id") or s_["id"]] = s_
     scored = []
-    hidden = set() if (owner or "").lower() in [a.lower() for a in ADMIN_INFO.get("admins") or []] else HIDDEN_CATALOG()
+    owner_is_admin = (owner or "").lower() in [a.lower() for a in ADMIN_INFO.get("admins") or []]
+    hidden = set() if owner_is_admin else HIDDEN_CATALOG()
     for e in cat.CATALOG:
         if e["id"] in hidden:
             continue
+        if e.get("transport") not in ("http", "builtin") and not owner_is_admin:
+            continue   # stdio servers run on the host; users cannot connect them, so never offer them
         # whole-word matching: "for" must not light up "terraform", "mail" must not light up "gmail"
         strong = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e["id"]).lower()))
         hay = set(re.split(r"[^a-z0-9]+", (e["name"] + " " + e.get("desc", "") + " " + e.get("category", "") + " " + e["id"]).lower()))
