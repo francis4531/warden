@@ -22,9 +22,9 @@
     <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ink)">
       <div><div style="font-weight:600;font-size:13.5px">{{ m.name }}{% if m.connected %} <span class="pill done">connected, not granted</span>{% endif %}</div><div style="color:var(--mut);font-size:12px">{{ 'official server in the Warden catalog' if m.source=='catalog' else 'found in the MCP Registry' }}</div></div>
       {% if m.connected %}
-      <form method="post" action="{{ url_for('grant_connection') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.sid }}"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Grant to {{ q.agent.name }} &rarr;</button></form>
+      <form method="post" action="{{ url_for('grant_connection') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ m.sid }}"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Grant to {{ q.agent.name }} &rarr;</button></form>
       {% elif m.personal %}
-      <form method="post" action="{{ url_for('oauth_start') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Connect your {{ m.name.split(' (')[0] }} &rarr;</button></form>
+      <form method="post" action="{{ url_for('oauth_start') }}" style="margin-left:auto;margin-bottom:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="scope" value="read"><input type="hidden" name="grant_to" value="{{ q.agent.id }}"><input type="hidden" name="resume" value="{{ q.run_id }}"><button class="btn brass sm">Connect your {{ m.name.split(' (')[0] }} &rarr;</button></form>
       {% else %}
       <a class="btn brass sm" style="margin-left:auto" href="{{ m.url }}">Connect &amp; grant &rarr;</a>
       {% endif %}
@@ -94,7 +94,7 @@
       {% endif %}
     {% endfor %}
   </div>
-  <form method="post" action="{{ url_for('approval', apid=ap.id) }}" class="g-actions">
+  <form method="post" action="{{ url_for('approval', apid=ap.id) }}" class="g-actions"><input type="hidden" name="csrf" value="{{ csrf_token }}">
     <input type="hidden" name="back" value="{{ url_for('approvals') }}">
     <button class="btn brass" name="decision" value="approved">Approve &amp; run</button>
     <button class="btn deny" name="decision" value="denied">Deny</button>

@@ -61,7 +61,7 @@
       {% if a.members %}<span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent);margin-right:6px">team</span>{% endif %}
       <span class="pill">open &rarr;</span>
     </a>
-    <form method="post" action="{{ url_for('delete_agent', aid=a.id) }}" style="margin:0 14px 0 0" onsubmit="return confirm('Delete {{ a.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');">
+    <form method="post" action="{{ url_for('delete_agent', aid=a.id) }}" style="margin:0 14px 0 0" onsubmit="return confirm('Delete {{ a.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');"><input type="hidden" name="csrf" value="{{ csrf_token }}">
       <button class="btn ghost sm" type="submit" title="Delete this agent" style="color:var(--high)">Delete</button>
     </form>
   </div>
@@ -96,7 +96,7 @@
         <div class="row2">
           {% if p.connected %}<span class="ok">&#10003;</span> {{ p.entry.name.split(' (')[0] }} connected
           {% elif google_on %}
-          <form method="post" action="{{ url_for('oauth_start') }}"><input type="hidden" name="id" value="{{ p.entry.id }}"><input type="hidden" name="scope" value="read"><button class="btn sm">Connect {{ p.entry.name.split(' (')[0] }}</button></form>
+          <form method="post" action="{{ url_for('oauth_start') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ p.entry.id }}"><input type="hidden" name="scope" value="read"><button class="btn sm">Connect {{ p.entry.name.split(' (')[0] }}</button></form>
           {% else %}<span style="color:var(--dim)">{{ p.entry.name.split(' (')[0] }}: waiting for your admin to set up Google</span>{% endif %}
         </div>
         {% endfor %}

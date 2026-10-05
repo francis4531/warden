@@ -35,8 +35,8 @@
       <div class="pname">{{ p.name }} <span class="eff {{ p.effect }}">{{ 'auto-run' if p.effect=='allow' else 'gate' if p.effect=='require_approval' else 'deny' }}</span>{% if not p.enabled %} <span class="pill off">disabled</span>{% endif %}</div>
       <div class="pdesc">priority {{ p.priority }} &middot; {{ describe_policy(p) }}</div>
     </div>
-    <form method="post" action="{{ url_for('toggle_policy', pid=p.id) }}"><button class="btn ghost sm">{{ 'Disable' if p.enabled else 'Enable' }}</button></form>
-    <form method="post" action="{{ url_for('delete_policy', pid=p.id) }}"><button class="btn ghost sm" style="color:var(--high)">Delete</button></form>
+    <form method="post" action="{{ url_for('toggle_policy', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="btn ghost sm">{{ 'Disable' if p.enabled else 'Enable' }}</button></form>
+    <form method="post" action="{{ url_for('delete_policy', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="btn ghost sm" style="color:var(--high)">Delete</button></form>
   </div>
   {% else %}
   <div style="padding:20px 16px;color:var(--mut)">No policies yet. The risk tiers still apply, HIGH-risk tools gate on their own. Add a rule below to go further.</div>
@@ -53,7 +53,7 @@
     <span class="example" onclick="fill('No deploys after hours','create_pull_request','__hour__','&gt;=','18','require_approval',30)">deploys after 18:00 UTC &rarr; gate</span>
     <span class="example" onclick="fill('Lock research agent to read-only','*','__risk__','==','HIGH','deny',40)">any HIGH tool &rarr; deny</span>
   </div>
-  <form method="post" action="{{ url_for('create_policy') }}">
+  <form method="post" action="{{ url_for('create_policy') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
     <div class="pbuild">
       <div class="fld" style="grid-column:span 6"><label>Name</label><input name="name" id="p_name" placeholder="e.g. Cap large refunds" required></div>
       <div class="fld" style="grid-column:span 3"><label>Effect</label>

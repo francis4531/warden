@@ -35,9 +35,16 @@ def client(warden):
     return warden["app"].app.test_client()
 
 
-def login(client, email, hat="agents"):
+def login(client, email, hat="agents", csrf_exempt=True):
+    """Sign in as `email`. By default the client sends the X-Requested-With: fetch header on
+    every request, which satisfies the CSRF check the way the app's own JS does; tests of
+    the CSRF check itself pass csrf_exempt=False."""
     with client.session_transaction() as s:
         s["auth"] = True; s["email"] = email; s["hat"] = hat
+    if csrf_exempt:
+        client.environ_base["HTTP_X_REQUESTED_WITH"] = "fetch"
+    else:
+        client.environ_base.pop("HTTP_X_REQUESTED_WITH", None)
     return client
 
 

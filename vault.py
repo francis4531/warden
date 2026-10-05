@@ -19,13 +19,15 @@ import paths
 DATA_ROOT = paths.DATA_ROOT
 KEY_FILE = os.path.join(DATA_ROOT, ".warden_key")
 
-def _key():
+def master():
+    """The one secret everything else is derived from: WARDEN_SECRET_KEY if set, else a random
+    key generated once and kept next to the data. Never a built-in default."""
     env = os.environ.get("WARDEN_SECRET_KEY")
     if env:
-        return base64.urlsafe_b64encode(hashlib.sha256(env.encode()).digest())
+        return env.encode()
     if os.path.exists(KEY_FILE):
         return open(KEY_FILE, "rb").read().strip()
-    k = Fernet.generate_key()
+    k = Fernet.generate_key() if _OK else base64.urlsafe_b64encode(os.urandom(32))
     os.makedirs(DATA_ROOT, exist_ok=True)
     open(KEY_FILE, "wb").write(k)
     try:
@@ -33,6 +35,21 @@ def _key():
     except Exception:
         pass
     return k
+
+def from_env():
+    return bool(os.environ.get("WARDEN_SECRET_KEY"))
+
+def derive(purpose):
+    """A purpose-bound 32-byte key (session signing, audit HMAC) so that no two uses of the
+    master secret share a key. The Fernet key keeps its original derivation so tokens
+    encrypted by earlier versions still decrypt."""
+    return hashlib.sha256(b"warden:" + purpose.encode() + b":" + master()).digest()
+
+def _key():
+    env = os.environ.get("WARDEN_SECRET_KEY")
+    if env:
+        return base64.urlsafe_b64encode(hashlib.sha256(env.encode()).digest())
+    return master()
 
 _F = None
 def _fernet():
@@ -57,4 +74,7 @@ def decrypt(s):
     try:
         return _fernet().decrypt(s[4:].encode()).decode()
     except Exception:
-        return s
+        import logging
+        logging.getLogger("warden").error("vault: a stored secret could not be decrypted; WARDEN_SECRET_KEY "
+                                          "or .warden_key differs from the one it was encrypted with")
+        return ""

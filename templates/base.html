@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="csrf" content="{{ csrf_token }}">
+<script>
+(function(){ // every same-origin POST from this app carries the CSRF token
+  const tok=(document.querySelector('meta[name=csrf]')||{}).content||'';
+  const f=window.fetch; window.fetch=function(u,o){ o=o||{}; const m=(o.method||'GET').toUpperCase();
+    if(m!=='GET'&&m!=='HEAD'&&(typeof u==='string')&&!/^https?:\/\//i.test(u)){ const h=new Headers(o.headers||{}); h.set('X-CSRF',tok); o.headers=h; }
+    return f.call(this,u,o); };
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Warden{% endblock %}</title>

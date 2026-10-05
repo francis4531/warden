@@ -77,7 +77,7 @@
       {% if e.transport=='builtin' %}<span class="sub">always on for everyone</span>
       {% elif adminonly %}<span class="sub">admins only</span>
       {% else %}
-      <form method="post" action="{{ url_for('catalog_availability') }}" class="sw" style="margin:0">
+      <form method="post" action="{{ url_for('catalog_availability') }}" class="sw" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}">
         <input type="hidden" name="id" value="{{ e.id }}"><input type="hidden" name="available" value="{{ '1' if off else '0' }}">
         <span class="{{ 'ok' if not off else 'bad' }}" style="font-size:12px;font-weight:600">{{ 'on' if not off else 'off' }}</span>
         <button class="btn ghost sm" type="submit">{{ 'Hide' if not off else 'Offer' }}</button>
@@ -115,7 +115,7 @@
           {% if r.description %}<div class="dd">{{ r.description }}</div>{% endif %}
           {% if r.run_hint %}<div class="dr">{{ r.run_hint }}</div>{% endif %}
         </div>
-        <form method="post" action="{{ url_for('discover_add') }}">
+        <form method="post" action="{{ url_for('discover_add') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
           <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="display" value="{{ r.display }}">
           <input type="hidden" name="transport" value="{{ r.transport }}"><input type="hidden" name="endpoint" value="{{ r.endpoint }}">
           <input type="hidden" name="desc" value="{{ r.description }}"><input type="hidden" name="repo" value="{{ r.repo }}">
@@ -156,7 +156,7 @@
     <div class="ev" style="grid-template-columns:1fr 180px;align-items:center;padding:9px 16px">
       <span class="kind" style="color:var(--txt)">{{ t.tool }} <span class="stamp {{ t.risk }}">{{ t.risk }}</span>{% if t.override %} <span class="pill">override</span>{% endif %}</span>
       <span>
-        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end">
+        <form method="post" action="{{ url_for('tool_risk') }}" style="display:flex;gap:6px;justify-content:flex-end"><input type="hidden" name="csrf" value="{{ csrf_token }}">
           <input type="hidden" name="key" value="{{ t.model_key }}"><input type="hidden" name="back" value="{{ url_for('catalog') }}">
           <select name="risk" style="width:auto;padding:4px 7px;font-size:12px">
             {% for r in ['LOW','MED','HIGH'] %}<option value="{{ r }}" {{ 'selected' if t.risk==r }}>{{ r }}</option>{% endfor %}

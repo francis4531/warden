@@ -111,7 +111,28 @@ def _stdio_params(sid, spec, transport):
         cmd = shlex.split(run)
         if not cmd:
             raise RuntimeError("no command configured")
-    return StdioServerParameters(command=cmd[0], args=cmd[1:], env=os.environ.copy())
+    return StdioServerParameters(command=cmd[0], args=cmd[1:], env=_child_env(sid, spec))
+
+# What a spawned MCP server process may see. Never the studio's own secrets (the Anthropic
+# key, the session secret, the Google client secret): a third-party npx/uvx package fetched at
+# connect time gets the basics plus the one variable the catalog entry declares, if any.
+_ENV_PASS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "USER", "SHELL", "TERM",
+             "NODE_PATH", "NPM_CONFIG_CACHE", "UV_CACHE_DIR", "PYTHONPATH", "VIRTUAL_ENV",
+             "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+             "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "SystemRoot", "APPDATA", "LOCALAPPDATA")
+
+def _child_env(sid, spec):
+    env = {k: os.environ[k] for k in _ENV_PASS if k in os.environ}
+    cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
+    var = cat.get("env")
+    if var:
+        tok = spec.get("token") or os.environ.get(var)
+        if tok:
+            env[var] = tok
+    for k, v in (spec.get("env") or {}).items():          # explicit per-connection variables
+        if isinstance(k, str) and isinstance(v, str):
+            env[k] = v
+    return env
 
 @asynccontextmanager
 async def _http_session(sid, spec):

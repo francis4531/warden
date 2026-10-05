@@ -7,6 +7,8 @@ every agent action and every approval is durably recorded and queryable.
 import os
 import json
 import hashlib
+import hmac
+import threading
 import sqlite3
 import datetime
 import uuid
@@ -267,36 +269,83 @@ def _audit_payload(eid, run_id, agent_id, ts, kind, skill, risk, detail_s):
     return "|".join([eid, run_id or "", agent_id or "", ts, kind or "",
                      skill or "", risk or "", detail_s or ""])
 
+_AUDIT_LOCK = threading.Lock()
+
+def _audit_key():
+    import vault
+    return vault.derive("audit")
+
+def _link(prev_hash, payload, keyed=True):
+    msg = (prev_hash + "\n" + payload).encode()
+    if keyed:
+        return hmac.new(_audit_key(), msg, hashlib.sha256).hexdigest()
+    return hashlib.sha256(msg).hexdigest()
+
+def _head_sig(last_hash, count):
+    return hmac.new(_audit_key(), ("%s|%d" % (last_hash, count)).encode(), hashlib.sha256).hexdigest()
+
 def audit(run_id, agent_id, kind, skill=None, risk=None, detail=None):
-    c = _conn()
+    """Append one event to the hash chain. The append is serialized (one writer at a time,
+    in one IMMEDIATE transaction) so concurrent runs cannot fork the chain, each link is an
+    HMAC with the studio secret so a database editor without the key cannot recompute it,
+    and the chain head (last hash, row count, signature) is stored so a deleted tail shows."""
     eid = _id("ev"); ts = now()
     detail_s = json.dumps(detail) if detail is not None else None
-    prev = c.execute("SELECT hash FROM audit ORDER BY rowid DESC LIMIT 1").fetchone()
-    prev_hash = prev["hash"] if (prev and prev["hash"]) else ""
-    h = hashlib.sha256((prev_hash + "\n" + _audit_payload(
-        eid, run_id, agent_id, ts, kind, skill, risk, detail_s)).encode()).hexdigest()
-    c.execute("INSERT INTO audit(id,run_id,agent_id,ts,kind,skill,risk,detail,prev_hash,hash) "
-              "VALUES(?,?,?,?,?,?,?,?,?,?)",
-              (eid, run_id, agent_id, ts, kind, skill, risk, detail_s, prev_hash, h))
-    c.commit(); c.close()
+    payload = _audit_payload(eid, run_id, agent_id, ts, kind, skill, risk, detail_s)
+    with _AUDIT_LOCK:
+        c = _conn()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            prev = c.execute("SELECT hash FROM audit ORDER BY rowid DESC LIMIT 1").fetchone()
+            prev_hash = prev["hash"] if (prev and prev["hash"]) else ""
+            h = _link(prev_hash, payload)
+            c.execute("INSERT INTO audit(id,run_id,agent_id,ts,kind,skill,risk,detail,prev_hash,hash) "
+                      "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (eid, run_id, agent_id, ts, kind, skill, risk, detail_s, prev_hash, h))
+            n = c.execute("SELECT COUNT(*) FROM audit").fetchone()[0]
+            c.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('audit_head',?)",
+                      (json.dumps({"hash": h, "count": n, "sig": _head_sig(h, n), "ts": ts}),))
+            c.commit()
+        finally:
+            c.close()
+
+def audit_head():
+    v = get_setting("audit_head")
+    return json.loads(v) if v else None
 
 def verify_audit():
     """Walk the audit log in insertion order and recompute the hash chain. Any edit,
     deletion, or reorder breaks a link and is reported. Rows written before chaining was
-    added (no hash) are counted as 'legacy' and reset the chain rather than fail it."""
+    added (no hash) are counted as 'legacy' and reset the chain rather than fail it; rows
+    written before links were keyed (plain SHA-256) are accepted only until the first keyed
+    row, never after it, so a tamperer cannot fall back to the unkeyed form. Finally the
+    stored head must match the last row, so a trimmed tail is reported too."""
     c = _conn(); rows = c.execute("SELECT * FROM audit ORDER BY rowid").fetchall(); c.close()
-    prev_hash = ""; checked = 0; legacy = 0
+    prev_hash = ""; checked = 0; legacy = 0; unkeyed = 0; keyed_seen = False
     for r in rows:
         d = dict(r)
         if not d.get("hash"):
             legacy += 1; prev_hash = ""; continue
-        expect = hashlib.sha256(((d.get("prev_hash") or "") + "\n" + _audit_payload(
-            d["id"], d["run_id"], d["agent_id"], d["ts"], d["kind"], d["skill"], d["risk"], d["detail"])).encode()).hexdigest()
-        if expect != d["hash"] or (d.get("prev_hash") or "") != prev_hash:
-            return {"ok": False, "checked": checked, "legacy": legacy,
-                    "broken_at": d["id"], "broken_ts": d["ts"], "total": len(rows)}
+        payload = _audit_payload(d["id"], d["run_id"], d["agent_id"], d["ts"], d["kind"], d["skill"], d["risk"], d["detail"])
+        pv = d.get("prev_hash") or ""
+        ok = hmac.compare_digest(_link(pv, payload, keyed=True), d["hash"])
+        if ok:
+            keyed_seen = True
+        elif not keyed_seen and _link(pv, payload, keyed=False) == d["hash"]:
+            ok = True; unkeyed += 1
+        if not ok or pv != prev_hash:
+            return {"ok": False, "checked": checked, "legacy": legacy, "unkeyed": unkeyed,
+                    "broken_at": d["id"], "broken_ts": d["ts"], "total": len(rows), "reason": "link"}
         prev_hash = d["hash"]; checked += 1
-    return {"ok": True, "checked": checked, "legacy": legacy, "broken_at": None, "total": len(rows)}
+    head = audit_head()
+    if head:
+        if head.get("hash") != prev_hash or head.get("count") != len(rows) \
+                or not hmac.compare_digest(_head_sig(head.get("hash") or "", int(head.get("count") or 0)), head.get("sig") or ""):
+            return {"ok": False, "checked": checked, "legacy": legacy, "unkeyed": unkeyed,
+                    "broken_at": "head", "broken_ts": head.get("ts"), "total": len(rows), "reason": "head",
+                    "head": head}
+    return {"ok": True, "checked": checked, "legacy": legacy, "unkeyed": unkeyed, "broken_at": None,
+            "total": len(rows), "head": head}
 
 def audit_for_run(run_id):
     c = _conn(); rows = c.execute("SELECT * FROM audit WHERE run_id=? ORDER BY ts", (run_id,)).fetchall(); c.close()
@@ -606,8 +655,11 @@ def add_case(suite_id, text, expected="", source_run_id=None):
     c.execute("INSERT INTO eval_cases VALUES(?,?,?,?,?,?)", (cid, suite_id, text, expected or "", source_run_id, now()))
     c.commit(); c.close(); return cid
 
-def delete_case(cid):
-    c = _conn(); c.execute("DELETE FROM eval_cases WHERE id=?", (cid,)); c.commit(); c.close()
+def delete_case(cid, suite_id=None):
+    """Delete a case; with suite_id, only if it belongs to that suite. Returns rows removed."""
+    c = _conn()
+    cur = c.execute("DELETE FROM eval_cases WHERE id=? AND (? IS NULL OR suite_id=?)", (cid, suite_id, suite_id))
+    c.commit(); c.close(); return cur.rowcount
 
 def list_cases(suite_id):
     c = _conn(); out = _rows(c, "SELECT * FROM eval_cases WHERE suite_id=? ORDER BY created_at", (suite_id,)); c.close(); return out
@@ -617,8 +669,10 @@ def add_check(suite_id, kind, name, config):
     c.execute("INSERT INTO eval_checks VALUES(?,?,?,?,?,?)", (kid, suite_id, kind, name, json.dumps(config or {}), now()))
     c.commit(); c.close(); return kid
 
-def delete_check(kid):
-    c = _conn(); c.execute("DELETE FROM eval_checks WHERE id=?", (kid,)); c.commit(); c.close()
+def delete_check(kid, suite_id=None):
+    c = _conn()
+    cur = c.execute("DELETE FROM eval_checks WHERE id=? AND (? IS NULL OR suite_id=?)", (kid, suite_id, suite_id))
+    c.commit(); c.close(); return cur.rowcount
 
 def list_checks(suite_id):
     c = _conn(); rows = _rows(c, "SELECT * FROM eval_checks WHERE suite_id=? ORDER BY created_at", (suite_id,)); c.close()
@@ -688,8 +742,10 @@ def list_annotations(owner=None, limit=500):
         out = _rows(c, "SELECT * FROM annotations WHERE owner=? ORDER BY created_at DESC LIMIT ?", (owner, limit))
     c.close(); return out
 
-def delete_annotation(aid):
-    c = _conn(); c.execute("DELETE FROM annotations WHERE id=?", (aid,)); c.commit(); c.close()
+def delete_annotation(aid, owner=None):
+    c = _conn()
+    cur = c.execute("DELETE FROM annotations WHERE id=? AND (? IS NULL OR owner=?)", (aid, owner, owner))
+    c.commit(); c.close(); return cur.rowcount
 
 def approval_stats_by_agent(agent_ids):
     """Approved / denied counts per agent: the implicit human-feedback signal."""

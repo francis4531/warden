@@ -175,16 +175,40 @@ redeploys.
 access token on the Connections page once; it is encrypted at rest (never stored as
 plaintext) and reused after every redeploy. No per-token environment variables.
 
-- Encryption key: taken from `WARDEN_SECRET_KEY` if you set one (kept out of the data
-  dir, the stronger option), otherwise generated once and stored on the disk beside the
-  data (zero-config). Any string works as `WARDEN_SECRET_KEY`.
+- Studio secret: `WARDEN_SECRET_KEY` (any long random string). It is the root of the
+  token encryption key, the session signing key, and the audit chain's HMAC key, each
+  derived separately. There is no built-in default. If unset, a random key is generated
+  once and stored on the disk beside the data, and the admin Overview says so. Set it in
+  production: a lost key means lost connections and a broken audit chain.
 - Optional: a server can instead read its token from an environment variable
   (`GITHUB_TOKEN`, `STRIPE_API_KEY`, etc.) if you prefer that for a specific one, and
   `WARDEN_AUTOCONNECT=deepwiki,github` will auto-connect a list of servers on boot. These
   are optional conveniences, not required, the disk handles persistence on its own.
 
 Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,
-`WARDEN_DATA_DIR=/var/warden`, and optionally `WARDEN_SECRET_KEY=<any long random string>`.
+`WARDEN_DATA_DIR=/var/warden`, `WARDEN_SECRET_KEY=<any long random string>`.
+
+## Who can sign in
+
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` turn on Sign in with Google.
+- `WARDEN_ALLOWED_DOMAINS=example.com` or `WARDEN_ALLOWED_EMAILS=a@example.com,b@example.com`
+  restrict who may sign in. With neither set, any Google account can sign in and the
+  admin Overview flags it.
+- `WARDEN_ADMIN_EMAILS=admin@example.com` names the admins.
+- `WARDEN_PASSWORD` keeps a single shared password sign-in as a fallback; everyone who
+  uses it shares one workspace named `operator`. Leave it unset once Google sign-in works.
+- Every form and request from Warden's own pages carries a CSRF token; cookies are
+  `SameSite=Lax`, `HttpOnly`, and `Secure` on Render (set `WARDEN_HTTPS=1` elsewhere
+  behind TLS).
+
+## Audit chain
+
+Every event's hash is an HMAC over the previous hash and the event, keyed with the studio
+secret, and the chain head (last hash, count, signature) is stored with it. Editing a
+row, deleting from the middle, or trimming the tail breaks verification, which the admin
+Overview runs on every load. An editor with database access but without the secret
+cannot recompute a link. Someone with both can still rewrite history; to close that,
+copy the head from `/audit` to a place the app cannot write.
 
 ## Connect a real remote server (GitHub)
 

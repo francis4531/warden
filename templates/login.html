@@ -51,7 +51,7 @@
     {% if google_on and has_password %}<div class="or">or</div>{% endif %}
 
     {% if has_password %}
-    <form method="post" action="{{ url_for('login') }}">
+    <form method="post" action="{{ url_for('login') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
       <input type="password" name="password" placeholder="Operator password" {% if not google_on %}autofocus{% endif %} required>
       <input type="hidden" name="next" value="{{ next }}">
       <button type="submit">Sign in</button>
