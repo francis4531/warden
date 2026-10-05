@@ -242,6 +242,10 @@ function renderChat(events){
       chips+=`<span class="chip held"><span class="h">held</span> <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){
       chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">denied</span></span>`;
+    } else if(e.kind==='approval_decided'){
+      chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:${e.decision==='approved'?'var(--low)':'var(--high)'}">${esc(e.decision)} by ${esc(e.by||'owner')}</span></span>`;
+    } else if(e.kind==='approval_mismatch'){
+      chips+=`<span class="chip" style="border-color:color-mix(in srgb,var(--high) 45%,var(--line))">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">not run: arguments changed after approval</span></span>`;
     } else if(e.kind==='admin_view'){
       chips+=`<span class="chip" style="color:var(--dim)">&#128065; ${esc(e.text)}</span>`;
     }

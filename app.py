@@ -18,7 +18,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.15.2"
+WARDEN_VERSION = "0.16"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -566,9 +566,10 @@ def enable_connection():
 def disable_connection():
     cid = request.form.get("id")
     row = store.get_connection(cid)
-    if row and (row.get("owner") or "") and (row.get("owner") != current_owner()) and not is_admin():
-        abort(403)
-    if row and not (row.get("owner") or "") and not is_admin():
+    if not row:
+        abort(404)
+    # every connection is personal (v0.15); only its owner can disconnect it, admins included
+    if (row.get("owner") or "") != current_owner():
         abort(403)
     store.disable_connection(cid); cm().disconnect(cid)
     if request.headers.get("X-Requested-With") == "fetch":
@@ -651,7 +652,12 @@ def discover_remove():
 
 @app.route("/tool-risk", methods=["POST"])
 def tool_risk():
-    store.set_override(request.form.get("key"), request.form.get("risk"))
+    key = (request.form.get("key") or "").strip(); risk = (request.form.get("risk") or "").upper()
+    if "__" not in key or risk not in ("LOW", "MED", "HIGH"):
+        abort(400)
+    store.set_override(key, risk)
+    store.audit(None, None, "risk_override", skill=key, risk=risk,
+                detail={"by": current_owner(), "text": "%s set to %s for every user" % (key, risk)})
     return redirect(request.form.get("back") or url_for("catalog"))
 
 @app.route("/connlist")
@@ -884,6 +890,8 @@ def _fmt_event(e):
     out = {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"), "outcome": d.get("outcome") if isinstance(d, dict) else None,
            "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
            "text": text}
+    if kind == "approval_decided":
+        out["decision"] = d.get("decision"); out["by"] = d.get("by")
     if kind in ("delegation", "delegation_result"):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
     if kind == "connection_request":
@@ -1016,8 +1024,13 @@ def approval(apid):
         if not ag or (ag.get("owner") or "") != current_owner():
             abort(404)
     decision = request.form.get("decision")
-    if decision in ("approved", "denied"):
-        store.decide_approval(apid, decision, by=current_owner()); _advance_bg(ap["run_id"])
+    if decision not in ("approved", "denied"):
+        abort(400)
+    if ap["status"] != "pending" or store.decide_approval(apid, decision, by=current_owner()) is None:
+        if request.headers.get("X-Requested-With") == "fetch":
+            return {"ok": False, "error": "already_decided", "status": ap["status"]}, 409
+        return redirect(request.form.get("back") or url_for("run_view", rid=ap["run_id"]))   # already decided; nothing changes
+    _advance_bg(ap["run_id"])
     # AJAX callers get JSON; form callers get a redirect
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}
@@ -1258,8 +1271,8 @@ def _grant_and_resume(sid, agent_id, rid):
     ag = store.get_agent(agent_id)
     if not ag:
         return
-    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin():
-        return
+    if AUTH_ON and (ag.get("owner") or "") != current_owner():
+        return                           # only the agent's owner grants and resumes; admins are read-only
     new_keys = [t["key"] for t in cm().all_tools() if t["server_id"] == sid]
     if not new_keys:
         return
@@ -1475,7 +1488,7 @@ def grant_connection():
     sid = request.form.get("id"); aid = request.form.get("grant_to"); rid = request.form.get("resume")
     ag = store.get_agent(aid)
     if not ag: abort(404)
-    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin(): abort(403)
+    if AUTH_ON and (ag.get("owner") or "") != current_owner(): abort(403)
     row = store.get_connection(sid)
     if row and (row.get("owner") or "") and row.get("owner") != (ag.get("owner") or ""):
         abort(403)                       # a personal connection is only ever granted to its owner's agents

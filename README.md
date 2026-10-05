@@ -9,18 +9,23 @@ the model, but the governance around letting an agent act.
 
 ## What's real here
 
-- **Real MCP, multiple servers.** Warden ships two working local MCP servers
-  (enterprise tools + a sandboxed filesystem) and connects to external ones from a
-  catalog of common enterprise MCP servers, over stdio or remote HTTP. It discovers
+- **Real MCP, multiple servers.** Warden ships one working local MCP server (sample
+  enterprise tools) and connects to external ones from a catalog of common enterprise
+  MCP servers, over stdio or remote HTTP. It discovers
   each server's tools over the protocol and routes calls back to the right server.
 - **Real governance, including for tools you didn't write.** Built-in tools have a
   hand-set risk registry. Tools discovered from any other server are classified
   automatically and fail closed: reads run on their own, writes and anything
-  unrecognized are gated. You can override any tool's risk from the Connections page.
+  unrecognized are gated. An admin can override any tool's risk from the Catalog page;
+  the override is per catalog server and tool, so it applies to every user's own copy.
 - **Real agent loop.** A perceive -> decide -> act loop against an Anthropic model,
   with tool use across servers, pausing at the approval gate and resuming on decision.
 - **Real audit.** Every thought, tool call, result, and approval decision is written to
-  an append-only log, per-run and studio-wide, each stamped with its risk tier.
+  a hash-chained log, per-run and studio-wide, each stamped with its risk tier.
+- **Approvals are binding.** A held action stays held until its owner decides, whatever
+  changes to risk tiers or policies in the meantime; a decision is recorded once, on the
+  audit chain, and cannot be flipped afterwards; what runs is exactly the payload the
+  approver saw, and if the transcript's arguments differ nothing runs.
 
 ## Agents know where they run
 
@@ -134,6 +139,7 @@ it connects, and the card matches the credential the server actually needs:
 
     pip install -r requirements.txt
     python app.py            # http://localhost:8000
+    python -m pytest -q      # the governance promises above, as tests (sandbox mode)
 
 No key -> sandbox mode: a deterministic planner drives the same governance flow so
 the whole governance flow works offline. For live model calls:

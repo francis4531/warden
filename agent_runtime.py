@@ -78,11 +78,12 @@ def _cm():
     return cm
 
 def tool_index():
-    """model_key -> {tool, desc, server} across all connected servers, plus the team
-    delegate tool (virtual, served by the runtime rather than an MCP server)."""
+    """model_key -> {tool, desc, server, catalog_id} across all connected servers, plus the
+    team delegate tool (virtual, served by the runtime rather than an MCP server)."""
     idx = {}
     for t in _cm().all_tools():
-        idx[t["key"]] = {"tool": t["tool"], "desc": t["description"], "server": t["server_name"]}
+        idx[t["key"]] = {"tool": t["tool"], "desc": t["description"], "server": t["server_name"],
+                         "catalog_id": t.get("catalog_id") or t["key"].split("__")[0]}
     idx[DELEGATE_KEY] = {"tool": "delegate", "desc": "Hand a task to a team member agent.", "server": "Team"}
     idx[REQUEST_KEY] = {"tool": "request_connection", "desc": "Ask the operator to connect a server this agent needs.", "server": "Warden"}
     return idx
@@ -184,10 +185,23 @@ def delegate_tool(agent):
                                             "task": {"type": "string",
                                                      "description": "The task, with every fact the member needs."}}}}
 
+def override_key(key, idx=None):
+    """Admin risk overrides are stored per catalog server and tool (catalog_id__tool), so one
+    decision covers every user's own copy of that server (gmail~abcd1234__search and
+    gmail~9f8e7d6c__search both resolve to gmail__search)."""
+    idx = idx or tool_index()
+    info = idx.get(key)
+    sid, _, tool = key.partition("__")
+    cid = (info or {}).get("catalog_id") or sid.split("~")[0]
+    return "%s__%s" % (cid, tool or (info or {}).get("tool") or "")
+
 def risk_for(key, idx=None):
     idx = idx or tool_index()
     info = idx.get(key, {"tool": key, "desc": ""})
-    return gov.meta(key, info["tool"], info["desc"], store.get_override(key))
+    ov = store.get_override(override_key(key, idx))
+    if ov is None and "~" not in key:
+        ov = store.get_override(key)   # rows written before overrides were keyed by catalog id
+    return gov.meta(key, info["tool"], info["desc"], ov)
 
 def _pol_ctx(run_id, tool_key, risk):
     """Context for policy conditions: how many times this tool already ran in the run,
@@ -683,26 +697,41 @@ EVAL_HOLD_NOTE = ("This action requires human approval. This is an evaluation ru
                   "as held and NOT executed. Continue as you would if it were pending review: do not "
                   "claim it happened, and finish with what you would tell the requester.")
 
+def _decisions(run_id, agent, blocks, idx):
+    """One decision per tool_use block, computed once. An approval row that already exists
+    for a block is authoritative: the hold stays a hold (and keeps the risk it was raised
+    at) whatever happened to overrides, policies or the clock since it was raised. Without
+    this, lowering a risk tier while a run is paused would execute the held call with the
+    approval still pending."""
+    out = {}
+    for b in blocks:
+        d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        ap = _approval_for(run_id, b["id"])
+        if ap is not None and d["effect"] != "deny":
+            d = {**d, "effect": "gate", "risk": ap["risk"] or d["risk"],
+                 "policy": (ap["arguments"] or {}).get("policy") or d["policy"]}
+        out[b["id"]] = (d, ap)
+    return out
+
 def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
     run = store.get_run(run_id)
     in_eval = bool(run.get("eval_run_id"))
     blocks=[b for b in assistant_msg["content"] if b.get("type")=="tool_use"]
+    dec = _decisions(run_id, agent, blocks, idx)
     for b in blocks:
-        d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        d, ap = dec[b["id"]]
         if d["effect"]=="gate" and in_eval:
             continue                      # evals never execute or queue gated actions
-        if d["effect"]=="gate":
-            ap=_approval_for(run_id,b["id"])
-            if ap is None:
-                store.create_approval(run_id, agent["id"], b["name"], d["risk"],
-                                      {"tool_use_id":b["id"],"input":b["input"],"policy":d["policy"]})
-                store.audit(run_id, agent["id"], "approval_request", skill=b["name"],
-                            risk=d["risk"], detail={"input":b["input"], "policy":d["policy"]})
+        if d["effect"]=="gate" and ap is None:
+            store.create_approval(run_id, agent["id"], b["name"], d["risk"],
+                                  {"tool_use_id":b["id"],"input":b["input"],"policy":d["policy"]})
+            store.audit(run_id, agent["id"], "approval_request", skill=b["name"],
+                        risk=d["risk"], detail={"input":b["input"], "policy":d["policy"]})
+            dec[b["id"]] = (d, _approval_for(run_id, b["id"]))
     for b in blocks:
-        if not in_eval and decide(run_id, agent["id"], b["name"], b["input"], idx)["effect"]=="gate":
-            ap=_approval_for(run_id,b["id"])
-            if ap and ap["status"]=="pending":
-                return "paused"
+        d, ap = dec[b["id"]]
+        if not in_eval and d["effect"]=="gate" and ap and ap["status"]=="pending":
+            return "paused"
     # delegations: start member runs for every delegate call that is allowed (or approved),
     # drive them together, and pause the lead if any member is now waiting on a human
     deleg_err = {}
@@ -710,13 +739,12 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
     for b in blocks:
         if b["name"] != DELEGATE_KEY:
             continue
-        d = decide(run_id, agent["id"], b["name"], b["input"], idx)
+        d, ap = dec[b["id"]]
         if d["effect"] == "deny":
             continue
         if d["effect"] == "gate":
             if in_eval:
                 continue                  # a gated hand-off is held like any other gated action
-            ap = _approval_for(run_id, b["id"])
             if not ap or ap["status"] != "approved":
                 continue
         ch = _child_for(run_id, b["id"])
@@ -732,9 +760,20 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                 return "paused"
     results=[]
     for b in blocks:
-        d=decide(run_id, agent["id"], b["name"], b["input"], idx)
+        d, ap = dec[b["id"]]
         gated=d["effect"]=="gate"
-        ap=_approval_for(run_id,b["id"]) if gated else None
+        if gated and ap and ap["status"]=="approved" and not in_eval:
+            # execute exactly what the approver saw. The snapshot in the approval row is the
+            # contract; if the transcript's arguments differ, nothing runs.
+            approved_in = (ap["arguments"] or {}).get("input")
+            if approved_in != b["input"]:
+                rtext=json.dumps({"denied":True,"by":"warden","note":"The arguments changed after approval; the approved "
+                                  "action was not executed. Explain that it must be requested again."})
+                store.audit(run_id, agent["id"], "approval_mismatch", skill=b["name"], risk=d["risk"],
+                            detail={"approved_input":approved_in,"input":b["input"],"outcome":"denied","approval":ap["id"]})
+                results.append({"type":"tool_result","tool_use_id":b["id"],"content":rtext})
+                continue
+            b = {**b, "input": approved_in}
         if d["effect"]=="deny":
             rtext=json.dumps({"denied":True,"by":"policy","policy":d["policy"],
                               "note":"A governance policy blocked this action. Do not retry; explain that it is not permitted."})

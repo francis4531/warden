@@ -367,10 +367,20 @@ def get_approval(apid):
     d = dict(r); d["arguments"] = json.loads(d["arguments"] or "{}"); return d
 
 def decide_approval(apid, status, by="operator"):
+    """Record a human decision. Only a pending approval can be decided, and exactly once;
+    the decision itself goes on the hash-chained audit log. Returns the approval row, or
+    None if it was not pending (already decided, or unknown)."""
     c = _conn()
-    c.execute("UPDATE approvals SET status=?, decided_at=?, decided_by=? WHERE id=?",
-              (status, now(), by, apid))
+    cur = c.execute("UPDATE approvals SET status=?, decided_at=?, decided_by=? WHERE id=? AND status='pending'",
+                    (status, now(), by, apid))
     c.commit(); c.close()
+    if cur.rowcount != 1:
+        return None
+    ap = get_approval(apid)
+    audit(ap["run_id"], ap["agent_id"], "approval_decided", skill=ap["skill"], risk=ap["risk"],
+          detail={"approval": apid, "decision": status, "by": by,
+                  "input": (ap.get("arguments") or {}).get("input")})
+    return ap
 
 def pending_approvals(owner=None):
     c = _conn()
