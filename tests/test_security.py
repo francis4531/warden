@@ -156,9 +156,17 @@ def test_child_env_has_no_studio_secrets(warden, monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_env")
     env = cm._child_env("github", {"catalog_id": "github"})
     assert "ANTHROPIC_API_KEY" not in env and "GOOGLE_CLIENT_SECRET" not in env and "WARDEN_SECRET_KEY" not in env
-    assert env.get("GITHUB_TOKEN") == "ghp_env" and "PATH" in env
+    assert "GITHUB_TOKEN" not in env, "a token in the studio's environment is never handed to a connection"
+    assert "PATH" in env
     env = cm._child_env("github", {"catalog_id": "github", "token": "ghp_mine"})
     assert env.get("GITHUB_TOKEN") == "ghp_mine"
+
+
+def test_http_connections_never_read_tokens_from_env(monkeypatch):
+    import connection_manager as cm
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_env")
+    url, headers = cm._http_params("github", {"catalog_id": "github"})
+    assert "ghp_env" not in json.dumps(headers or {})
 
 
 # ---- 19. healthz says little to strangers ----

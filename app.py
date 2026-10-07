@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.19"
+WARDEN_VERSION = "0.19.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -377,15 +377,9 @@ def _require_admin():
         abort(403)
 
 
-def _env_specs():
-    """Servers to auto-connect on boot, from WARDEN_AUTOCONNECT (comma-separated catalog ids).
-    Tokens resolve from each server's env var, so config survives redeploys."""
-    ids = [x.strip() for x in os.environ.get("WARDEN_AUTOCONNECT", "").split(",") if x.strip()]
-    return [{"id": i, "transport": cat.BY_ID[i]["transport"]} for i in ids if i in cat.BY_ID]
-
 def cm():
     c = cmod.manager()
-    c.ensure_started(store.enabled_connections() + _env_specs())
+    c.ensure_started(store.enabled_connections())      # only what users connected themselves
     return c
 
 @app.context_processor

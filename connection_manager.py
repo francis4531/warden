@@ -88,9 +88,7 @@ def _http_params(sid, spec):
     cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     url = spec.get("url") or cat.get("run")
     headers = {}
-    tok = spec.get("token")
-    if not tok and cat.get("env"):          # fall back to an environment variable
-        tok = os.environ.get(cat["env"])
+    tok = spec.get("token")                 # only ever the owner's own token; never from the environment
     if tok:
         import oauth
         if oauth.is_oauth(tok):
@@ -125,10 +123,8 @@ def _child_env(sid, spec):
     env = {k: os.environ[k] for k in _ENV_PASS if k in os.environ}
     cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     var = cat.get("env")
-    if var:
-        tok = spec.get("token") or os.environ.get(var)
-        if tok:
-            env[var] = tok
+    if var and spec.get("token"):          # the owner's own token, passed the way the server expects it
+        env[var] = spec["token"]
     for k, v in (spec.get("env") or {}).items():          # explicit per-connection variables
         if isinstance(k, str) and isinstance(v, str):
             env[k] = v

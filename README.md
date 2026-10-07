@@ -190,10 +190,10 @@ plaintext) and reused after every redeploy. No per-token environment variables.
   derived separately. There is no built-in default. If unset, a random key is generated
   once and stored on the disk beside the data, and the admin Overview says so. Set it in
   production: a lost key means lost connections and a broken audit chain.
-- Optional: a server can instead read its token from an environment variable
-  (`GITHUB_TOKEN`, `STRIPE_API_KEY`, etc.) if you prefer that for a specific one, and
-  `WARDEN_AUTOCONNECT=deepwiki,github` will auto-connect a list of servers on boot. These
-  are optional conveniences, not required, the disk handles persistence on its own.
+- No account tokens in the environment, ever. GitHub, Gmail, Notion and the rest are
+  connected by each user, with their own account or key, from the Connections page or
+  from the card an agent raises when it needs something. Warden has no code path that
+  reads a service token from an environment variable.
 
 Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,
 `WARDEN_DATA_DIR=/var/warden`, `WARDEN_SECRET_KEY=<any long random string>`.
