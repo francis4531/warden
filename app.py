@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.17"
+WARDEN_VERSION = "0.18"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -416,7 +416,7 @@ def connected_tools():
         if not _visible(t):
             continue
         mk = _model_key(t)
-        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk), t.get("annotations"))
         out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk})
     return out
 
@@ -567,7 +567,7 @@ def catalog():
         if mk in seen:
             continue
         seen.add(mk)
-        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk), t.get("annotations"))
         entry = cat.BY_ID.get(t.get("catalog_id") or "", {})
         tools.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk,
                       "server_name": entry.get("name") or t["server_name"]})

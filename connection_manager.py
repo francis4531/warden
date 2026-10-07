@@ -246,7 +246,7 @@ class _Manager:
                     out.append({"key": key, "server_id": sid, "server_name": sname,
                                 "owner": st.get("owner") or "", "catalog_id": st.get("catalog_id") or sid,
                                 "tool": t["name"], "description": t["description"],
-                                "input_schema": t["input_schema"]})
+                                "input_schema": t["input_schema"], "annotations": t.get("annotations") or {}})
         return out
 
     def call_by_key(self, key, args):
@@ -257,8 +257,18 @@ class _Manager:
             return self._lt.run(self._acall(sid, tool, args), timeout=90)
 
 def _tools(resp):
-    return [{"name": t.name, "description": t.description or "", "input_schema": t.inputSchema}
-            for t in resp.tools]
+    out = []
+    for t in resp.tools:
+        ann = getattr(t, "annotations", None)
+        a = {}
+        if ann is not None:
+            for k in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
+                v = getattr(ann, k, None)
+                if v is not None:
+                    a[k] = bool(v)
+        out.append({"name": t.name, "description": t.description or "", "input_schema": t.inputSchema,
+                    "annotations": a})
+    return out
 def _text(result):
     text = "\n".join(c.text for c in result.content if getattr(c, "type", None) == "text")
     if getattr(result, "isError", False):

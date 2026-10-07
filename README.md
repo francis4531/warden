@@ -15,13 +15,19 @@ the model, but the governance around letting an agent act.
   each server's tools over the protocol and routes calls back to the right server.
 - **Real governance, including for tools you didn't write.** Built-in tools have a
   hand-set risk registry. Tools discovered from any other server are classified
-  automatically and fail closed: reads run on their own, writes and anything
-  unrecognized are gated. An admin can override any tool's risk from the Catalog page;
+  automatically and fail closed: a server's own MCP annotations (read-only, destructive)
+  come first, then the strongest verb anywhere in the name (find_and_replace is a write),
+  and anything unrecognized is gated. An admin can override any tool's risk from the Catalog page;
   the override is per catalog server and tool, so it applies to every user's own copy.
 - **Real agent loop.** A perceive -> decide -> act loop against an Anthropic model,
   with tool use across servers, pausing at the approval gate and resuming on decision.
 - **Real audit.** Every thought, tool call, result, and approval decision is written to
   a hash-chained log, per-run and studio-wide, each stamped with its risk tier.
+- **Tool output is data.** Everything a tool returns enters the transcript labelled as
+  outside data with a size cap, and the agent is told that instructions found inside it
+  (a web page, an email, a record) are content to report, never commands to follow. This
+  is a boundary, not a guarantee: the risk gate is what stops a hijacked agent from
+  doing damage, which is why writes are held.
 - **Approvals are binding.** A held action stays held until its owner decides, whatever
   changes to risk tiers or policies in the meantime; a decision is recorded once, on the
   audit chain, and cannot be flipped afterwards; what runs is exactly the payload the
@@ -54,7 +60,8 @@ covers the whole tree. Members cannot delegate further (`WARDEN_MAX_DELEGATION_D
 
 An eval suite belongs to one agent and holds cases (inputs, optionally with an expected
 output) and checks. Running a suite creates a real run per case in evaluation mode: reads
-run, and anything that would need human approval is recorded as held and never executed.
+(LOW) run; anything above a read, including MED tools and HIGH tools a policy would
+auto-run, is recorded as held and never executed.
 Checks come in three kinds, cheapest first: code assertions (answer contains / regex,
 red-flag words, tool called or not, held for approval, max tool calls, cost under N, no tool
 errors, quotes grounded in tool results), golden comparisons against an expected output,
