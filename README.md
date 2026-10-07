@@ -31,7 +31,10 @@ the model, but the governance around letting an agent act.
 - **Approvals are binding.** A held action stays held until its owner decides, whatever
   changes to risk tiers or policies in the meantime; a decision is recorded once, on the
   audit chain, and cannot be flipped afterwards; what runs is exactly the payload the
-  approver saw, and if the transcript's arguments differ nothing runs.
+  approver saw, and if the transcript's arguments differ nothing runs. The approver is
+  the agent's owner: Warden's model is accountability (every decision is attributed and
+  on the record), not separation of duties. Admins see pending actions and cannot act on
+  them.
 
 ## Agents know where they run
 
