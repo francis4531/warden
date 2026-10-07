@@ -12,7 +12,8 @@ Tempo, Honeycomb, ...), configured via the standard env vars:
   OTEL_EXPORTER_OTLP_HEADERS    e.g. x-api-key=abc,x-dataset=warden   (optional auth)
 No extra dependencies: the OTLP payload is built and POSTed with the standard library.
 """
-import os, json, hashlib, urllib.request
+import os
+import re, json, hashlib, urllib.request
 from datetime import datetime, timezone
 import store
 
@@ -26,32 +27,63 @@ _MARKERS = ["token", "secret", "password", "passwd", "api_key", "apikey", "acces
             "private_key", "email", "passphrase"]
 _MARKERS += [m.strip().lower() for m in os.environ.get("WARDEN_REDACT_KEYS", "").split(",") if m.strip()]
 
+_WORD = re.compile(r"[a-z0-9]+")
 def _sensitive(k):
-    k = str(k).lower()
-    return any(m in k for m in _MARKERS)
+    """A key is sensitive when one of its words (or word pairs) is a marker, so 'card_number'
+    and 'apiKey' match while 'discard' and 'shipping' do not."""
+    k = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(k)).lower()
+    words = _WORD.findall(k)
+    joined = " " + " ".join(words) + " "
+    return any((" " + m.replace("_", " ") + " ") in joined for m in _MARKERS)
+
+# value patterns that are sensitive wherever they appear, whatever the key is called
+_VALUE_PATTERNS = [
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[email]"),
+    (re.compile(r"\b(?:\d[ -]?){13,19}\b"), "[card-number]"),
+    (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[ssn]"),
+    (re.compile(r"\b(?:sk|ghp|gho|ghu|xoxb|xoxp|AKIA|AIza)[A-Za-z0-9_-]{12,}\b"), "[api-key]"),
+    (re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]+=*", re.I), "Bearer [token]"),
+    (re.compile(r"\b(?:\+?\d{1,3}[ -]?)?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}\b"), "[phone]"),
+]
+
+def scrub(text):
+    """Pattern-based scrubbing of a string: emails, card and social-security numbers, API
+    keys, bearer tokens, phone numbers."""
+    if not REDACT_ON or not isinstance(text, str):
+        return text
+    for rx, rep in _VALUE_PATTERNS:
+        text = rx.sub(rep, text)
+    return text
 
 def redact(obj):
-    """Recursively replace values whose key looks sensitive with [redacted]. Structure and
-    non-sensitive values are preserved so the telemetry stays useful."""
+    """Recursively replace values whose key looks sensitive with [redacted], and scrub
+    sensitive-looking values everywhere else. Structure and ordinary values are preserved
+    so the telemetry stays useful."""
     if not REDACT_ON:
         return obj
     if isinstance(obj, dict):
         return {k: ("[redacted]" if _sensitive(k) else redact(v)) for k, v in obj.items()}
     if isinstance(obj, list):
         return [redact(v) for v in obj]
+    if isinstance(obj, str):
+        return scrub(obj)
     return obj
 
+# Payload previews (tool arguments and results) are off unless an operator turns them on:
+# they are the part of a trace most likely to carry customer data.
+PREVIEWS_ON = os.environ.get("WARDEN_TRACE_PAYLOADS", "off").lower() in ("1", "on", "true", "yes")
+
 def _preview(obj, n=600):
-    if obj is None:
+    if obj is None or not PREVIEWS_ON:
         return None
     try:
         s = json.dumps(redact(obj), ensure_ascii=False)
     except Exception:
-        s = str(obj)
+        s = scrub(str(obj))
     return s if len(s) <= n else s[:n] + "\u2026"
 
 def redaction_status():
-    return {"on": REDACT_ON, "patterns": len(_MARKERS)}
+    return {"on": REDACT_ON, "patterns": len(_MARKERS) + len(_VALUE_PATTERNS), "payloads": PREVIEWS_ON}
 
 def _ns(ts_iso):
     if not ts_iso:
@@ -100,7 +132,7 @@ def build_spans(run_id):
 
     spans = [{
         "trace_id": trace_id, "span_id": root_id, "parent": None,
-        "name": "run: " + (run["input"] or "")[:60], "start": t0, "end": max(t1, t0 + 1),
+        "name": "run " + run["id"], "start": t0, "end": max(t1, t0 + 1),
         "attrs": {"warden.run_id": run_id, "warden.agent_id": run["agent_id"],
                   "warden.status": run["status"]},
         "error": run["status"] == "error", "row": "run",

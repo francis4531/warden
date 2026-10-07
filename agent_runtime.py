@@ -12,7 +12,7 @@ import governance as gov
 import policy
 import store
 
-MODEL_DEFAULT = os.environ.get("WARDEN_MODEL", "claude-sonnet-4-5")
+MODEL_DEFAULT = os.environ.get("WARDEN_MODEL", "claude-sonnet-4-6")
 MAX_TOKENS = int(os.environ.get("WARDEN_MAX_TOKENS", "4096"))
 SANDBOX = not bool(os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -29,23 +29,58 @@ HIDDEN_CATALOG = lambda: set()      # app installs this: catalog ids an admin to
 MAX_DEPTH = int(os.environ.get("WARDEN_MAX_DELEGATION_DEPTH", "1"))      # lead -> member only
 MAX_DELEGATIONS = int(os.environ.get("WARDEN_MAX_DELEGATIONS", "8"))     # per lead run
 
-# Estimated USD price per 1M tokens (input, output). Approximate list prices, editable;
-# used only to estimate cost for the observability view. Matched by substring of model id.
-PRICES = {"opus": (15.0, 75.0), "sonnet": (3.0, 15.0), "haiku": (0.80, 4.0)}
-def _cost(model, inp, out):
-    rate = (3.0, 15.0)
-    m = (model or "").lower()
-    for k, v in PRICES.items():
-        if k in m:
-            rate = v; break
-    return round(inp / 1e6 * rate[0] + out / 1e6 * rate[1], 6)
+# USD per 1M tokens: (input, output, cache write 5m, cache read). List prices as published
+# at platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-07); matched by the
+# longest model-id prefix, with a family fallback for ids not listed here.
+PRICES = {
+    "claude-fable-5-1":  (10.0, 50.0, 12.50, 0.25),
+    "claude-mythos-5-1": (10.0, 50.0, 12.50, 0.25),
+    "claude-fable-5":    (10.0, 50.0, 12.50, 1.00),
+    "claude-mythos-5":   (10.0, 50.0, 12.50, 1.00),
+    "claude-opus-5-5":   (4.0, 20.0, 5.00, 0.20),
+    "claude-opus-5":     (5.0, 25.0, 6.25, 0.50),
+    "claude-opus-4-8":   (5.0, 25.0, 6.25, 0.50),
+    "claude-opus-4-7":   (5.0, 25.0, 6.25, 0.50),
+    "claude-opus-4-6":   (5.0, 25.0, 6.25, 0.50),
+    "claude-opus-4-5":   (5.0, 25.0, 6.25, 0.50),
+    "claude-opus-4-1":   (15.0, 75.0, 18.75, 1.50),
+    "claude-opus-4":     (15.0, 75.0, 18.75, 1.50),
+    "claude-sonnet-5-5": (2.0, 10.0, 2.50, 0.20),
+    "claude-sonnet-5":   (2.0, 10.0, 2.50, 0.20),
+    "claude-sonnet-4-6": (3.0, 15.0, 3.75, 0.30),
+    "claude-sonnet-4-5": (3.0, 15.0, 3.75, 0.30),
+    "claude-sonnet-4":   (3.0, 15.0, 3.75, 0.30),
+    "claude-haiku-4-5":  (1.0, 5.0, 1.25, 0.10),
+    "claude-haiku-3-5":  (0.80, 4.0, 1.00, 0.08),
+}
+_FAMILY = {"fable": (10.0, 50.0, 12.5, 0.25), "mythos": (10.0, 50.0, 12.5, 0.25), "opus": (5.0, 25.0, 6.25, 0.5),
+           "sonnet": (3.0, 15.0, 3.75, 0.3), "haiku": (1.0, 5.0, 1.25, 0.1)}
 
-def rate_for(model):
+def _rate4(model):
     m = (model or MODEL_DEFAULT).lower()
+    best = None
     for k, v in PRICES.items():
+        if m.startswith(k) and (best is None or len(k) > len(best[0])):
+            best = (k, v)
+    if best:
+        return best[1]
+    for k, v in _FAMILY.items():
         if k in m:
             return v
-    return (3.0, 15.0)
+    return (3.0, 15.0, 3.75, 0.3)
+
+def _cost(model, inp, out, cache_write=0, cache_read=0):
+    r = _rate4(model)
+    return round(inp / 1e6 * r[0] + out / 1e6 * r[1] + cache_write / 1e6 * r[2] + cache_read / 1e6 * r[3], 6)
+
+def rate_for(model):
+    """(input, output) list price per 1M tokens, for estimates shown before a run."""
+    return _rate4(model)[:2]
+
+def model_for(agent):
+    """The model this agent runs on: its own setting if one was entered, else the studio
+    default (WARDEN_MODEL)."""
+    return (agent or {}).get("model") or MODEL_DEFAULT
 
 def _run_cost(run_id, tree=True):
     """Model spend for a run. With tree=True (the default) a lead's cost includes every
@@ -246,6 +281,43 @@ def tools_for(agent, depth=0):
     return out
 
 # ---- model dispatch ----
+MAX_CALLS_PER_ADVANCE = 12
+MAX_CALLS_PER_RUN = int(os.environ.get("WARDEN_MAX_CALLS_PER_RUN", "60"))   # across every resume
+CONTEXT_TOKENS = int(os.environ.get("WARDEN_CONTEXT_TOKENS", "150000"))   # transcript budget, estimated
+
+def _est_tokens(obj):
+    """A cheap token estimate (about 4 characters per token) for trimming decisions."""
+    try:
+        return len(json.dumps(obj)) // 4
+    except Exception:
+        return len(str(obj)) // 4
+
+def _trim(messages, budget=None):
+    """Keep the transcript inside the context window. The first user message (the task) is
+    always kept; the oldest assistant/user exchanges after it are dropped in pairs, which
+    keeps tool_use and tool_result together, and a note in the first message says how many
+    were dropped. Returns the number of messages removed."""
+    budget = budget or CONTEXT_TOKENS
+    if _est_tokens(messages) <= budget or len(messages) < 4:
+        return 0
+    dropped = 0
+    while _est_tokens(messages) > budget and len(messages) >= 4:
+        # messages[0] is the task; remove messages[1] (assistant) and messages[2] (user)
+        if messages[1].get("role") != "assistant" or messages[2].get("role") != "user":
+            break
+        del messages[1:3]; dropped += 2
+    if dropped:
+        first = messages[0]
+        note = "\n\n[Warden: %d earlier turns of this conversation were omitted to fit the context window. Work from what remains.]" % dropped
+        if isinstance(first.get("content"), str):
+            if "[Warden: " not in first["content"]:
+                first["content"] = first["content"] + note
+            else:
+                first["content"] = re.sub(r"\[Warden: \d+ earlier turns[^\]]*\]", note.strip(), first["content"])
+        elif isinstance(first.get("content"), list):
+            first["content"].append({"type": "text", "text": note.strip()})
+    return dropped
+
 def _repair(messages):
     """Guarantee the API invariant: every assistant tool_use is answered by a tool_result
     in the very next message. If a tool crashed, a response was truncated, or a follow-up
@@ -300,32 +372,44 @@ def _friendly_error(ex):
         return "The model rejected the request (400): " + msg[:300]
     return "The run hit an error talking to the model: " + str(ex)[:200]
 
-def _call_model(system, messages, tools):
+MODEL_TIMEOUT = float(os.environ.get("WARDEN_MODEL_TIMEOUT", "120"))   # seconds per model call
+
+def _call_model(system, messages, tools, model=None):
     t0 = time.time()
+    model = model or MODEL_DEFAULT
     if SANDBOX:
         r = _sandbox_model(messages, tools)
         r["usage"] = {"input_tokens": 0, "output_tokens": 0}
         r["model"] = "sandbox"; r["latency_ms"] = int((time.time() - t0) * 1000)
         return r
     import anthropic
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(timeout=MODEL_TIMEOUT, max_retries=0)
     # Tool keys for personal connections look like "google_gmail~1dc87766__search"; the API only
     # accepts [a-zA-Z0-9_-] in a tool name, so the wire name swaps "~" for "-" and is mapped back.
     back = {_wire_name(t["name"]): t["name"] for t in tools}
     wire_tools = [{**t, "name": _wire_name(t["name"])} for t in tools]
+    # Prompt caching: the system prompt and the tool list are identical on every turn of a
+    # run, so they are marked as a cache prefix and billed at the cache-read rate after the
+    # first call. The last tool carries the breakpoint; the system block carries its own.
+    if wire_tools:
+        wire_tools[-1] = {**wire_tools[-1], "cache_control": {"type": "ephemeral"}}
+    wire_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
     wire_msgs = _wire_messages(messages)
     last = None
     for attempt in range(3):
         try:
-            resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=MAX_TOKENS,
-                                          system=system, messages=wire_msgs, tools=wire_tools)
+            resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
+                                          system=wire_system, messages=wire_msgs, tools=wire_tools)
             content = [_b2d(b) for b in resp.content]
             for b in content:
                 if b.get("type") == "tool_use":
                     b["name"] = back.get(b["name"], b["name"])
+            u = resp.usage
             return {"stop_reason": resp.stop_reason, "content": content,
-                    "usage": {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens},
-                    "model": MODEL_DEFAULT, "latency_ms": int((time.time() - t0) * 1000)}
+                    "usage": {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                              "cache_write_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                              "cache_read_tokens": getattr(u, "cache_read_input_tokens", 0) or 0},
+                    "model": model, "latency_ms": int((time.time() - t0) * 1000)}
         except Exception as ex:
             last = ex
             if _is_transient(ex) and attempt < 2:
@@ -574,7 +658,15 @@ def _advance_once(run_id):
     root_agent = store.get_agent(root["agent_id"]) if root else None
     root_budget = float(root_agent.get("budget_usd") or 0) if root_agent else 0.0
     daily_cap = float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)
-    for _ in range(12):
+    calls_so_far = sum(1 for e in store.audit_for_run(run_id) if e["kind"] == "model_call")
+    for _ in range(MAX_CALLS_PER_ADVANCE):
+        if calls_so_far >= MAX_CALLS_PER_RUN:
+            store.audit(run_id, agent["id"], "budget_stop",
+                        detail={"text": "Run stopped: it reached the ceiling of %d model calls for one conversation "
+                                        "(across every resume). Start a new conversation to continue." % MAX_CALLS_PER_RUN,
+                                "budget": MAX_CALLS_PER_RUN, "spent": calls_so_far, "scope": "calls"})
+            store.update_run(run_id, status="done", transcript=messages)
+            return store.get_run(run_id)
         last = messages[-1] if messages else None
         if last and last["role"]=="assistant" and _has_tool_use(last):
             if _execute_tool_turn(run_id, agent, last, messages, idx) == "paused":
@@ -612,8 +704,12 @@ def _advance_once(run_id):
                 store.update_run(run_id, status="done", transcript=messages)
                 return store.get_run(run_id)
         _repair(messages)   # never send an unanswered tool_use to the API
+        dropped = _trim(messages)
+        if dropped:
+            store.audit(run_id, agent["id"], "context_trimmed", detail={"dropped": dropped,
+                        "text": "%d earlier turns dropped to fit the context window" % dropped})
         try:
-            resp = _call_model(system, messages, tools)
+            resp = _call_model(system, messages, tools, model=model_for(agent))
         except Exception as ex:
             store.audit(run_id, agent["id"], "error", detail={"text": _friendly_error(ex)})
             store.update_run(run_id, status="error", transcript=messages)
@@ -621,12 +717,23 @@ def _advance_once(run_id):
         u = resp.get("usage", {})
         store.audit(run_id, agent["id"], "model_call",
                     detail={"model": resp.get("model"), "input_tokens": u.get("input_tokens", 0),
-                            "output_tokens": u.get("output_tokens", 0), "latency_ms": resp.get("latency_ms", 0),
-                            "cost": _cost(resp.get("model"), u.get("input_tokens", 0), u.get("output_tokens", 0))})
+                            "output_tokens": u.get("output_tokens", 0),
+                            "cache_write_tokens": u.get("cache_write_tokens", 0), "cache_read_tokens": u.get("cache_read_tokens", 0),
+                            "latency_ms": resp.get("latency_ms", 0),
+                            "cost": _cost(resp.get("model"), u.get("input_tokens", 0), u.get("output_tokens", 0),
+                                          u.get("cache_write_tokens", 0), u.get("cache_read_tokens", 0))})
+        calls_so_far += 1
         messages.append({"role":"assistant","content":resp["content"]})
         for blk in resp["content"]:
             if blk.get("type")=="text" and blk.get("text"):
                 store.audit(run_id, agent["id"], "thought", detail={"text":blk["text"]})
+        if resp["stop_reason"] == "max_tokens" and not _has_tool_use(messages[-1]):
+            # the reply hit the output limit mid-sentence: ask for the rest instead of
+            # presenting a cut-off answer as final
+            store.audit(run_id, agent["id"], "continued", detail={"text": "reply hit the output limit; asked to continue"})
+            messages.append({"role":"user","content":"[Warden: your reply was cut off at the output limit. Continue exactly where you stopped; do not repeat what you already wrote.]"})
+            store.update_run(run_id, transcript=messages)
+            continue
         if resp["stop_reason"]!="tool_use":
             final=" ".join(b.get("text","") for b in resp["content"] if b.get("type")=="text").strip()
             store.audit(run_id, agent["id"], "final", detail={"text":final})

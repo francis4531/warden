@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.18"
+WARDEN_VERSION = "0.19"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -76,6 +76,9 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SECURE=os.environ.get("WARDEN_INSECURE_COOKIES", "") != "1" and bool(os.environ.get("RENDER") or os.environ.get("WARDEN_HTTPS", "")),
                   PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=14))
 store.init()
+_orphans = store.fail_orphaned_runs()
+if _orphans:
+    logging.getLogger("warden").warning("%d run(s) were still 'running' at boot and were marked as interrupted", len(_orphans))
 if not vault.from_env():
     logging.getLogger("warden").warning("WARDEN_SECRET_KEY is not set; using a generated key in the data dir. "
                                         "Set it in production so sessions and secrets survive a disk change.")
@@ -397,7 +400,7 @@ def inject_globals():
         av = False
     return {"pending": [] if av else store.pending_approvals(_scope()), "mode": rt.mode(), "admin_view": av, "csrf_token": csrf_token(),
             "hat": (session.get("hat", "admin") if av or is_admin() else "agents") if _authed() else "agents",
-            "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
+            "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS), "default_model": rt.MODEL_DEFAULT,
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
 def _visible(t):

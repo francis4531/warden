@@ -208,6 +208,34 @@ Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-so
   `SameSite=Lax`, `HttpOnly`, and `Secure` on Render (set `WARDEN_HTTPS=1` elsewhere
   behind TLS).
 
+## Telemetry export
+
+A run can be exported as an OpenTelemetry trace (`POST /run/<id>/export`) to
+`OTEL_EXPORTER_OTLP_ENDPOINT`. Spans carry tool names, risk tiers, outcomes, latency and
+cost. Tool arguments and results are left out unless `WARDEN_TRACE_PAYLOADS=on`; when
+they are included, keys that look sensitive are replaced and values are scrubbed for
+emails, card and social-security numbers, API keys, bearer tokens and phone numbers
+(`WARDEN_REDACT_KEYS` extends the key list). Span names never contain user text.
+
+## Model and cost
+
+Each agent runs on the model entered in the builder, or `WARDEN_MODEL` (default
+`claude-sonnet-4-6`) when none is. The system prompt and tool list are sent as a cache
+prefix, so after the first turn of a run they bill at the cache-read rate. Cost is
+computed from the published list prices per model id, including cache write and read
+tokens; the table lives in `agent_runtime.PRICES` and should be re-checked when prices
+change.
+
+## Loop limits
+
+A conversation may make at most 12 model calls per turn and `WARDEN_MAX_CALLS_PER_RUN`
+(default 60) across all of its turns and resumes. A model call times out after
+`WARDEN_MODEL_TIMEOUT` seconds (default 120). When the transcript grows past
+`WARDEN_CONTEXT_TOKENS` (default 150,000, estimated), the oldest exchanges are dropped
+in pairs and the first message says so. A reply cut off at the output limit is asked to
+continue rather than shown as final. Runs still marked running when Warden restarts are
+marked interrupted at boot and can be continued with a message.
+
 ## Audit chain
 
 Every event's hash is an HMAC over the previous hash and the event, keyed with the studio
