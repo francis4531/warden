@@ -4,6 +4,7 @@ Connect MCP servers, build an agent from their tools, run it against a live mode
 gate high-risk actions behind human approval with a full audit trail.
 """
 import os
+import logging
 import datetime
 import threading
 import json as _json
@@ -18,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.15.2"
+WARDEN_VERSION = "0.19.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -65,9 +66,22 @@ except Exception:
 # captured once at process start; on Render each deploy restarts the process
 DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M %Z")
 
+import vault
 app = Flask(__name__)
-app.secret_key = os.environ.get("WARDEN_SECRET_KEY", "dev-insecure-change-me")
+# The session signing key is derived from the studio secret (WARDEN_SECRET_KEY, or a random
+# key generated once into the data dir). There is no built-in default: a forgeable cookie
+# would make anyone an admin.
+app.secret_key = vault.derive("session")
+app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SECURE=os.environ.get("WARDEN_INSECURE_COOKIES", "") != "1" and bool(os.environ.get("RENDER") or os.environ.get("WARDEN_HTTPS", "")),
+                  PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=14))
 store.init()
+_orphans = store.fail_orphaned_runs()
+if _orphans:
+    logging.getLogger("warden").warning("%d run(s) were still 'running' at boot and were marked as interrupted", len(_orphans))
+if not vault.from_env():
+    logging.getLogger("warden").warning("WARDEN_SECRET_KEY is not set; using a generated key in the data dir. "
+                                        "Set it in production so sessions and secrets survive a disk change.")
 
 # ---- authentication ----
 # Sign in with Google (OAuth 2.0), optionally restricted to an email allow-list.
@@ -97,6 +111,17 @@ def _google_connectors_on():
     cid, sec = _google_client()
     return bool(cid and sec)
 ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ALLOWED_EMAILS", "").split(",") if e.strip()}
+ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in os.environ.get("WARDEN_ALLOWED_DOMAINS", "").split(",") if d.strip()}
+
+def _email_allowed(email):
+    """Who may sign in with Google: an explicit email list, a domain list, or (if neither is
+    set) anyone with a Google account. The last case is flagged on the admin Overview."""
+    if not ALLOWED_EMAILS and not ALLOWED_DOMAINS:
+        return True
+    return email in ALLOWED_EMAILS or email.rsplit("@", 1)[-1] in ALLOWED_DOMAINS
+
+def signin_open():
+    return GOOGLE_ON and not ALLOWED_EMAILS and not ALLOWED_DOMAINS
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
 rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
@@ -218,6 +243,30 @@ def _redirect_uri():
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
     return (base + "/auth/google/callback") if base else url_for("google_callback", _external=True)
 
+def csrf_token():
+    """Per-session token, created on first use and rendered into every form and the page
+    <meta>; a POST without it (or the X-CSRF / X-Requested-With header) is refused."""
+    tok = session.get("csrf")
+    if not tok:
+        tok = secrets.token_urlsafe(24); session["csrf"] = tok
+    return tok
+
+@app.before_request
+def _require_csrf():
+    """Cross-site request forgery: a POST must prove it came from a Warden page. OAuth
+    callbacks arrive as GET and are covered by their own state check."""
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return
+    if request.headers.get("X-Requested-With") == "fetch":
+        return                           # a custom header never crosses origins without CORS, which Warden does not enable
+    tok = session.get("csrf") or ""
+    sent = request.headers.get("X-CSRF") or request.form.get("csrf") or ""
+    if tok and sent and hmac.compare_digest(tok, sent):
+        return
+    if request.headers.get("X-Requested-With") == "fetch" or request.is_json:
+        return {"error": "csrf"}, 403
+    abort(403, description="This form was not sent from a Warden page (missing or stale CSRF token). Reload and try again.")
+
 @app.before_request
 def _require_auth():
     if not AUTH_ON:
@@ -226,6 +275,13 @@ def _require_auth():
         return
     if not session.get("auth"):
         return redirect(url_for("login", next=request.path))
+
+def _safe_next(n):
+    """Only a path on this site may follow a sign-in; //evil.com and friends are dropped."""
+    n = (n or "").strip()
+    if not n.startswith("/") or n.startswith("//") or "\\" in n or ":" in n.split("?")[0]:
+        return ""
+    return n
 
 def _login_ctx(**kw):
     return dict(google_on=GOOGLE_ON, has_password=bool(AUTH_PASSWORD),
@@ -239,8 +295,7 @@ def login():
     if request.method == "POST":
         if AUTH_PASSWORD and hmac.compare_digest(request.form.get("password", ""), AUTH_PASSWORD):
             session["auth"] = True; session["email"] = "operator"; session.permanent = True
-            nxt = request.form.get("next") or url_for("home")
-            return redirect(nxt if nxt.startswith("/") else url_for("home"))
+            return redirect(_safe_next(request.form.get("next")) or url_for("home"))
         error = "Incorrect password."
     return render_template("login.html", error=error, **_login_ctx())
 
@@ -283,14 +338,13 @@ def google_callback():
     except Exception:
         return render_template("login.html", error="Could not complete Google sign-in. Try again.", **_login_ctx())
     email = (info.get("email") or "").lower()
-    if not email or info.get("email_verified") is False:
+    if not email or info.get("email_verified") is not True:
         return render_template("login.html", error="Your Google email could not be verified.", **_login_ctx())
-    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+    if not _email_allowed(email):
         return render_template("login.html", error="%s is not authorized for this studio." % email, **_login_ctx()), 403
     session["auth"] = True; session["email"] = email; session["name"] = info.get("name") or email
     session.permanent = True
-    nxt = session.pop("oauth_next", "") or url_for("home")
-    return redirect(nxt if nxt.startswith("/") else url_for("home"))
+    return redirect(_safe_next(session.pop("oauth_next", "")) or url_for("home"))
 
 @app.route("/admin/cleanup-orphans", methods=["POST"])
 def cleanup_orphans():
@@ -323,15 +377,9 @@ def _require_admin():
         abort(403)
 
 
-def _env_specs():
-    """Servers to auto-connect on boot, from WARDEN_AUTOCONNECT (comma-separated catalog ids).
-    Tokens resolve from each server's env var, so config survives redeploys."""
-    ids = [x.strip() for x in os.environ.get("WARDEN_AUTOCONNECT", "").split(",") if x.strip()]
-    return [{"id": i, "transport": cat.BY_ID[i]["transport"]} for i in ids if i in cat.BY_ID]
-
 def cm():
     c = cmod.manager()
-    c.ensure_started(store.enabled_connections() + _env_specs())
+    c.ensure_started(store.enabled_connections())      # only what users connected themselves
     return c
 
 @app.context_processor
@@ -344,9 +392,9 @@ def inject_globals():
         av = admin_view() if _authed() else False
     except Exception:
         av = False
-    return {"pending": [] if av else store.pending_approvals(_scope()), "mode": rt.mode(), "admin_view": av,
+    return {"pending": [] if av else store.pending_approvals(_scope()), "mode": rt.mode(), "admin_view": av, "csrf_token": csrf_token(),
             "hat": (session.get("hat", "admin") if av or is_admin() else "agents") if _authed() else "agents",
-            "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS),
+            "open_requests": open_requests, "admin_emails": sorted(ADMIN_EMAILS), "default_model": rt.MODEL_DEFAULT,
             "version": VERSION_FULL, "commit": BUILD_COMMIT, "deployed_at": DEPLOYED_AT}
 
 def _visible(t):
@@ -365,7 +413,7 @@ def connected_tools():
         if not _visible(t):
             continue
         mk = _model_key(t)
-        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk), t.get("annotations"))
         out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk})
     return out
 
@@ -516,7 +564,7 @@ def catalog():
         if mk in seen:
             continue
         seen.add(mk)
-        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk))
+        m = gov.meta(mk, t["tool"], t["description"], ovr.get(mk), t.get("annotations"))
         entry = cat.BY_ID.get(t.get("catalog_id") or "", {})
         tools.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk,
                       "server_name": entry.get("name") or t["server_name"]})
@@ -566,9 +614,10 @@ def enable_connection():
 def disable_connection():
     cid = request.form.get("id")
     row = store.get_connection(cid)
-    if row and (row.get("owner") or "") and (row.get("owner") != current_owner()) and not is_admin():
-        abort(403)
-    if row and not (row.get("owner") or "") and not is_admin():
+    if not row:
+        abort(404)
+    # every connection is personal (v0.15); only its owner can disconnect it, admins included
+    if (row.get("owner") or "") != current_owner():
         abort(403)
     store.disable_connection(cid); cm().disconnect(cid)
     if request.headers.get("X-Requested-With") == "fetch":
@@ -651,8 +700,13 @@ def discover_remove():
 
 @app.route("/tool-risk", methods=["POST"])
 def tool_risk():
-    store.set_override(request.form.get("key"), request.form.get("risk"))
-    return redirect(request.form.get("back") or url_for("catalog"))
+    key = (request.form.get("key") or "").strip(); risk = (request.form.get("risk") or "").upper()
+    if "__" not in key or risk not in ("LOW", "MED", "HIGH"):
+        abort(400)
+    store.set_override(key, risk)
+    store.audit(None, None, "risk_override", skill=key, risk=risk,
+                detail={"by": current_owner(), "text": "%s set to %s for every user" % (key, risk)})
+    return redirect(_safe_next(request.form.get("back")) or url_for("catalog"))
 
 @app.route("/connlist")
 def connlist():
@@ -884,6 +938,8 @@ def _fmt_event(e):
     out = {"ts": (e["ts"] or "")[11:19], "kind": kind, "risk": e.get("risk"), "outcome": d.get("outcome") if isinstance(d, dict) else None,
            "tool": (e["skill"] or "").split("__")[-1] if e.get("skill") else "",
            "text": text}
+    if kind == "approval_decided":
+        out["decision"] = d.get("decision"); out["by"] = d.get("by")
     if kind in ("delegation", "delegation_result"):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
     if kind == "connection_request":
@@ -1016,12 +1072,17 @@ def approval(apid):
         if not ag or (ag.get("owner") or "") != current_owner():
             abort(404)
     decision = request.form.get("decision")
-    if decision in ("approved", "denied"):
-        store.decide_approval(apid, decision, by=current_owner()); _advance_bg(ap["run_id"])
+    if decision not in ("approved", "denied"):
+        abort(400)
+    if ap["status"] != "pending" or store.decide_approval(apid, decision, by=current_owner()) is None:
+        if request.headers.get("X-Requested-With") == "fetch":
+            return {"ok": False, "error": "already_decided", "status": ap["status"]}, 409
+        return redirect(_safe_next(request.form.get("back")) or url_for("run_view", rid=ap["run_id"]))   # already decided; nothing changes
+    _advance_bg(ap["run_id"])
     # AJAX callers get JSON; form callers get a redirect
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}
-    return redirect(request.form.get("back") or url_for("run_view", rid=ap["run_id"]))
+    return redirect(_safe_next(request.form.get("back")) or url_for("run_view", rid=ap["run_id"]))
 
 def _with_team_context(pending):
     """Label approvals raised inside a member run with the lead that delegated the work,
@@ -1052,7 +1113,7 @@ def approvals():
 
 @app.route("/architecture")
 def architecture():
-    servers = cm().connected_servers()
+    servers = [s_ for s_ in cm().connected_servers() if _visible(s_)]
     return render_template("architecture.html", servers=servers, tools=connected_tools())
 
 @app.route("/audit")
@@ -1258,8 +1319,8 @@ def _grant_and_resume(sid, agent_id, rid):
     ag = store.get_agent(agent_id)
     if not ag:
         return
-    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin():
-        return
+    if AUTH_ON and (ag.get("owner") or "") != current_owner():
+        return                           # only the agent's owner grants and resumes; admins are read-only
     new_keys = [t["key"] for t in cm().all_tools() if t["server_id"] == sid]
     if not new_keys:
         return
@@ -1290,6 +1351,8 @@ def _admin_health():
             "google_on": _google_connectors_on(), "google_verified": _google_verified(),
             "policies": len(store.list_policies()),
             "audit_ok": bool(integ.get("ok")), "audit": integ,
+            "signin_open": signin_open(), "secret_set": vault.from_env(),
+            "allowed": ", ".join(sorted(ALLOWED_DOMAINS and {"@" + d for d in ALLOWED_DOMAINS} or set()) + sorted(ALLOWED_EMAILS)) or "the password",
             "actionable": [], "waiting": _requests_waiting_on_people()}
 
 def _studio_summary():
@@ -1475,7 +1538,7 @@ def grant_connection():
     sid = request.form.get("id"); aid = request.form.get("grant_to"); rid = request.form.get("resume")
     ag = store.get_agent(aid)
     if not ag: abort(404)
-    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin(): abort(403)
+    if AUTH_ON and (ag.get("owner") or "") != current_owner(): abort(403)
     row = store.get_connection(sid)
     if row and (row.get("owner") or "") and row.get("owner") != (ag.get("owner") or ""):
         abort(403)                       # a personal connection is only ever granted to its owner's agents
@@ -1576,8 +1639,8 @@ def delete_suite(sid):
 def add_case(sid):
     _owned_suite(sid)
     if request.form.get("source_run_id"):
-        r = store.get_run(request.form["source_run_id"])
-        if r: store.add_case(sid, r["input"], source_run_id=r["id"])
+        r = _owned_run(request.form["source_run_id"])        # only your own conversations become cases
+        store.add_case(sid, r["input"], source_run_id=r["id"])
     else:
         text = (request.form.get("input") or "").strip()
         if text: store.add_case(sid, text, expected=(request.form.get("expected") or "").strip())
@@ -1585,7 +1648,8 @@ def add_case(sid):
 
 @app.route("/evals/<sid>/case/<cid>/delete", methods=["POST"])
 def delete_case(sid, cid):
-    _owned_suite(sid); store.delete_case(cid)
+    _owned_suite(sid)
+    if not store.delete_case(cid, suite_id=sid): abort(404)
     return redirect(url_for("suite", sid=sid) + "#cases")
 
 @app.route("/evals/<sid>/check", methods=["POST"])
@@ -1612,7 +1676,8 @@ def add_check(sid):
 
 @app.route("/evals/<sid>/check/<kid>/delete", methods=["POST"])
 def delete_check(sid, kid):
-    _owned_suite(sid); store.delete_check(kid)
+    _owned_suite(sid)
+    if not store.delete_check(kid, suite_id=sid): abort(404)
     return redirect(url_for("suite", sid=sid) + "#checks")
 
 @app.route("/evals/<sid>/run", methods=["POST"])
@@ -1675,6 +1740,7 @@ def eval_run_view(erid):
 def eval_run_status(erid):
     er = store.get_eval_run(erid)
     if not er: abort(404)
+    _owned_suite(er["suite_id"])
     done = len({r["case_id"] for r in store.list_results(erid)})
     return {"status": er["status"], "cases_done": done, "cases": len(store.list_cases(er["suite_id"]))}
 
@@ -1698,35 +1764,26 @@ def annotate_run(rid):
 
 @app.route("/annotation/<aid>/delete", methods=["POST"])
 def delete_annotation(aid):
-    store.delete_annotation(aid)
-    return redirect(request.form.get("back") or url_for("evals_home"))
+    if not store.delete_annotation(aid, owner=current_owner() if AUTH_ON else None): abort(404)
+    return redirect(_safe_next(request.form.get("back")) or url_for("evals_home"))
 
 @app.route("/healthz")
 def healthz():
+    """Public liveness check: enough for a load balancer, nothing about the deployment.
+    Admins get the full picture (persistence, auth configuration) once signed in."""
     import paths
-    dd = store.DATA_ROOT
-    return {"ok": True, "mode": rt.mode(),
-            "servers": len(cm().connected_servers()),
-            "version": VERSION_FULL, "commit": BUILD_COMMIT,
-            "auth": {
-                "on": AUTH_ON,
-                "google": GOOGLE_ON,
-                "password": bool(AUTH_PASSWORD),
-                "admins_set": bool(ADMIN_EMAILS),
-                "allowlist_set": bool(ALLOWED_EMAILS),
-                "multi_tenant": AUTH_ON,
-            },
-            "persistence": {
-                "WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
-                "requested_dir": paths.REQUESTED,
-                "data_dir": dd,
-                "using_fallback": paths.FALLBACK,
-                "persisting": (not paths.FALLBACK),
-                "writable": os.access(dd, os.W_OK),
-                "build_json_exists": os.path.exists(os.path.join(dd, "build.json")),
-                "agents_saved": len(store.list_agents()),
-                "orphaned_agents": sum(1 for a in store.list_agents() if not (a.get("owner") or "")),
-            }}
+    out = {"ok": True, "version": VERSION_FULL, "commit": BUILD_COMMIT}
+    if _authed() and is_admin():
+        dd = store.DATA_ROOT
+        out.update({"mode": rt.mode(), "servers": len(cm().connected_servers()),
+                    "auth": {"on": AUTH_ON, "google": GOOGLE_ON, "password": bool(AUTH_PASSWORD),
+                             "admins_set": bool(ADMIN_EMAILS), "allowlist_set": bool(ALLOWED_EMAILS or ALLOWED_DOMAINS),
+                             "secret_from_env": vault.from_env()},
+                    "persistence": {"WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
+                                    "requested_dir": paths.REQUESTED, "data_dir": dd, "using_fallback": paths.FALLBACK,
+                                    "persisting": (not paths.FALLBACK), "writable": os.access(dd, os.W_OK),
+                                    "agents_saved": len(store.list_agents())}})
+    return out
 
 try:
     _migrate_shared_connections()

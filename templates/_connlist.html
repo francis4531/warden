@@ -7,13 +7,13 @@
   <span class="cstatus">{% if e.id in enabled and st and st.status=='connected' %}<span style="color:var(--low-t,var(--brass-b))">connected &middot; {{ st.tool_count }} tools</span>{% elif st and st.status=='error' %}<span style="color:var(--high)">error</span>{% endif %}</span>
   <div class="act">
     {% if e.id in enabled %}
-      <form class="connform" method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
+      <form class="connform" method="post" action="{{ url_for('disable_connection') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn ghost sm">Disconnect</button></form>
     {% elif e.transport=='http' and e.auth=='none' %}
-      <form class="connform" method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
+      <form class="connform" method="post" action="{{ url_for('enable_connection') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="btn brass sm">Connect</button></form>
     {% elif e.transport=='http' %}
-      <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}"><button class="btn brass sm">Connect</button></form>
+      <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ e.id }}"><input type="password" name="token" placeholder="token{{ ' or $'+e.env if e.env else '' }}"><button class="btn brass sm">Connect</button></form>
     {% else %}
-      <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="command" value="{{ e.run }}"><button class="btn sm">Enable</button></form>
+      <form class="connform" method="post" action="{{ url_for('enable_connection') }}" style="display:flex;gap:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ e.id }}"><input type="text" name="command" value="{{ e.run }}"><button class="btn sm">Enable</button></form>
     {% endif %}
   </div>
   <span class="dsc">{{ e.desc }}</span>

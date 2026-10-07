@@ -9,18 +9,32 @@ the model, but the governance around letting an agent act.
 
 ## What's real here
 
-- **Real MCP, multiple servers.** Warden ships two working local MCP servers
-  (enterprise tools + a sandboxed filesystem) and connects to external ones from a
-  catalog of common enterprise MCP servers, over stdio or remote HTTP. It discovers
+- **Real MCP, multiple servers.** Warden ships one working local MCP server (sample
+  enterprise tools) and connects to external ones from a catalog of common enterprise
+  MCP servers, over stdio or remote HTTP. It discovers
   each server's tools over the protocol and routes calls back to the right server.
 - **Real governance, including for tools you didn't write.** Built-in tools have a
   hand-set risk registry. Tools discovered from any other server are classified
-  automatically and fail closed: reads run on their own, writes and anything
-  unrecognized are gated. You can override any tool's risk from the Connections page.
+  automatically and fail closed: a server's own MCP annotations (read-only, destructive)
+  come first, then the strongest verb anywhere in the name (find_and_replace is a write),
+  and anything unrecognized is gated. An admin can override any tool's risk from the Catalog page;
+  the override is per catalog server and tool, so it applies to every user's own copy.
 - **Real agent loop.** A perceive -> decide -> act loop against an Anthropic model,
   with tool use across servers, pausing at the approval gate and resuming on decision.
 - **Real audit.** Every thought, tool call, result, and approval decision is written to
-  an append-only log, per-run and studio-wide, each stamped with its risk tier.
+  a hash-chained log, per-run and studio-wide, each stamped with its risk tier.
+- **Tool output is data.** Everything a tool returns enters the transcript labelled as
+  outside data with a size cap, and the agent is told that instructions found inside it
+  (a web page, an email, a record) are content to report, never commands to follow. This
+  is a boundary, not a guarantee: the risk gate is what stops a hijacked agent from
+  doing damage, which is why writes are held.
+- **Approvals are binding.** A held action stays held until its owner decides, whatever
+  changes to risk tiers or policies in the meantime; a decision is recorded once, on the
+  audit chain, and cannot be flipped afterwards; what runs is exactly the payload the
+  approver saw, and if the transcript's arguments differ nothing runs. The approver is
+  the agent's owner: Warden's model is accountability (every decision is attributed and
+  on the record), not separation of duties. Admins see pending actions and cannot act on
+  them.
 
 ## Agents know where they run
 
@@ -49,7 +63,8 @@ covers the whole tree. Members cannot delegate further (`WARDEN_MAX_DELEGATION_D
 
 An eval suite belongs to one agent and holds cases (inputs, optionally with an expected
 output) and checks. Running a suite creates a real run per case in evaluation mode: reads
-run, and anything that would need human approval is recorded as held and never executed.
+(LOW) run; anything above a read, including MED tools and HIGH tools a policy would
+auto-run, is recorded as held and never executed.
 Checks come in three kinds, cheapest first: code assertions (answer contains / regex,
 red-flag words, tool called or not, held for approval, max tool calls, cost under N, no tool
 errors, quotes grounded in tool results), golden comparisons against an expected output,
@@ -134,6 +149,7 @@ it connects, and the card matches the credential the server actually needs:
 
     pip install -r requirements.txt
     python app.py            # http://localhost:8000
+    python -m pytest -q      # the governance promises above, as tests (sandbox mode)
 
 No key -> sandbox mode: a deterministic planner drives the same governance flow so
 the whole governance flow works offline. For live model calls:
@@ -169,16 +185,68 @@ redeploys.
 access token on the Connections page once; it is encrypted at rest (never stored as
 plaintext) and reused after every redeploy. No per-token environment variables.
 
-- Encryption key: taken from `WARDEN_SECRET_KEY` if you set one (kept out of the data
-  dir, the stronger option), otherwise generated once and stored on the disk beside the
-  data (zero-config). Any string works as `WARDEN_SECRET_KEY`.
-- Optional: a server can instead read its token from an environment variable
-  (`GITHUB_TOKEN`, `STRIPE_API_KEY`, etc.) if you prefer that for a specific one, and
-  `WARDEN_AUTOCONNECT=deepwiki,github` will auto-connect a list of servers on boot. These
-  are optional conveniences, not required, the disk handles persistence on its own.
+- Studio secret: `WARDEN_SECRET_KEY` (any long random string). It is the root of the
+  token encryption key, the session signing key, and the audit chain's HMAC key, each
+  derived separately. There is no built-in default. If unset, a random key is generated
+  once and stored on the disk beside the data, and the admin Overview says so. Set it in
+  production: a lost key means lost connections and a broken audit chain.
+- No account tokens in the environment, ever. GitHub, Gmail, Notion and the rest are
+  connected by each user, with their own account or key, from the Connections page or
+  from the card an agent raises when it needs something. Warden has no code path that
+  reads a service token from an environment variable.
 
 Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,
-`WARDEN_DATA_DIR=/var/warden`, and optionally `WARDEN_SECRET_KEY=<any long random string>`.
+`WARDEN_DATA_DIR=/var/warden`, `WARDEN_SECRET_KEY=<any long random string>`.
+
+## Who can sign in
+
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` turn on Sign in with Google.
+- `WARDEN_ALLOWED_DOMAINS=example.com` or `WARDEN_ALLOWED_EMAILS=a@example.com,b@example.com`
+  restrict who may sign in. With neither set, any Google account can sign in and the
+  admin Overview flags it.
+- `WARDEN_ADMIN_EMAILS=admin@example.com` names the admins.
+- `WARDEN_PASSWORD` keeps a single shared password sign-in as a fallback; everyone who
+  uses it shares one workspace named `operator`. Leave it unset once Google sign-in works.
+- Every form and request from Warden's own pages carries a CSRF token; cookies are
+  `SameSite=Lax`, `HttpOnly`, and `Secure` on Render (set `WARDEN_HTTPS=1` elsewhere
+  behind TLS).
+
+## Telemetry export
+
+A run can be exported as an OpenTelemetry trace (`POST /run/<id>/export`) to
+`OTEL_EXPORTER_OTLP_ENDPOINT`. Spans carry tool names, risk tiers, outcomes, latency and
+cost. Tool arguments and results are left out unless `WARDEN_TRACE_PAYLOADS=on`; when
+they are included, keys that look sensitive are replaced and values are scrubbed for
+emails, card and social-security numbers, API keys, bearer tokens and phone numbers
+(`WARDEN_REDACT_KEYS` extends the key list). Span names never contain user text.
+
+## Model and cost
+
+Each agent runs on the model entered in the builder, or `WARDEN_MODEL` (default
+`claude-sonnet-4-6`) when none is. The system prompt and tool list are sent as a cache
+prefix, so after the first turn of a run they bill at the cache-read rate. Cost is
+computed from the published list prices per model id, including cache write and read
+tokens; the table lives in `agent_runtime.PRICES` and should be re-checked when prices
+change.
+
+## Loop limits
+
+A conversation may make at most 12 model calls per turn and `WARDEN_MAX_CALLS_PER_RUN`
+(default 60) across all of its turns and resumes. A model call times out after
+`WARDEN_MODEL_TIMEOUT` seconds (default 120). When the transcript grows past
+`WARDEN_CONTEXT_TOKENS` (default 150,000, estimated), the oldest exchanges are dropped
+in pairs and the first message says so. A reply cut off at the output limit is asked to
+continue rather than shown as final. Runs still marked running when Warden restarts are
+marked interrupted at boot and can be continued with a message.
+
+## Audit chain
+
+Every event's hash is an HMAC over the previous hash and the event, keyed with the studio
+secret, and the chain head (last hash, count, signature) is stored with it. Editing a
+row, deleting from the middle, or trimming the tail breaks verification, which the admin
+Overview runs on every load. An editor with database access but without the secret
+cannot recompute a link. Someone with both can still rewrite history; to close that,
+copy the head from `/audit` to a place the app cannot write.
 
 ## Connect a real remote server (GitHub)
 

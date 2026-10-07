@@ -34,7 +34,7 @@
 <div class="page-h" style="margin-bottom:18px">
   <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between">
     <span><a href="{{ url_for('evals_home') }}" style="color:var(--brass)">Evals</a> &middot; suite</span>
-    <form method="post" action="{{ url_for('delete_suite', sid=suite.id) }}" onsubmit="return confirm('Delete this suite and its eval runs? The agent conversations and audit trail are kept.');" style="margin:0">
+    <form method="post" action="{{ url_for('delete_suite', sid=suite.id) }}" onsubmit="return confirm('Delete this suite and its eval runs? The agent conversations and audit trail are kept.');" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}">
       <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete suite</button>
     </form>
   </div>
@@ -43,7 +43,7 @@
 </div>
 
 <div class="card" style="margin-bottom:18px">
-  <form method="post" action="{{ url_for('run_suite', sid=suite.id) }}" class="runlab">
+  <form method="post" action="{{ url_for('run_suite', sid=suite.id) }}" class="runlab"><input type="hidden" name="csrf" value="{{ csrf_token }}">
     <input type="text" name="label" placeholder="{{ 'baseline' if not runs else 'what changed, e.g. shorter prompt' }}">
     <button class="btn brass" type="submit" {{ 'disabled' if not cases or not checks }}>Run suite &rarr;</button>
     <span class="hint" style="margin:0">{{ cases|length }} case{{ '' if cases|length==1 else 's' }} &times; {{ checks|length }} check{{ '' if checks|length==1 else 's' }}{% if not cases or not checks %} &middot; add at least one case and one check{% endif %}{% if not live %} &middot; sandbox: code and golden checks run, judge checks wait for a live model{% endif %}</span>
@@ -78,7 +78,7 @@
           {% if c.expected %}<div class="m">expected: {{ c.expected[:160] }}</div>{% endif %}
           {% if c.source_run_id %}<div class="m">from conversation <a href="{{ url_for('run_view', rid=c.source_run_id) }}" style="color:var(--brass)">{{ c.source_run_id }}</a></div>{% endif %}
         </div>
-        <form method="post" action="{{ url_for('delete_case', sid=suite.id, cid=c.id) }}"><button class="x" title="remove">&times;</button></form>
+        <form method="post" action="{{ url_for('delete_case', sid=suite.id, cid=c.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="x" title="remove">&times;</button></form>
       </div>
       {% else %}
       <div style="color:var(--mut);font-size:13px">No cases yet. The best cases come from real conversations, especially ones you marked Wrong.</div>
@@ -86,7 +86,7 @@
       <div class="adder">
         <div class="lab">Add a case</div>
         {% if recent %}
-        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}" class="rowi" style="margin-bottom:10px">
+        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}" class="rowi" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}">
           <select name="source_run_id" style="flex:1;min-width:200px">
             <option value="">From a recent conversation…</option>
             {% for r in recent %}<option value="{{ r.id }}">{{ r.input[:80] }}{{ '…' if r.input|length>80 }}</option>{% endfor %}
@@ -94,7 +94,7 @@
           <button class="btn sm" type="submit">Add</button>
         </form>
         {% endif %}
-        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}">
+        <form method="post" action="{{ url_for('add_case', sid=suite.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
           <textarea name="input" placeholder="Or type an input the agent should handle…" required></textarea>
           <input type="text" name="expected" placeholder="Expected output (optional, used by a golden check)" style="margin-top:8px">
           <button class="btn sm" type="submit" style="margin-top:8px">Add case</button>
@@ -110,7 +110,7 @@
       <div class="item">
         <span class="kindtag {{ k.kind }}" style="margin-top:3px">{{ k.kind }}</span>
         <div class="t">{{ k.name }}<div class="m">{{ k.desc }}</div></div>
-        <form method="post" action="{{ url_for('delete_check', sid=suite.id, kid=k.id) }}"><button class="x" title="remove">&times;</button></form>
+        <form method="post" action="{{ url_for('delete_check', sid=suite.id, kid=k.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="x" title="remove">&times;</button></form>
       </div>
       {% else %}
       <div style="color:var(--mut);font-size:13px">No checks yet.</div>
@@ -123,7 +123,7 @@
           <button type="button" onclick="tab('golden')">Golden</button>
         </div>
         <div class="pane on" id="pane-code">
-          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <input type="hidden" name="kind" value="code">
             <div class="rowi">
               <select name="check" id="ck" onchange="ckChange()" style="flex:1">
@@ -140,7 +140,7 @@
           <div class="hint">Deterministic, cheap, and right every time. Try one of these before reaching for a judge.</div>
         </div>
         <div class="pane" id="pane-judge">
-          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <input type="hidden" name="kind" value="judge">
             <textarea name="question" placeholder="One yes/no question, e.g. Does the answer state the exact refund amount and the policy it relies on?" required></textarea>
             <div class="rowi" style="margin-top:8px">
@@ -151,7 +151,7 @@
           <div class="hint">Binary questions only. The judge gets a simpler job than the agent. Mark its verdicts Agree or Disagree on the results page so the suite reports judge error instead of hiding it.{% if not live %} Needs a live model.{% endif %}</div>
         </div>
         <div class="pane" id="pane-golden">
-          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}">
+          <form method="post" action="{{ url_for('add_check', sid=suite.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
             <input type="hidden" name="kind" value="golden">
             <div class="rowi">
               <select name="mode"><option value="contains">Answer contains the expected output</option><option value="exact">Answer equals the expected output</option></select>

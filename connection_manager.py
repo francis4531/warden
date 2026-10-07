@@ -88,9 +88,7 @@ def _http_params(sid, spec):
     cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     url = spec.get("url") or cat.get("run")
     headers = {}
-    tok = spec.get("token")
-    if not tok and cat.get("env"):          # fall back to an environment variable
-        tok = os.environ.get(cat["env"])
+    tok = spec.get("token")                 # only ever the owner's own token; never from the environment
     if tok:
         import oauth
         if oauth.is_oauth(tok):
@@ -111,7 +109,26 @@ def _stdio_params(sid, spec, transport):
         cmd = shlex.split(run)
         if not cmd:
             raise RuntimeError("no command configured")
-    return StdioServerParameters(command=cmd[0], args=cmd[1:], env=os.environ.copy())
+    return StdioServerParameters(command=cmd[0], args=cmd[1:], env=_child_env(sid, spec))
+
+# What a spawned MCP server process may see. Never the studio's own secrets (the Anthropic
+# key, the session secret, the Google client secret): a third-party npx/uvx package fetched at
+# connect time gets the basics plus the one variable the catalog entry declares, if any.
+_ENV_PASS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "USER", "SHELL", "TERM",
+             "NODE_PATH", "NPM_CONFIG_CACHE", "UV_CACHE_DIR", "PYTHONPATH", "VIRTUAL_ENV",
+             "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+             "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "SystemRoot", "APPDATA", "LOCALAPPDATA")
+
+def _child_env(sid, spec):
+    env = {k: os.environ[k] for k in _ENV_PASS if k in os.environ}
+    cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
+    var = cat.get("env")
+    if var and spec.get("token"):          # the owner's own token, passed the way the server expects it
+        env[var] = spec["token"]
+    for k, v in (spec.get("env") or {}).items():          # explicit per-connection variables
+        if isinstance(k, str) and isinstance(v, str):
+            env[k] = v
+    return env
 
 @asynccontextmanager
 async def _http_session(sid, spec):
@@ -225,7 +242,7 @@ class _Manager:
                     out.append({"key": key, "server_id": sid, "server_name": sname,
                                 "owner": st.get("owner") or "", "catalog_id": st.get("catalog_id") or sid,
                                 "tool": t["name"], "description": t["description"],
-                                "input_schema": t["input_schema"]})
+                                "input_schema": t["input_schema"], "annotations": t.get("annotations") or {}})
         return out
 
     def call_by_key(self, key, args):
@@ -236,8 +253,18 @@ class _Manager:
             return self._lt.run(self._acall(sid, tool, args), timeout=90)
 
 def _tools(resp):
-    return [{"name": t.name, "description": t.description or "", "input_schema": t.inputSchema}
-            for t in resp.tools]
+    out = []
+    for t in resp.tools:
+        ann = getattr(t, "annotations", None)
+        a = {}
+        if ann is not None:
+            for k in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
+                v = getattr(ann, k, None)
+                if v is not None:
+                    a[k] = bool(v)
+        out.append({"name": t.name, "description": t.description or "", "input_schema": t.inputSchema,
+                    "annotations": a})
+    return out
 def _text(result):
     text = "\n".join(c.text for c in result.content if getattr(c, "type", None) == "text")
     if getattr(result, "isError", False):

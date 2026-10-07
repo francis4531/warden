@@ -12,10 +12,10 @@
 <div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:16px;border-color:{{ 'color-mix(in srgb,var(--high) 45%,var(--line))' if not integrity.ok else 'var(--line)' }}">
   {% if integrity.ok %}
   <span style="font-size:20px;color:var(--brass-b)">&#10003;</span>
-  <div><b>Chain verified.</b> <span style="color:var(--mut)">{{ integrity.checked }} entr{{ 'y' if integrity.checked==1 else 'ies' }} hash-chained and intact{% if integrity.legacy %}, {{ integrity.legacy }} legacy (pre-chain){% endif %}. Each entry seals the one before it, so any edit, deletion, or reorder is detectable.</span></div>
+  <div><b>Chain verified.</b> <span style="color:var(--mut)">{{ integrity.checked }} entr{{ 'y' if integrity.checked==1 else 'ies' }} hash-chained and intact{% if integrity.legacy %}, {{ integrity.legacy }} legacy (pre-chain){% endif %}. Each entry seals the one before it with a keyed hash, so any edit, deletion, or reorder is detectable.{% if integrity.head %} Chain head: <code style="font-family:var(--mono);font-size:11px">{{ integrity.head.hash[:16] }}&hellip;</code> at {{ integrity.total }} entries; copy it somewhere the app cannot write to anchor the log externally.{% endif %}</span></div>
   {% else %}
   <span style="font-size:20px;color:var(--high)">&#9888;</span>
-  <div><b style="color:var(--high)">Tamper detected.</b> <span style="color:var(--mut)">The hash chain breaks at {{ integrity.broken_ts[:19].replace('T',' ') }} ({{ integrity.broken_at }}). {{ integrity.checked }} of {{ integrity.total }} entries verified before the break. Entries were edited, deleted, or reordered after they were written.</span></div>
+  <div><b style="color:var(--high)">Tamper detected.</b> <span style="color:var(--mut)">{% if integrity.reason == 'head' %}The stored chain head does not match the log: entries were removed from the end after {{ (integrity.broken_ts or '')[:19].replace('T',' ') }}.{% else %}The hash chain breaks at {{ (integrity.broken_ts or '')[:19].replace('T',' ') }} ({{ integrity.broken_at }}).{% endif %} {{ integrity.checked }} of {{ integrity.total }} entries verified before the break. Entries were edited, deleted, or reordered after they were written.</span></div>
   {% endif %}
 </div>
 {% endif %}

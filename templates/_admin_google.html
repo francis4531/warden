@@ -37,7 +37,7 @@
   </div>
   <div class="st" style="margin-top:8px">
     <span class="k">verification</span><span>{% if google_verified %}<span class="ok">Verified or internal.</span> Users go straight to Google's consent page.{% else %}<span class="bad">Unverified.</span> Until Google verifies the app (or the client is a Workspace Internal one), each user sees a red "Google hasn't verified this app" page the first time they connect and must click Advanced, then "Go to Warden". Warden tells them that on the connect card.{% endif %}
-      <form method="post" action="{{ url_for('save_settings') }}" style="display:inline;margin-left:8px"><input type="hidden" name="section" value="verified"><input type="hidden" name="google_verified" value="{{ '0' if google_verified else '1' }}"><button class="btn ghost sm" type="submit">{{ 'Mark as unverified' if google_verified else 'Mark as verified or internal' }}</button></form></span>
+      <form method="post" action="{{ url_for('save_settings') }}" style="display:inline;margin-left:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="section" value="verified"><input type="hidden" name="google_verified" value="{{ '0' if google_verified else '1' }}"><button class="btn ghost sm" type="submit">{{ 'Mark as unverified' if google_verified else 'Mark as verified or internal' }}</button></form></span>
   </div>
   <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--brass);font-size:13px">How to get rid of the unverified-app page</summary>
     <ol class="steps" style="margin-top:10px">
@@ -60,7 +60,7 @@
 <div class="section-h"><span class="lbl">Bring your own Google client</span></div>
 <div class="card">
   <div style="color:var(--mut);font-size:13px;margin-bottom:12px">Recommended for organizations on Google Workspace: create an OAuth client in your own Google Cloud project (user type Internal), and paste it here. It replaces the sign-in client for connectors only; sign-in is unchanged. Secrets are stored encrypted.</div>
-  <form method="post" action="{{ url_for('save_settings') }}">
+  <form method="post" action="{{ url_for('save_settings') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
     <label class="f" for="gcid">Client ID</label>
     <input type="text" id="gcid" name="google_client_id" placeholder="xxxxxxxx.apps.googleusercontent.com">
     <label class="f" for="gsec">Client secret</label>

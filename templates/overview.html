@@ -59,6 +59,11 @@
     <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.policies else '4' }}</span><div><h4>Policies</h4><p>{% if health.policies %}{{ health.policies }} polic{{ 'y' if health.policies==1 else 'ies' }} in force on top of the risk tiers.{% else %}Only the risk tiers apply. Add spend caps, rate limits, time windows, or per-agent rules.{% endif %}</p></div></div>
     <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('policies') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('policies') }}">Add a policy</a>{% endif %}</div>
   </div>
+  {% set st = 'bad' if health.signin_open or not health.secret_set else 'ok' %}
+  <div class="task">
+    <div class="top"><span class="st {{ st }}">{{ '!' if st == 'bad' else '&#10003;'|safe }}</span><div><h4>Sign-in</h4><p>{% if health.signin_open %}Open to any Google account. Set WARDEN_ALLOWED_DOMAINS (your company domain) or WARDEN_ALLOWED_EMAILS so only your users can sign in.{% elif not health.secret_set %}WARDEN_SECRET_KEY is not set; sessions and stored secrets depend on a generated key in the data dir. Set it in the environment.{% else %}Restricted to {{ health.allowed }}. Secret key set in the environment.{% endif %}</p></div></div>
+    <div class="cta"><a class="q" href="{{ url_for('studio') }}">Users &rarr;</a></div>
+  </div>
   {% set st = 'ok' if health.audit_ok else 'bad' %}
   <div class="task">
     <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.audit_ok else '!' }}</span><div><h4>Audit integrity</h4><p>{% if health.audit_ok %}Hash chain verified across {{ health.audit.total }} event{{ '' if health.audit.total==1 else 's' }}. Nothing altered.{% else %}Chain broken at {{ health.audit.broken_at }}. Investigate before trusting the log.{% endif %}</p></div></div>
