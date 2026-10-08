@@ -87,10 +87,10 @@ def _explain(e, cat):
 def _http_params(sid, spec):
     cat = catalog_mod.BY_ID.get(spec.get("catalog_id") or sid, {})
     url = spec.get("url") or cat.get("run")
-    headers = {}
+    import oauth
+    headers = {"User-Agent": oauth.USER_AGENT}      # some edges 403 an anonymous client
     tok = spec.get("token")                 # only ever the owner's own token; never from the environment
     if tok:
-        import oauth
         if oauth.is_oauth(tok):
             # OAuth connection: mint a fresh access token, persisting a refreshed record
             import store
@@ -99,7 +99,7 @@ def _http_params(sid, spec):
                 store.update_connection_token(sid, new)
             tok = oauth.access_token(tok, persist=_persist)
         headers["Authorization"] = tok if tok.lower().startswith("bearer") else f"Bearer {tok}"
-    return url, (headers or None)
+    return url, headers
 
 def _stdio_params(sid, spec, transport):
     if transport == "builtin":

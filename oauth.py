@@ -31,16 +31,22 @@ def parse(token):
     except Exception:
         return None
 
+# Every request Warden makes identifies itself. Some providers' edges (Atlassian's among
+# them) answer 403 to Python's default "Python-urllib" user agent and say nothing else.
+USER_AGENT = "Warden/1.0 (+https://github.com/francis4531/warden)"
+
+def _req(url, data=None, headers=None):
+    h = {"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})}
+    return urllib.request.Request(url, data=data, headers=h)
+
 def _post(url, data, headers=None):
     body = urllib.parse.urlencode(data).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded",
-                                                          "Accept": "application/json", **(headers or {})})
+    req = _req(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded", **(headers or {})})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 
 def _get(url):
-    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "Warden/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+    with urllib.request.urlopen(_req(url), timeout=15) as r:
         return json.loads(r.read())
 
 # ---- PKCE / state ----
@@ -79,7 +85,7 @@ def mcp_discover(server_url):
     if not auth_servers:
         # last resort: the MCP endpoint's 401 challenge may name its resource metadata (RFC 9728)
         try:
-            req = urllib.request.Request(server_url, data=b"{}", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
+            req = _req(server_url, data=b"{}", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
             urllib.request.urlopen(req, timeout=10)
         except urllib.error.HTTPError as he:
             www = he.headers.get("WWW-Authenticate", "") or ""
@@ -119,9 +125,17 @@ def mcp_register(meta, redirect_uri):
     body = json.dumps({"client_name": CLIENT_NAME, "redirect_uris": [redirect_uri],
                        "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
                        "token_endpoint_auth_method": "none"}).encode()
-    req = urllib.request.Request(reg, data=body, headers={"Content-Type": "application/json", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        d = json.loads(r.read())
+    req = _req(reg, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            d = json.loads(r.read())
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = he.read().decode()[:160]
+        except Exception:
+            pass
+        raise RuntimeError("client registration at %s was refused (HTTP %s)%s" % (reg, he.code, (": " + detail) if detail else ""))
     if not d.get("client_id"):
         raise RuntimeError("registration returned no client_id")
     return d["client_id"], d.get("client_secret")

@@ -173,3 +173,12 @@ def test_http_connections_never_read_tokens_from_env(monkeypatch):
 def test_healthz_is_minimal_when_anonymous(client):
     r = client.get("/healthz").get_json()
     assert set(r) == {"ok", "version", "commit"}
+
+
+def test_every_outbound_request_identifies_warden():
+    """Providers' edges (Atlassian's, for one) answer 403 to Python's default user agent."""
+    import oauth, connection_manager as cm
+    r = oauth._req("https://example.invalid/x")
+    assert r.get_header("User-agent", "").startswith("Warden/")
+    url, headers = cm._http_params("github", {"catalog_id": "github", "token": "ghp_x"})
+    assert headers["User-Agent"].startswith("Warden/") and headers["Authorization"] == "Bearer ghp_x"
