@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.22.1"
+WARDEN_VERSION = "0.22.2"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -64,7 +64,7 @@ try:
 except Exception:
     _PT = datetime.timezone(datetime.timedelta(hours=-7), "PDT")
 # captured once at process start; on Render each deploy restarts the process
-DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M %Z")
+DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M:%S %Z")   # when this process started
 
 import vault
 app = Flask(__name__)

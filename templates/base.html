@@ -69,6 +69,8 @@ a{color:inherit;text-decoration:none}
 .mode.sandbox .dot{background:var(--med)}
 .mode.live{color:var(--low)}.mode.sandbox{color:var(--med)}
 .rail .note{font-size:11px;color:var(--dim);line-height:1.45}
+.rail .note.build{font-family:var(--mono);font-size:10.5px;letter-spacing:.3px;border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+.rail .note.build b{color:var(--mut);font-weight:600}
 
 /* main */
 .main{flex:1;min-width:0;padding:34px 40px 60px;max-width:1080px}
@@ -264,6 +266,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55}
       {% if not auth_on %}<div class="note" style="color:var(--high)">Unprotected: set WARDEN_PASSWORD to require sign-in.</div>{% endif %}
       {% if auth_on %}<a href="{{ url_for('logout') }}" class="note" style="text-decoration:none;color:var(--mut)">&#8631; Sign out{% if user_email and user_email != 'operator' %} &middot; {{ user_email }}{% endif %}</a>{% endif %}
       {% if daily_cap %}<div class="note" style="color:var(--mut)">Shared studio &middot; ${{ '%.2f'|format(daily_cap) }}/day spend cap</div>{% endif %}
+      {% if admin_view %}<div class="note build" title="Build number, commit, and when this server process started"><b>build {{ version }}</b> &middot; {{ commit }}<br>loaded {{ deployed_at }}</div>{% endif %}
     </div>
   </aside>
   <main class="main">
