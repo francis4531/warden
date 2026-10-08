@@ -60,16 +60,21 @@
 .evalnote a{color:var(--brass)}
 .chip.held{border-color:color-mix(in srgb,var(--high) 40%,var(--line))}
 .chip.held .h{color:var(--high)}
-.fbbar{display:none;margin:14px 0 4px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);padding:12px 14px}
-.fbbar.on{display:block}
-.fbbar .q{font-size:12.5px;color:var(--mut);margin-bottom:8px}
-.fbbar .r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.fbbar select,.fbbar input{margin:0}
-.fbbar select{width:auto}
-.fbbar input[type=text]{flex:1;min-width:180px}
-.fbbar .btn.good{color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))}
-.fbbar .btn.good.on{background:color-mix(in srgb,var(--low) 14%,var(--ink3))}
-.fbbar .btn.bad{color:var(--high);border-color:color-mix(in srgb,var(--high) 40%,var(--line2))}
+.fbbar{display:none;margin:2px 0 6px;padding:0 4px;justify-content:flex-end;align-items:center;gap:6px;font-size:11.5px;color:var(--dim);flex-wrap:wrap}
+.fbbar.on{display:flex}
+.fbbar .q{margin-right:2px}
+.fbbar .v{background:none;border:1px solid transparent;border-radius:6px;color:var(--dim);font-size:11.5px;padding:2px 7px;cursor:pointer}
+.fbbar .v:hover{color:var(--txt);border-color:var(--line2)}
+.fbbar .v.good.on{color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))}
+.fbbar .v.bad.on{color:var(--high);border-color:color-mix(in srgb,var(--high) 40%,var(--line2))}
+.fbbar .more{display:none;gap:6px;align-items:center;flex-basis:100%;justify-content:flex-end;margin-top:4px}
+.fbbar .more.on{display:flex}
+.fbbar .more select,.fbbar .more input{margin:0;font-size:12px;padding:5px 8px;border-radius:7px}
+.fbbar .more select{width:auto}
+.fbbar .more input[type=text]{width:260px}
+.fbbar .done{color:var(--dim)}
+.fbbar .done b{color:var(--mut);font-weight:600}
+.fbbar .done a,.fbbar .done button{color:var(--brass);background:none;border:none;cursor:pointer;font-size:11.5px;padding:0}
 .fbbar .btn.bad.on{background:color-mix(in srgb,var(--high) 14%,var(--ink3))}
 .fbbar .done{font-size:12.5px;color:var(--mut)}
 .fbbar .done b{color:var(--txt)}
@@ -107,22 +112,19 @@
 {% if readonly %}<div class="evalnote" style="margin-top:10px">Owned by <b>{{ run.owner }}</b>. You are viewing as admin, read-only: replying, approving, and marking answers stay with the owner.</div>{% endif %}
 <div id="fbbar" class="fbbar" {{ 'hidden' if readonly }}>
   {% if annotations %}
-  <div class="done">Marked <b>{{ 'good' if annotations[-1].verdict=='up' else ('wrong' if annotations[-1].verdict=='down' else 'noted') }}</b>{% if annotations[-1].category %} &middot; {{ annotations[-1].category }}{% endif %}{% if annotations[-1].note %} &middot; {{ annotations[-1].note }}{% endif %}
-    {% if suites %} &middot; <form method="post" action="{{ url_for('add_case', sid=suites[0].id) }}" style="display:inline;margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button class="x" style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12.5px;padding:0">Add to {{ suites[0].name }} &rarr;</button></form>
-    {% else %} &middot; <form method="post" action="{{ url_for('create_suite') }}" style="display:inline;margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="agent_id" value="{{ agent.id }}"><input type="hidden" name="starter" value="1"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12.5px;padding:0">Start an eval suite from this &rarr;</button></form>{% endif %}
-  </div>
+  <span class="done">Marked <b>{{ 'good' if annotations[-1].verdict=='up' else ('wrong' if annotations[-1].verdict=='down' else 'noted') }}</b>{% if annotations[-1].category %} &middot; {{ annotations[-1].category }}{% endif %}{% if annotations[-1].note %} &middot; {{ annotations[-1].note }}{% endif %}
+    {% if suites %} &middot; <form method="post" action="{{ url_for('add_case', sid=suites[0].id) }}" style="display:inline;margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button type="submit">add to {{ suites[0].name }}</button></form>
+    {% else %} &middot; <form method="post" action="{{ url_for('create_suite') }}" style="display:inline;margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="agent_id" value="{{ agent.id }}"><input type="hidden" name="starter" value="1"><input type="hidden" name="source_run_id" value="{{ run.id }}"><button type="submit">start an eval suite from this</button></form>{% endif %}
+  </span>
   {% else %}
-  <div class="q">Was this answer right? Marking it feeds error analysis on the Evals page.</div>
-  <form method="post" action="{{ url_for('annotate_run', rid=run.id) }}" class="r" id="fbform"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <span class="q">Was this right?</span>
+  <button type="button" class="v good" onclick="fbPick('up')">Good</button>
+  <button type="button" class="v bad" onclick="fbPick('down')">Wrong</button>
+  <form method="post" action="{{ url_for('annotate_run', rid=run.id) }}" class="more" id="fbmore"><input type="hidden" name="csrf" value="{{ csrf_token }}">
     <input type="hidden" name="verdict" id="fbverdict" value="">
-    <button type="button" class="btn sm good" onclick="fbPick('up')">Good</button>
-    <button type="button" class="btn sm bad" onclick="fbPick('down')">Wrong</button>
-    <select name="category" id="fbcat" style="display:none">
-      <option value="">what went wrong…</option>
-      {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-    </select>
+    <select name="category" id="fbcat"><option value="">what went wrong</option>{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
     <input type="text" name="note" placeholder="note (optional)">
-    <button class="btn brass sm" type="submit">Save</button>
+    <button class="btn sm" type="submit">Save</button>
   </form>
   {% endif %}
 </div>
@@ -343,11 +345,16 @@ async function grantReq(sid){
   const r=await (await fetch('/connections/grant',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'fetch'},body:'id='+encodeURIComponent(sid)+'&grant_to='+encodeURIComponent({{ agent.id|tojson }})+'&resume='+encodeURIComponent(RID)})).json();
   poll();
 }
-function fbPick(v){
+async function fbPick(v){
   document.getElementById('fbverdict').value=v;
   document.querySelector('.fbbar .good').classList.toggle('on',v==='up');
   document.querySelector('.fbbar .bad').classList.toggle('on',v==='down');
-  document.getElementById('fbcat').style.display = v==='down' ? '' : 'none';
+  const more=document.getElementById('fbmore');
+  if(v==='down'){ more.classList.add('on'); more.querySelector('select').focus(); return; }
+  more.classList.remove('on');
+  // a thumbs-up needs no form: save it quietly
+  const f=more; const r=await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}).then(x=>x.json()).catch(()=>null);
+  if(r&&r.ok){ document.getElementById('fbbar').innerHTML='<span class="done">Marked <b>good</b></span>'; }
 }
 </script>
 {% endblock %}
