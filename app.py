@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.19.1"
+WARDEN_VERSION = "0.19.2"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1778,6 +1778,9 @@ def healthz():
         out.update({"mode": rt.mode(), "servers": len(cm().connected_servers()),
                     "auth": {"on": AUTH_ON, "google": GOOGLE_ON, "password": bool(AUTH_PASSWORD),
                              "admins_set": bool(ADMIN_EMAILS), "allowlist_set": bool(ALLOWED_EMAILS or ALLOWED_DOMAINS),
+                             "allowed_domains": sorted(ALLOWED_DOMAINS), "allowed_emails": sorted(ALLOWED_EMAILS),
+                             "env_has_allowed_domains": "WARDEN_ALLOWED_DOMAINS" in os.environ,
+                             "env_has_allowed_emails": "WARDEN_ALLOWED_EMAILS" in os.environ,
                              "secret_from_env": vault.from_env()},
                     "persistence": {"WARDEN_DATA_DIR_env": os.environ.get("WARDEN_DATA_DIR", "(unset)"),
                                     "requested_dir": paths.REQUESTED, "data_dir": dd, "using_fallback": paths.FALLBACK,
