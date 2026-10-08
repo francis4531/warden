@@ -172,6 +172,11 @@ the whole governance flow works offline. For live model calls:
 
 ## Deploy (Render)
 
+Python is pinned to 3.13 by `.python-version` (Render's native runtime defaults to the
+newest Python, which the MCP SDK's dependency chain does not always support yet), and
+`requirements.txt` pins the ranges that have been exercised by the test suite. When a
+deploy fails at import time, that file is the first place to look.
+
 Two options:
 
 **Docker (recommended, unlocks the whole catalog).** The included `Dockerfile` provides
