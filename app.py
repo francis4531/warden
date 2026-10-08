@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.22.3"
+WARDEN_VERSION = "0.23"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -366,7 +366,7 @@ def _auth_ctx():
 
 _ADMIN_ENDPOINTS = {"tool_risk", "studio", "catalog",
                     "discover", "discover_add", "discover_remove", "discover_json",
-                    "policies", "create_policy", "toggle_policy", "delete_policy",
+                    "policies", "policies_draft", "create_policy", "toggle_policy", "delete_policy",
                     "settings", "save_settings"}
 
 @app.before_request
@@ -1249,10 +1249,33 @@ def audit():
     events = store.audit_all(300) if (not _scope() or admin_view()) else store.audit_for_owner(_scope(), 300)
     return render_template("audit.html", events=events, integrity=store.verify_audit())
 
+def _policy_tool_names():
+    """Bare tool names an admin can write rules about: everything connected across the
+    studio plus the sample server, deduplicated."""
+    names = set()
+    for t in cm().all_tools():
+        names.add(t["tool"])
+    return sorted(names)
+
 @app.route("/policies")
 def policies():
-    return render_template("policies.html", policies=store.list_policies(),
-                           agents=store.list_agents(), ops=policy.OPS)
+    agents = store.list_agents()
+    pols = store.list_policies()
+    for p in pols:
+        p["sentence"] = rt.describe_rule(p, agents)
+    return render_template("policies.html", policies=pols, agents=agents, ops=policy.OPS, tool_names=_policy_tool_names())
+
+@app.route("/policies/draft", methods=["POST"])
+def policies_draft():
+    sentence = (request.form.get("sentence") or "").strip()
+    if len(sentence) < 6:
+        return {"error": "Say what the rule should do, in a sentence."}, 400
+    try:
+        d = rt.draft_policy(sentence, _policy_tool_names(), store.list_agents())
+    except Exception as ex:
+        return {"error": "Could not draft that: " + str(ex)[:160]}, 502
+    d["agent_name"] = next((a["name"] for a in store.list_agents() if a["id"] == d["agent_id"]), "any agent")
+    return d
 
 @app.route("/policies/create", methods=["POST"])
 def create_policy():

@@ -48,6 +48,16 @@ task and the conversation starts. The model drafts it live; in sandbox mode a ke
 planner stands in. Advanced setup keeps every dial: templates, each tool by name,
 model, budget, team.
 
+## Policies in plain language
+
+An admin writes the rule as a sentence ("Require approval for refunds over $500", "No
+more than 3 refunds in one conversation", "Never let Night Desk issue a refund"). Warden
+drafts one structured rule (who, what, when, then) and shows it as a sentence with each
+part editable; saving it is one click. Live, the model does the drafting; in sandbox, or
+when the model's answer does not parse, a built-in grammar covers amounts, counts, hours,
+weekends, risk tiers and agent names. Rules in force read back as sentences. The
+field-by-field form is still there under Advanced.
+
 ## Agents know where they run
 
 Every agent's system prompt states that it runs inside Warden, lists its granted tools by
