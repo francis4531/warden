@@ -69,6 +69,7 @@
       <div class="r-title">{{ q.agent.name }} needs: {{ q.need }}</div>
       <div class="r-meta">{% for m in q.matches %}<a href="{{ m.url }}" style="color:var(--brass)">{{ m.name }}</a>{{ ' &middot; '|safe if not loop.last }}{% else %}no catalog match, try the registry search above with &ldquo;{{ q.keywords }}&rdquo;{% endfor %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}" style="color:var(--dim)">open conversation</a></div>
     </div>
+    <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request? The agent will be told and will continue with the tools it already has.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('connections') }}"><button class="btn ghost sm" style="color:var(--high)">Decline</button></form>
   </div>
   {% endfor %}
 </div>

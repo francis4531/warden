@@ -33,23 +33,25 @@
     <div style="color:var(--mut);font-size:13px">No catalog match for &ldquo;{{ q.keywords }}&rdquo;.{% if is_admin %} <a href="{{ url_for('catalog', discover=q.keywords) }}" style="color:var(--brass)">Search the MCP Registry &rarr;</a>{% else %} Ask your admin to add it to the catalog.{% endif %}</div>
     {% endfor %}
   </div>
-  <div class="g-actions"><a class="btn ghost" href="{{ url_for('run_view', rid=q.run_id) }}">Open conversation</a></div>
+  <div class="g-actions"><a class="btn ghost" href="{{ url_for('run_view', rid=q.run_id) }}">Open conversation</a>
+    <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request? The agent will be told and will continue with the tools it already has.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('approvals') }}"><button class="btn deny">Decline</button></form></div>
 </div>
 {% endfor %}
 {% endif %}
 
 {% if waiting %}
-<div class="section-h"><span class="lbl">Waiting on users</span><span style="font-size:12px;color:var(--dim)">{{ waiting|length }} source{{ '' if waiting|length==1 else 's' }} their owners have to connect &middot; nothing for you to do</span></div>
+<div class="section-h"><span class="lbl">Waiting on users</span><span style="font-size:12px;color:var(--dim)">{{ waiting|length }} source{{ '' if waiting|length==1 else 's' }} their owners have to connect &middot; you can decline one, never connect it</span></div>
 <div class="list" style="margin-bottom:22px">
   {% for q in waiting %}
-  <a class="row" href="{{ url_for('run_view', rid=q.run_id) }}">
+  <div class="row">
     <span class="aico" style="width:26px;height:26px;margin-right:12px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
-    <div class="r-main" style="flex:1">
-      <div class="r-title">{{ q.agent.name }} <span style="color:var(--dim);font-weight:400">&middot; {{ q.agent.owner }}</span></div>
+    <div class="r-main" style="flex:1;min-width:0">
+      <div class="r-title"><a href="{{ url_for('run_view', rid=q.run_id) }}" style="color:inherit;text-decoration:none">{{ q.agent.name }}</a> <span style="color:var(--dim);font-weight:400">&middot; {{ q.agent.owner }}</span></div>
       <div class="r-meta">needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} &middot; {{ q.need[:110] }}</div>
     </div>
     <span class="pill awaiting_approval">owner connects</span>
-  </a>
+    <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request on the owner\'s behalf? The agent is told and continues with what it has; the owner sees who declined.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('approvals') }}"><button class="btn ghost sm" style="color:var(--high)">Decline</button></form>
+  </div>
   {% endfor %}
 </div>
 {% endif %}

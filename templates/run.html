@@ -147,6 +147,7 @@
 
 <script>
 const RID = {{ run.id|tojson }};
+const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const KC = {approval_request:'k-approval_request',approved:'k-approved',denied:'k-denied',final:'k-final',tool_result_gated:'k-tool_result_gated'};
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function stamp(r){return r?`<span class="stamp ${r}">${r}</span>`:'';}
@@ -183,6 +184,9 @@ let DELEG={}, REQS=[], ADMIN=false, ADMINS=[];
 const READONLY = {{ 'true' if readonly else 'false' }};
 function renderReq(e){
   const q = REQS.find(x=>x.need===e.text) || {need:e.text, matches:[], fulfilled:false};
+  if(q.declined){
+    return `<div class="req done" style="border-color:var(--line)"><div class="eye" style="color:var(--dim)">&#10007; declined</div><div class="title">${esc(q.need)}</div><div class="sub">Declined by ${esc(q.declined.by||'')}. The agent was told and continues with what it has.</div></div>`;
+  }
   if(q.fulfilled){
     return `<div class="req done"><div class="eye">&#10003; connected</div><div class="title">${esc(q.need)}</div><div class="sub">The requested capability is connected and granted to this agent.</div></div>`;
   }
@@ -191,7 +195,13 @@ function renderReq(e){
   return `<div class="req"><div class="eye">&#9673; needs a connection</div>
     <div class="title">${'{{ agent.name|e }}'} needs: ${esc(q.need)}</div>
     <div class="sub">${q.matches.some(m=>m.connected)?'Already connected. Grant it and the conversation resumes on its own.':'Connect it with your own account and the agent continues on its own; only your agents can use it.'}</div>
-    <div class="opts">${opts}</div></div>`;
+    <div class="opts">${opts}</div>
+    ${(!READONLY || IS_ADMIN) ? `<div style="margin-top:10px"><button type="button" class="btn ghost sm" style="color:var(--high)" data-need="${esc(q.need)}" onclick="declineReq(this.dataset.need)">Decline this request</button> <span style="font-size:12px;color:var(--dim);margin-left:8px">The agent is told no and carries on with the tools it has.</span></div>` : ''}</div>`;
+}
+async function declineReq(need){
+  if(!confirm('Decline this request? The agent will be told and will continue with the tools it already has.')) return;
+  const r=await (await fetch('/requests/decline',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'fetch'},body:'run_id='+encodeURIComponent(RID)+'&need='+encodeURIComponent(need)})).json().catch(()=>null);
+  if(r && r.ok) location.reload();
 }
 function renderDeleg(d){
   if(!d) return '';
@@ -242,6 +252,8 @@ function renderChat(events){
       chips+=`<span class="chip held"><span class="h">held</span> <b style="color:var(--txt)">${esc(e.tool)}</b> ${stamp(e.risk)}<span class="r">${esc(e.text)}</span></span>`;
     } else if(e.kind==='denied'){
       chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">denied</span></span>`;
+    } else if(e.kind==='connection_declined'){
+      flush(); html+=`<div class="msg user" style="border-left:2px solid var(--high)"><div class="who">warden</div>${esc(e.text)}</div>`;
     } else if(e.kind==='approval_decided'){
       chips+=`<span class="chip">${esc(e.tool)} ${stamp(e.risk)} <span style="color:${e.decision==='approved'?'var(--low)':'var(--high)'}">${esc(e.decision)} by ${esc(e.by||'owner')}</span></span>`;
     } else if(e.kind==='approval_mismatch'){

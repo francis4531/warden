@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.23"
+WARDEN_VERSION = "0.24"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1065,6 +1065,8 @@ def _fmt_event(e):
            "text": text}
     if kind == "approval_decided":
         out["decision"] = d.get("decision"); out["by"] = d.get("by")
+    if kind == "connection_declined":
+        out["text"] = d.get("text") or "connection request declined"; out["need"] = d.get("need")
     if kind in ("delegation", "delegation_result"):
         out["child_run"] = d.get("child_run"); out["member"] = d.get("member")
     if kind == "connection_request":
@@ -1405,6 +1407,11 @@ def _open_requests(rid, agent_id):
     granted_servers = {k.split("__")[0] for k in (ag.get("skills") or [])}
     connected = {s_["id"] for s_ in cm().connected_servers() if s_["status"] == "connected"}
     out = []
+    declined = {}
+    for e in store.audit_for_run(rid):
+        if e["kind"] == "connection_declined":
+            dd = e.get("detail") or {}
+            declined[dd.get("need")] = {"by": dd.get("by"), "ts": e["ts"]}
     for e in store.audit_for_run(rid):
         if e["kind"] != "connection_request":
             continue
@@ -1423,8 +1430,45 @@ def _open_requests(rid, agent_id):
                             "url": url_for("connections", connect=sid, grant_to=agent_id, resume=rid) if sid
                                    else url_for("connections", discover=d.get("keywords") or "", grant_to=agent_id, resume=rid)})
         done = any(m["granted"] for m in matches)
-        out.append({"ts": e["ts"], "need": d.get("need"), "keywords": d.get("keywords"), "matches": matches, "fulfilled": done})
+        dec = declined.get(d.get("need"))
+        dec = dec if (dec and dec["ts"] >= e["ts"]) else None
+        out.append({"ts": e["ts"], "need": d.get("need"), "keywords": d.get("keywords"), "matches": matches,
+                    "fulfilled": done or bool(dec), "declined": dec, "run_id": rid, "agent_id": agent_id})
     return out
+
+@app.route("/requests/decline", methods=["POST"])
+def decline_request():
+    """Turn a connection request down. The agent's owner may (it is their account that
+    would be connected), and an admin may (a source can be off limits), which is the one
+    thing an admin does to a user's conversation beyond reading it: it only ever narrows
+    what the agent may do. The agent is told and carries on with what it has."""
+    rid = request.form.get("run_id") or ""; need = (request.form.get("need") or "").strip()
+    r = store.get_run(rid)
+    if not r or not need:
+        abort(404)
+    ag = store.get_agent(r["agent_id"]) or {}
+    if AUTH_ON and (ag.get("owner") or "") != current_owner() and not is_admin():
+        abort(404)
+    open_needs = {q["need"] for q in _open_requests(rid, r["agent_id"]) if not q["fulfilled"]}
+    if need not in open_needs:
+        if request.headers.get("X-Requested-With") == "fetch":
+            return {"ok": False, "error": "not_open"}, 409
+        return redirect(_safe_next(request.form.get("back")) or url_for("run_view", rid=rid))
+    who = current_owner(); role = "admin" if (is_admin() and (ag.get("owner") or "") != who) else "owner"
+    reason = (request.form.get("reason") or "").strip()[:300]
+    store.audit(rid, r["agent_id"], "connection_declined", skill=rt.REQUEST_KEY,
+                detail={"need": need, "by": who, "role": role, "reason": reason,
+                        "text": "Connection request declined by %s%s" % (who, (": " + reason) if reason else "")})
+    if r["status"] not in ("running", "awaiting_approval"):
+        text = ("[Warden: the request to connect a source for \"%s\" was declined by %s%s. Do not ask for it again. "
+                "Do what you can with the tools you already have, say plainly what you could not do and why, "
+                "and finish.]" % (need, "the studio admin" if role == "admin" else "the user", (": " + reason) if reason else ""))
+        tr = r["transcript"]; tr.append({"role": "user", "content": text})
+        store.update_run(rid, status="running", transcript=tr)
+        _advance_bg(rid)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True}
+    return redirect(_safe_next(request.form.get("back")) or url_for("run_view", rid=rid))
 
 def _all_open_requests(owner=None):
     """Unfulfilled connection requests. Admins see every agent's; a user sees their own."""
