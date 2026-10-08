@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set active='build' %}
+{% block title %}New agent · Warden{% endblock %}
+{% block body %}
+<style>
+.ask{max-width:760px;margin:0 auto}
+.ask .big{display:flex;gap:10px;align-items:stretch}
+.ask textarea{min-height:88px;font-size:16px;line-height:1.5;padding:16px 18px;border-radius:14px}
+.ask .go{align-self:flex-end;padding:14px 22px;font-size:15px;border-radius:12px;white-space:nowrap}
+.eg{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.eg button{background:var(--ink2);border:1px solid var(--line);border-radius:20px;color:var(--mut);font-size:12.5px;padding:6px 12px;cursor:pointer}
+.eg button:hover{border-color:var(--brass);color:var(--txt)}
+.adv{display:block;text-align:center;margin-top:26px;color:var(--dim);font-size:12.5px}
+.adv a{color:var(--brass)}
+.err{color:var(--high);font-size:13px;margin-top:10px}
+.thinking{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:13.5px;margin-top:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite}
+
+/* the card */
+.jcard{display:none;max-width:760px;margin:22px auto 0;border:1px solid var(--line);border-radius:16px;background:var(--ink2);overflow:hidden}
+.jcard .jh{display:flex;align-items:center;gap:14px;padding:20px 22px 14px}
+.jcard .jh .aico{width:44px;height:44px;flex:none}
+.jcard .jh .nm{font-family:var(--disp);font-size:20px;font-weight:700;border:none;background:transparent;color:var(--txt);width:100%;padding:2px 4px;border-radius:6px}
+.jcard .jh .nm:focus,.jcard .sum:focus{outline:none;background:var(--ink);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 35%,transparent)}
+.jcard .sum{display:block;width:100%;border:none;background:transparent;color:var(--mut);font-size:14px;line-height:1.5;padding:2px 4px;border-radius:6px;resize:none;min-height:24px;font-family:var(--body)}
+.jcard .jl{padding:0 22px}
+.jrow{display:grid;grid-template-columns:130px 1fr;gap:14px;padding:13px 0;border-top:1px solid var(--line);font-size:13.5px}
+.jrow .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding-top:3px}
+.jrow .k.a{color:var(--low)}.jrow .k.g{color:var(--high)}
+.jrow .v{color:var(--txt);line-height:1.6}
+.jrow .v .t{display:inline-block;padding:1px 0;margin-right:10px;white-space:nowrap}
+.jrow .v .t small{color:var(--dim)}
+.jrow .src{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jrow .src .ok{color:var(--low)}
+.may{display:none;padding:4px 22px 6px;border-top:1px solid var(--line)}
+.may .mrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.may .mrow:first-of-type{border-top:none}
+.may .mrow .mn{font-size:13.5px}
+.may .mrow .mn small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg label{padding:6px 11px;font-size:12px;cursor:pointer;color:var(--mut);border-left:1px solid var(--line2);display:flex;align-items:center;gap:0}
+.seg label:first-child{border-left:none}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg label:has(input:checked){background:var(--brass);color:var(--accent-ink,#fff)}
+.seg label.never:has(input:checked){background:var(--high);color:#fff}
+.jact{display:flex;gap:10px;align-items:center;padding:16px 22px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
+.jact .first{flex:1;min-width:240px}
+.jact .first input{font-size:13.5px}
+.jact .q{color:var(--brass);font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
+.jact .q:hover{text-decoration:underline}
+.jnote{padding:10px 22px;background:color-mix(in srgb,var(--med) 8%,var(--ink2));color:var(--mut);font-size:12.5px;border-top:1px solid var(--line)}
+</style>
+
+<div class="page-h" style="text-align:center;max-width:760px;margin-left:auto;margin-right:auto">
+  <div class="eyebrow">New agent</div>
+  <h1>What should it do for you?</h1>
+  <p class="sub" style="margin-left:auto;margin-right:auto">One sentence is enough. Warden drafts the agent, shows you what it will do on its own and what it will ask you about first, and you start talking to it.</p>
+</div>
+
+<div class="ask">
+  <div class="big">
+    <textarea id="sentence" placeholder="Handle refund requests from customers who were charged twice" autofocus></textarea>
+    <button type="button" class="btn brass go" id="go">Draft it &rarr;</button>
+  </div>
+  <div class="eg" id="eg">
+    <button type="button">Handle refund requests from customers who were charged twice</button>
+    <button type="button">Triage new support tickets and open one for anything that needs a human</button>
+    <button type="button">Answer questions about our public GitHub repositories</button>
+    <button type="button">Go through my inbox each morning and tell me what needs a reply</button>
+  </div>
+  <div class="err" id="err"></div>
+  <div class="thinking" id="thinking" style="display:none"><span class="spin"></span><span>Drafting from what you said and the sources you have connected</span></div>
+  <div class="adv">Prefer the dials? <a href="{{ url_for('new_agent_advanced') }}">Advanced setup</a> gives you every tool and setting.</div>
+</div>
+
+<form method="post" action="{{ url_for('create_agent_simple') }}" class="jcard" id="jcard"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="instructions" id="f-instr">
+  <div id="f-skills"></div>
+  <div class="jh"><span class="aico" id="j-ico"></span><div style="flex:1;min-width:0"><input class="nm" name="name" id="j-name" required autocomplete="off"><textarea class="sum" id="j-sum" rows="1" placeholder="What it does, in a sentence"></textarea></div></div>
+  <div class="jl">
+    <div class="jrow"><div class="k a">On its own</div><div class="v" id="j-own"></div></div>
+    <div class="jrow"><div class="k g">Asks you first</div><div class="v" id="j-ask"></div></div>
+    <div class="jrow"><div class="k">Needs</div><div class="v src" id="j-needs"></div></div>
+  </div>
+  <div class="may" id="may"><div style="font-size:12.5px;color:var(--mut);padding:10px 0 6px">For each action that changes something, say how far it may go.</div><div id="may-rows"></div></div>
+  <div class="jnote" id="j-note" style="display:none"></div>
+  <div class="jact">
+    <button class="btn brass" type="submit">Create and start</button>
+    <div class="first"><input type="text" name="first" id="j-first" placeholder="First task (optional): Customer AC-1001 says they were charged twice" autocomplete="off"></div>
+    <button type="button" class="q" id="may-toggle">Change what it may do</button>
+    <a class="q" id="j-adv" href="{{ url_for('new_agent_advanced') }}">Open in advanced setup</a>
+  </div>
+</form>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const nice=t=>t.replace(/[_\-]+/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
+$('eg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ $('sentence').value=b.textContent; $('sentence').focus(); } });
+$('sentence').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); draft(); } });
+$('go').addEventListener('click',draft);
+$('j-sum').addEventListener('input',e=>{ e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; });
+$('may-toggle').addEventListener('click',()=>{ const m=$('may'); m.style.display=m.style.display==='block'?'none':'block'; });
+let DRAFT=null;
+async function draft(){
+  const s=$('sentence').value.trim(); $('err').textContent='';
+  if(s.length<8){ $('err').textContent='Say a little more about what it should do.'; return; }
+  $('go').disabled=true; $('thinking').style.display='flex'; $('jcard').style.display='none';
+  let r=null;
+  try{ r=await (await fetch('/draft',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'sentence='+encodeURIComponent(s)})).json(); }catch(_){ r={error:'Warden did not answer. Try again.'}; }
+  $('go').disabled=false; $('thinking').style.display='none';
+  if(!r||r.error){ $('err').textContent=(r&&r.error)||'Something went wrong.'; return; }
+  DRAFT=r; render(r);
+}
+function render(d){
+  $('j-name').value=d.name; $('j-sum').value=d.summary; $('f-instr').value=d.instructions;
+  $('j-ico').innerHTML='<svg viewBox="0 0 40 40" width="44" height="44"><circle cx="20" cy="20" r="17" fill="var(--brass)" opacity=".85"/><circle cx="14" cy="15" r="4" fill="#fff" opacity=".7"/></svg>';
+  const own=d.tools.filter(t=>t.gate!=='approval'), ask=d.tools.filter(t=>t.gate==='approval');
+  $('j-own').innerHTML = own.length ? own.map(t=>`<span class="t">${esc(nice(t.tool))} <small>· ${esc(t.server)}</small></span>`).join('') : '<span style="color:var(--dim)">nothing yet; it can still talk and ask for sources</span>';
+  $('j-ask').innerHTML = ask.length ? ask.map(t=>`<span class="t">${esc(nice(t.tool))} <small>· ${esc(t.server)}</small></span>`).join('') : '<span style="color:var(--dim)">nothing: it only reads</span>';
+  const have=[...new Set(d.tools.map(t=>t.server))];
+  let needs = have.map(h=>`<span class="ok">✓ ${esc(h)}</span>`).join('');
+  needs += d.needs.map(n=>`<span>${esc(n.name)} <a class="btn brass sm" href="${n.url}" style="margin-left:6px">${n.personal?'Sign in':'Connect'} &rarr;</a></span>`).join('');
+  $('j-needs').innerHTML = needs || '<span style="color:var(--dim)">nothing</span>';
+  $('f-skills').innerHTML = d.tools.map(t=>`<input type="hidden" name="skills" value="${esc(t.key)}">`).join('');
+  const writes=d.tools.filter(t=>t.risk!=='LOW');
+  $('may-rows').innerHTML = writes.map(t=>{
+    const high=t.risk==='HIGH';
+    return `<div class="mrow"><div class="mn">${esc(nice(t.tool))}<small>${esc(t.description)}</small></div>
+      <div class="seg">${high?'':`<label><input type="radio" name="stance__${esc(t.key)}" value="own" checked>on its own</label>`}
+      <label><input type="radio" name="stance__${esc(t.key)}" value="ask" ${high?'checked':''}>ask me first</label>
+      <label class="never"><input type="radio" name="stance__${esc(t.key)}" value="never">never</label></div></div>`;
+  }).join('') || '<div class="mrow"><div class="mn" style="color:var(--dim)">It only reads. Nothing to decide.</div></div>';
+  $('may-toggle').style.display = writes.length ? 'inline' : 'none';
+  $('j-note').style.display = d.sandbox ? 'block' : 'none';
+  $('j-note').textContent = d.sandbox ? 'Sandbox: this draft came from a built-in planner, not the model. Set ANTHROPIC_API_KEY for real drafts.' : '';
+  $('jcard').style.display='block'; $('may').style.display='none';
+  $('j-sum').style.height='auto'; $('j-sum').style.height=$('j-sum').scrollHeight+'px';
+  $('jcard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+// stance changes move a tool between the two lines, live
+$('may-rows').addEventListener('change',e=>{
+  if(!e.target.matches('input[type=radio]')) return;
+  const key=e.target.name.replace('stance__',''); const t=DRAFT.tools.find(x=>x.key===key); if(!t) return;
+  t.gate = e.target.value==='ask' ? 'approval' : (e.target.value==='own' ? 'auto' : 'never');
+  const own=DRAFT.tools.filter(t=>t.gate==='auto'||(t.gate!=='approval'&&t.gate!=='never')), ask=DRAFT.tools.filter(t=>t.gate==='approval'), never=DRAFT.tools.filter(t=>t.gate==='never');
+  $('j-own').innerHTML = own.map(t=>`<span class="t">${esc(nice(t.tool))} <small>· ${esc(t.server)}</small></span>`).join('') || '<span style="color:var(--dim)">nothing</span>';
+  $('j-ask').innerHTML = ask.map(t=>`<span class="t">${esc(nice(t.tool))} <small>· ${esc(t.server)}</small></span>`).join('')
+    + never.map(t=>`<span class="t" style="color:var(--dim);text-decoration:line-through">${esc(nice(t.tool))}</span>`).join('') || '<span style="color:var(--dim)">nothing</span>';
+});
+</script>
+{% endblock %}
