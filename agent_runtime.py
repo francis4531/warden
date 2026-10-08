@@ -472,6 +472,13 @@ def _sandbox_model(messages, tools):
         for w, kw in wants.items():
             if w in user_text and not any(w in t["name"].lower() for t in tools):
                 return tu(k_req, {"need": user_raw.strip()[:200], "keywords": kw})
+    declined = any(m.get("role") == "user" and isinstance(m.get("content"), str) and "was declined by" in m["content"] for m in messages)
+    if declined:
+        have = [t["name"].split("__")[-1].replace("_", " ") for t in tools if t["name"] not in (REQUEST_KEY, DELEGATE_KEY)]
+        return {"stop_reason": "end_turn", "content": [{"type": "text", "text":
+            "[sandbox] That source was declined, so I will not ask for it again. I cannot do the part of this task that "
+            "needs it. What I can still do with the tools I have (%s) is limited to those; tell me if you want me to "
+            "go ahead with that instead." % (", ".join(have) or "none")}]}
     granted_since = any(m.get("role") == "user" and isinstance(m.get("content"), str) and "is now connected" in m["content"] for m in messages)
     if k_req and k_req in called and not granted_since:
         return {"stop_reason":"end_turn","content":[{"type":"text","text":
@@ -597,7 +604,9 @@ def situational_context(agent, tools, idx, run=None):
             "for them, admins included. Warden then grants you the tools in one step. Never tell the user to "
             "install software, edit configuration files, or use a different product.\n"
             "3. After requesting a connection, tell the user in one or two sentences what you asked for and what "
-            "you will do once it is connected, then stop and wait.\n"
+            "you will do once it is connected, then stop and wait. If a request is declined (Warden tells you), "
+            "never ask for it again in that conversation: do what you can with the tools you have, say plainly what "
+            "you could not do and why, and finish.\n"
             "4. Never state that an action happened unless a tool result confirms it.\n"
             "5. If a granted tool returns an error, that is NOT a missing connection. Quote the error to the user "
             "word for word, say which system it came from, and stop. Never invent buttons, cards, approvals, or "

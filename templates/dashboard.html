@@ -50,7 +50,8 @@ a.tile:hover{border-color:var(--brass)}
   {% for q in open_requests %}
   <div class="nr"><span class="aico">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
     <div style="min-width:0"><div class="t">{{ q.agent.name }} needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} connected</div><div class="m">{{ q.need }}</div></div>
-    <a class="btn brass sm" href="{{ q.matches[0].url if q.matches else url_for('approvals') }}">Connect &rarr;</a></div>
+    <span style="display:flex;gap:6px"><a class="btn brass sm" href="{{ q.matches[0].url if q.matches else url_for('approvals') }}">Connect &rarr;</a>
+    <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request? The agent will be told and will continue with the tools it already has.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('home') }}"><button class="btn ghost sm" style="color:var(--high)">Decline</button></form></span></div>
   {% endfor %}
   {% for ap in pending %}
   <div class="nr"><span class="aico">{{ agent_icon(ap.agent_icon, seed=ap.agent_id)|safe }}</span>

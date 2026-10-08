@@ -58,6 +58,15 @@ when the model's answer does not parse, a built-in grammar covers amounts, count
 weekends, risk tiers and agent names. Rules in force read back as sentences. The
 field-by-field form is still there under Advanced.
 
+## Declining a request
+
+A connection request can be turned down as well as satisfied. The agent's owner can
+decline it from the conversation, the dashboard, Approvals or Connections; an admin can
+decline it from the console (the one thing an admin does to a user's conversation beyond
+reading it, and it only ever narrows what the agent may do). Either way the decision is
+on the audit log with who made it, the agent is told, is instructed never to ask for that
+source again in the conversation, and carries on with the tools it has.
+
 ## Agents know where they run
 
 Every agent's system prompt states that it runs inside Warden, lists its granted tools by
