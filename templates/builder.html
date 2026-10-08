@@ -1,337 +1,366 @@
 {% extends "base.html" %}
 {% set active='build' %}
+{% block title %}{{ 'Edit agent' if edit_agent else 'Build an agent' }} · Warden{% endblock %}
 {% block body %}
 <style>
-.iconpick{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
-.iconpick .ip{position:relative;width:44px;height:44px;padding:5px;border:1.5px solid var(--line2);border-radius:11px;background:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color .12s,transform .1s}
-.iconpick .ip:hover{border-color:var(--brass);transform:translateY(-1px)}
+.bgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
+@media (max-width:1040px){.bgrid{grid-template-columns:1fr}}
+.pane{border:1px solid var(--line);border-radius:14px;background:var(--ink2);padding:20px 22px}
+.pane h2{font-family:var(--disp);font-size:15px;font-weight:600;margin:0 0 2px}
+.pane .ph{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+.pane .ph p{margin:0;color:var(--dim);font-size:12.5px}
+.pane label.f{margin:16px 0 7px}
+.pane label.f:first-of-type{margin-top:0}
+.pane textarea{min-height:200px}
+.opt{text-transform:none;letter-spacing:0;color:var(--dim);font-weight:500}
+
+/* templates */
+.tpls{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;margin:0 -2px;scroll-snap-type:x proximity;scrollbar-width:thin}
+.tpl{flex:0 0 168px;scroll-snap-align:start;position:relative;border:1.5px solid var(--line);border-radius:10px;background:var(--ink);padding:10px 11px;cursor:pointer;transition:border-color .12s;min-height:86px;display:flex;flex-direction:column;gap:4px}
+.tpl:hover{border-color:var(--brass-dim,var(--line2))}
+.tpl.on{border-color:var(--brass);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 22%,transparent)}
+.tpl .tn{font-weight:600;font-size:12.5px;line-height:1.3}
+.tpl .td{font-size:11px;color:var(--dim);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tpl .tk{margin-top:auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
+.tpl .tk.ok{color:var(--low)}.tpl .tk.off{color:var(--dim)}
+.tplnote{margin-top:10px;font-size:12.5px;color:var(--mut);line-height:1.5}
+.tplnote .srvchip{display:inline-flex;align-items:center;font-family:var(--mono);font-size:11px;border-radius:20px;padding:2px 10px;margin:2px 4px 0 0;border:1px solid var(--line2)}
+.tplnote .srvchip.ok{color:var(--low);border-color:color-mix(in srgb,var(--low) 40%,var(--line2))}
+.tplnote .srvchip.off{color:var(--mut)}
+
+/* advanced */
+.adv{margin-top:18px;border-top:1px solid var(--line);padding-top:4px}
+.adv>summary{list-style:none;cursor:pointer;padding:10px 0;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.adv>summary::-webkit-details-marker{display:none}
+.adv>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
+.adv[open]>summary .chev{transform:rotate(90deg)}
+.adv .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:600px){.adv .row2{grid-template-columns:1fr}}
+.hint{color:var(--dim);font-size:11.5px;margin-top:6px;line-height:1.45}
+.iconpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.iconpick .ip{width:36px;height:36px;padding:4px;border:1.5px solid var(--line2);border-radius:9px;background:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.iconpick .ip:hover{border-color:var(--brass)}
 .iconpick .ip.on{border-color:var(--brass);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 30%,transparent)}
 .iconpick .ip svg{width:100%;height:100%}
-.iconpick .ip::after{content:attr(data-name);position:absolute;bottom:-25px;left:50%;transform:translateX(-50%);background:var(--ink3);border:1px solid var(--line2);color:var(--txt);font-size:10.5px;padding:2px 8px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:6}
-.iconpick .ip:hover::after{opacity:1}
-.agent-ico svg,.aico{width:100%;height:100%}
-.mdisco{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.members{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:8px}
+.mem{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;background:var(--ink);cursor:pointer}
+.mem.on{border-color:var(--brass);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 22%,transparent)}
+.mem input{margin:0;width:auto}
+.mem .aico{width:26px;height:26px;flex:none}
+.mem .mn{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mem .mm{font-size:11.5px;color:var(--mut)}
+
+/* tools pane */
+.sumbar{display:flex;align-items:center;gap:14px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--ink);margin-bottom:12px;font-size:13px}
+.sumbar b{font-size:16px;font-family:var(--disp);margin-right:4px}
+.sumbar .a{color:var(--low)}.sumbar .g{color:var(--high)}
+.sumbar .meter{flex:1;height:6px;border-radius:4px;background:var(--line);overflow:hidden;display:flex;min-width:60px}
+.sumbar .meter i{display:block;height:100%}
+.sumbar .meter .ia{background:var(--low)}.sumbar .meter .ig{background:var(--high)}
+.src{border:1px solid var(--line);border-radius:11px;background:var(--ink);margin-bottom:10px;overflow:hidden}
+.src .sh{display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--line)}
+.src .sh b{font-size:13.5px}
+.src .sh .cnt{margin-left:auto;font-size:12px;color:var(--dim)}
+.src .sh .all{font-size:12px;color:var(--brass);cursor:pointer;background:none;border:none;padding:0}
+.trow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 13px;border-top:1px solid var(--line);cursor:pointer}
+.trow:first-of-type{border-top:none}
+.trow:hover{background:color-mix(in srgb,var(--brass) 4%,transparent)}
+.trow input{width:auto;margin:0}
+.trow .tn{font-weight:600;font-size:13px}
+.trow .tdsc{font-size:12px;color:var(--mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow .tg{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.trow .tg.a{color:var(--low)}.trow .tg.g{color:var(--high)}
+.emptytools{border:1px dashed var(--line2);border-radius:11px;padding:22px;text-align:center;color:var(--mut);font-size:13px}
+.actions{position:sticky;bottom:0;margin-top:18px;padding:12px 0;background:linear-gradient(to top,var(--ink) 70%,transparent);display:flex;gap:10px;align-items:center}
+.actions .meta{margin-left:auto;font-size:12.5px;color:var(--dim)}
+
+/* connect modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;align-items:flex-start;justify-content:center;padding:44px 16px;overflow:auto}
+.modal .panel{background:var(--ink2);border:1px solid var(--line2);border-radius:14px;max-width:760px;width:100%;padding:22px 24px}
+.modal .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+.modal .phead h2{margin:0}
+.mdisco{margin:14px 0 16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
 .mdres{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 .mdcard{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:12px}
 .mdcard .mdn{font-weight:600;font-size:13px}
 .mdcard .mdt{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--line2);border-radius:5px;padding:1px 6px;margin-left:6px;color:var(--mut)}
-.mdcard .mdt.v{color:var(--brass-b);border-color:color-mix(in srgb,var(--brass-b) 35%,var(--line2))}
 .mdcard .mddesc{color:var(--mut);font-size:12px;margin-top:4px}
 .mdhint{color:var(--dim);font-size:12px}
-.tplservers{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--ink)}
-.tplservers .tpl-line{font-size:12.5px;color:var(--mut);margin-bottom:8px}
-.tplservers .tpl-line.dim{color:var(--dim)}
-.tplservers .tpl-line.ok{color:var(--brass-b);margin-bottom:0}
-.srvchip{display:inline-flex;align-items:center;font-family:var(--mono);font-size:11px;border-radius:20px;padding:2px 10px;margin:2px 3px 0 0;border:1px solid var(--line2)}
-.srvchip.ok{color:var(--brass-b);border-color:color-mix(in srgb,var(--brass-b) 40%,var(--line2))}
-.srvchip.off{color:var(--mut)}
-.mconn.flash{animation:flashcard 2.4s ease}
-@keyframes flashcard{0%,100%{box-shadow:none}15%,55%{box-shadow:0 0 0 2px var(--brass)}}
-@keyframes spin{to{transform:rotate(360deg)}}
-.spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;align-items:flex-start;justify-content:center;padding:44px 16px;overflow:auto}
-.modal .panel{background:var(--ink2);border:1px solid var(--line2);border-radius:14px;max-width:780px;width:100%;padding:22px 24px}
-.modal .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
-.mconn{border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mconn{border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:var(--ink)}
+.mconn.on{border-color:color-mix(in srgb,var(--low) 45%,var(--line))}
 .mconn .nm{font-weight:600;font-size:13.5px}
+.mconn .mini{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--brass-b);border:1px solid color-mix(in srgb,var(--brass-b) 35%,var(--line));border-radius:5px;padding:1px 6px}
 .mconn .dsc{color:var(--dim);font-size:11.5px;flex-basis:100%;order:5;margin-top:2px}
 .mconn .act{margin-left:auto;display:flex;gap:6px;align-items:center}
 .mconn .act input{background:var(--ink);border:1px solid var(--line2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:10px;padding:5px 8px;width:150px}
 .cstatus{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
-.tsec{border:1px solid var(--line);border-radius:10px;margin-bottom:9px;overflow:hidden;background:var(--ink2)}
-.tsec>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px}
-.tsec>summary::-webkit-details-marker{display:none}
-.tsec>summary b{font-size:13.5px}
-.tsec>summary .cnt{margin-left:auto;font-size:12px;color:var(--dim)}
-.tsec>summary .chev{font-size:10px;color:var(--dim);transition:transform .15s}
-.tsec[open]>summary .chev{transform:rotate(90deg)}
-.tsec .tbody{padding:4px 12px 12px}
-.tsec .skill-row{background:var(--ink)}
-.members{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:8px}
-.mem{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--ink);cursor:pointer;transition:border-color .12s}
-.mem:hover{border-color:var(--brass-dim)}
-.mem.on{border-color:var(--brass);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 22%,transparent)}
-.mem input{margin:0}
-.mem .aico{width:28px;height:28px;flex:none}
-.mem .mn{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mem .mm{font-size:11.5px;color:var(--mut)}
-.mem .mm b{color:var(--high);font-weight:600}
-.teamnote{margin-top:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--ink);color:var(--mut);font-size:12.5px;line-height:1.55}
-.teamnote .stamp{vertical-align:1px}
+.cstatus .ok{color:var(--low)}
+.mconn.flash{animation:flashcard 2.4s ease}
+@keyframes flashcard{0%,100%{box-shadow:none}15%,55%{box-shadow:0 0 0 2px var(--brass)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
 </style>
 
 <div class="page-h">
   <div class="eyebrow">{{ 'Edit agent' if edit_agent else 'Build an agent' }}</div>
-  <h1>{{ 'Adjust what it does and what it can touch.' if edit_agent else "Define what it does, and what it's allowed to touch." }}</h1>
-  <p class="sub">Give the agent instructions and grant it tools from your connected servers. Need a server it can't see? Connect one right here, without leaving this page.</p>
+  <h1>{{ 'Adjust what it does and what it can touch.' if edit_agent else 'Say what it does. Choose what it can touch.' }}</h1>
+  <p class="sub">On the left, who the agent is. On the right, the tools it may call, from the sources you have connected: reads run on their own, anything that changes state asks you first.</p>
 </div>
 
-<form method="post" action="{{ url_for('update_agent', aid=edit_agent.id) if edit_agent else url_for('create_agent') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}">
-  <div class="card">
+<form method="post" action="{{ url_for('update_agent', aid=edit_agent.id) if edit_agent else url_for('create_agent') }}" id="bform"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+<input type="hidden" name="icon" id="icon" value="{{ (edit_agent.icon if edit_agent) or '' }}">
+{% if not edit_agent %}<input type="hidden" name="template" id="tplid" value="">{% endif %}
+<div class="bgrid">
+
+  {# ================= left: the agent ================= #}
+  <div class="pane">
+    <div class="ph"><h2>The agent</h2><p>name it, tell it what to do</p></div>
+
     {% if not edit_agent %}
-    <label class="f" for="tpl">Start from a template <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-    <select id="tpl">
-      <option value="">Blank agent</option>
-      {% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-    </select>
-    <div id="tplnote" style="color:var(--med);font-size:12px;margin-top:6px"></div>
-    <input type="hidden" name="template" id="tplid" value="">
-    {% endif %}
-    <label class="f" for="name">Agent name</label>
-    <input type="text" id="name" name="name" placeholder="Name your agent" value="{{ edit_agent.name if edit_agent }}" required>
-    <label class="f">Icon <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-    {% set chosen = (edit_agent.icon if edit_agent and edit_agent.icon) or (edit_agent.id if edit_agent) %}
-    <input type="hidden" name="icon" id="icon" value="{{ (edit_agent.icon if edit_agent) or '' }}">
-    <div class="iconpick">
-      {% for key, nm in ICON_SET %}
-      <button type="button" class="ip {{ 'on' if (edit_agent and edit_agent.icon==key) }}" data-key="{{ key }}" data-name="{{ nm }}" onclick="pickIcon('{{ key }}')">{{ agent_icon(key)|safe }}</button>
-      {% endfor %}
-    </div>
-    <div style="color:var(--dim);font-size:11.5px;margin-top:6px">Skip it and Warden assigns a planet for you. Click a chosen one again to clear it.</div>
-    <label class="f" for="instructions">Instructions</label>
-    <textarea id="instructions" name="instructions" placeholder="Describe what this agent should do, and what it should never do without approval.">{{ edit_agent.instructions if edit_agent }}</textarea>
-    <label class="f" for="model">Model <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-    <input type="text" id="model" name="model" placeholder="studio default: {{ default_model }}" value="{{ edit_agent.model if edit_agent and edit_agent.model }}">
-    <label class="f" for="budget_usd">Run budget <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional, USD per run)</span></label>
-    <input type="number" step="0.01" min="0" id="budget_usd" name="budget_usd" placeholder="e.g. 0.50 &mdash; blank means no cap" value="{{ edit_agent.budget_usd if edit_agent and edit_agent.budget_usd }}">
-    <div style="color:var(--dim);font-size:11.5px;margin-top:6px">If a run reaches this spend, it stops before the next model call. Blank means unlimited.</div>
-
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 4px">
-      <label class="f" style="margin:0">Granted tools</label>
-      
-    </div>
-    <div id="toolsections">
-    {% for sid, g in groups.items() %}
-    {% if edit_skills is not none %}{% set sel = g.tools | selectattr('key','in',edit_skills) | list | length %}{% else %}{% set sel = g.tools | selectattr('risk','equalto','LOW') | list | length %}{% endif %}
-    <details class="tsec">
-      <summary><span class="chev">&#9654;</span><b>{{ g.name }}</b><span class="cnt">{{ g.tools|length }} tools &middot; <span class="selc">{{ sel }}</span> granted</span></summary>
-      <div class="tbody">
-      {% for s in g.tools %}
-      <label class="skill-row">
-        <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" data-personal="{{ '1' if s.owner else '0' }}" {% if edit_skills is not none %}{{ 'checked' if s.key in edit_skills }}{% else %}{{ 'checked' if s.risk == 'LOW' }}{% endif %}>
-        <span class="sk-body"><span class="sk-top"><span class="sk-name">{{ s.tool }}</span>
-          <span class="stamp {{ s.risk }}">{{ s.risk }}</span>
-          {% if s.gate=='approval' %}<span class="pill awaiting_approval">needs approval</span>{% else %}<span class="pill">auto-run</span>{% endif %}</span>
-          <span class="sk-desc">{{ s.description }}</span></span>
-      </label>
-      {% endfor %}
+    <label class="f">Start from <span class="opt">(optional, scroll for more)</span></label>
+    <div class="tpls" id="tpls">
+      <div class="tpl on" data-id="" tabindex="0"><div class="tn">Blank agent</div><div class="td">Your own instructions, reads granted by default.</div><div class="tk ok">ready</div></div>
+      {% for t in templates %}
+      <div class="tpl" data-id="{{ t.id }}" tabindex="0">
+        <div class="tn">{{ t.name }}</div>
+        <div class="td">{{ t.instructions.split('.')[0] }}.</div>
+        <div class="tk" data-k="{{ t.id }}"></div>
       </div>
-    </details>
-    {% endfor %}
-    </div>
-
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:26px 0 2px">
-      <label class="f" style="margin:0">Team members <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(optional)</span></label>
-      <span style="font-size:12px;color:var(--dim)"><span id="memcount">{{ edit_members|length }}</span> on the team</span>
-    </div>
-    <div style="color:var(--mut);font-size:12.5px;margin-top:4px">Pick agents this one can hand tasks to. It becomes a team lead with one extra tool, <span style="font-family:var(--mono)">delegate</span>.</div>
-    {% if candidates %}
-    <div class="members" id="members">
-      {% for a in candidates %}
-      <label class="mem {{ 'on' if a.id in edit_members }}">
-        <input type="checkbox" name="members" value="{{ a.id }}" {{ 'checked' if a.id in edit_members }}>
-        <span class="aico">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
-        <span style="min-width:0">
-          <div class="mn">{{ a.name }}</div>
-          <div class="mm">{{ a.skills|length }} tool{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads {{ a.members|length }}{% endif %}{% if a.budget_usd %} &middot; ${{ '%.2f'|format(a.budget_usd) }}/run{% endif %}</div>
-        </span>
-      </label>
       {% endfor %}
     </div>
-    <div id="tplmembers" class="teamnote" style="display:none"></div>
-    {% else %}
-    <div id="tplmembers" class="teamnote">No other agents yet. Build the members first, then come back and put them on a team; or pick the <b>Billing Desk (team)</b> template, which creates its two members for you.</div>
+    <div id="tplnote" class="tplnote"></div>
     {% endif %}
-    <div class="teamnote">How a team is governed: each hand-off is a <span class="stamp {{ delegate_risk }}">{{ delegate_risk }}</span> action on the record, and a policy can gate or deny it (match tool <span style="font-family:var(--mono)">delegate</span>, field <span style="font-family:var(--mono)">member</span>). Members keep their own tool grants and approvals; the lead never gets a member&rsquo;s tools. A member&rsquo;s approval pauses the whole team. This agent&rsquo;s run budget covers every member&rsquo;s work.</div>
 
-    <div style="margin-top:20px;display:flex;gap:10px">
-      <button class="btn brass" type="submit">{{ 'Save changes' if edit_agent else 'Create agent' }}</button>
-      <a class="btn ghost" href="{{ url_for('home') }}">Cancel</a>
+    <label class="f" for="name">Name</label>
+    <input type="text" id="name" name="name" placeholder="Billing Resolver, Release Notes Writer, Inbox Triage" value="{{ edit_agent.name if edit_agent }}" required autocomplete="off">
+
+    <label class="f" for="instructions">Instructions</label>
+    <textarea id="instructions" name="instructions" placeholder="What it is for, how it should work, and what it must never do without asking. Plain language; it reads this before every conversation.">{{ edit_agent.instructions if edit_agent }}</textarea>
+
+    <details class="adv" {{ 'open' if edit_agent and (edit_agent.budget_usd or edit_agent.model or edit_members) }}>
+      <summary><span class="chev">&#9654;</span>Advanced: icon, model, budget, team</summary>
+      <label class="f">Icon <span class="opt">(Warden picks one if you skip this)</span></label>
+      <div class="iconpick">
+        {% for key, nm in ICON_SET %}
+        <button type="button" class="ip {{ 'on' if (edit_agent and edit_agent.icon==key) }}" data-key="{{ key }}" title="{{ nm }}" onclick="pickIcon('{{ key }}')">{{ agent_icon(key)|safe }}</button>
+        {% endfor %}
+      </div>
+      <div class="row2">
+        <div>
+          <label class="f" for="model">Model</label>
+          <input type="text" id="model" name="model" placeholder="{{ default_model }}" value="{{ edit_agent.model if edit_agent and edit_agent.model }}" autocomplete="off">
+          <div class="hint">Blank uses the studio default.</div>
+        </div>
+        <div>
+          <label class="f" for="budget_usd">Budget per conversation <span class="opt">(USD)</span></label>
+          <input type="text" inputmode="decimal" id="budget_usd" name="budget_usd" placeholder="no cap" value="{{ edit_agent.budget_usd if edit_agent and edit_agent.budget_usd }}" autocomplete="off">
+          <div class="hint">Stops before the next model call once reached. Covers the whole team if this agent leads one.</div>
+        </div>
+      </div>
+      <label class="f">Team members <span class="opt">(agents this one can hand tasks to)</span></label>
+      {% if candidates %}
+      <div class="members" id="members">
+        {% for a in candidates %}
+        <label class="mem {{ 'on' if a.id in edit_members }}">
+          <input type="checkbox" name="members" value="{{ a.id }}" {{ 'checked' if a.id in edit_members }}>
+          <span class="aico">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
+          <span style="min-width:0"><div class="mn">{{ a.name }}</div><div class="mm">{{ a.skills|length }} tool{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads {{ a.members|length }}{% endif %}</div></span>
+        </label>
+        {% endfor %}
+      </div>
+      <div id="tplmembers" class="hint" style="display:none"></div>
+      {% else %}
+      <div id="tplmembers" class="hint">No other agents yet. Build the members first, then put them on a team here.</div>
+      {% endif %}
+      <div class="hint">A lead gets one extra tool, <span style="font-family:var(--mono)">delegate</span> (<span class="stamp {{ delegate_risk }}">{{ delegate_risk }}</span>). Members keep their own grants and approvals; a member's approval pauses the whole team.</div>
+    </details>
+  </div>
+
+  {# ================= right: what it can touch ================= #}
+  <div class="pane">
+    <div class="ph"><h2>What it can touch</h2><button type="button" class="btn ghost sm" onclick="openConn()">Connect a source &rarr;</button></div>
+    <div class="sumbar" id="sumbar"><span><b class="a" id="n-a">0</b>run on their own</span><span class="meter"><i class="ia" id="m-a"></i><i class="ig" id="m-g"></i></span><span><b class="g" id="n-g">0</b>ask first</span></div>
+    <div id="toolsections">
+      {% for sid, g in groups.items() %}
+      <div class="src" data-sid="{{ sid }}">
+        <div class="sh"><b>{{ g.name }}</b><span class="cnt"><span class="selc">0</span> of {{ g.tools|length }}</span><button type="button" class="all" data-act="all">grant all</button><button type="button" class="all" data-act="none">none</button></div>
+        {% for s in g.tools %}
+        <label class="trow">
+          <input type="checkbox" name="skills" value="{{ s.key }}" data-risk="{{ s.risk }}" data-personal="{{ '1' if s.owner else '0' }}" {% if edit_skills is not none %}{{ 'checked' if s.key in edit_skills }}{% else %}{{ 'checked' if s.risk == 'LOW' }}{% endif %}>
+          <span style="min-width:0"><div class="tn">{{ s.tool }}</div><div class="tdsc" title="{{ s.description }}">{{ s.description }}</div></span>
+          <span class="tg {{ 'g' if s.gate=='approval' else 'a' }}">{{ 'asks first' if s.gate=='approval' else 'runs' }} &middot; {{ s.risk }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="emptytools">No sources connected yet.<br><span style="font-size:12.5px;color:var(--dim)">Connect one and its tools appear here; reads are granted by default.</span></div>
+      {% endfor %}
     </div>
   </div>
+</div>
+
+<div class="actions">
+  <button class="btn brass" type="submit">{{ 'Save changes' if edit_agent else 'Create agent' }}</button>
+  <a class="btn ghost" href="{{ url_for('agent', aid=edit_agent.id) if edit_agent else url_for('home') }}">Cancel</a>
+  <span class="meta" id="actmeta"></span>
+</div>
 </form>
 
-<!-- inline connect modal -->
+<!-- connect a source, without leaving the page -->
 <div class="modal" id="connmodal">
   <div class="panel">
-    <div class="phead"><h2>Connect a server</h2><button class="btn ghost sm" onclick="closeConn()">Done</button></div>
+    <div class="phead"><h2>Connect a source</h2><button type="button" class="btn ghost sm" onclick="closeConn()">Done</button></div>
+    <div style="color:var(--mut);font-size:12.5px">With your own account or key. Only your agents can use it. Its tools appear in the builder as soon as it connects.</div>
+    {% if is_admin %}
     <div class="mdisco">
-      <div style="color:var(--mut);font-size:12.5px;margin-bottom:10px">Don&rsquo;t see what you need? Search the official MCP Registry, official first-party servers only, and add it here.</div>
       <div style="display:flex;gap:8px">
-        <input type="text" id="mdq" placeholder="e.g. gmail, notion, snowflake, calendar" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();modalDiscover();}">
-        <button type="button" class="btn brass" onclick="modalDiscover()">Search registry</button>
+        <input type="text" id="mdq" placeholder="Search the MCP Registry: gmail, notion, snowflake, calendar" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();modalDiscover();}">
+        <button type="button" class="btn brass" onclick="modalDiscover()">Search</button>
       </div>
       <div id="mdres" class="mdres"></div>
     </div>
-    <div style="color:var(--mut);font-size:12.5px;margin-bottom:14px">Or connect from your catalog. A server&rsquo;s tools appear in the builder below once connected.</div>
-    <div id="connlist">
-      {% include '_connlist.html' %}
-    </div>
+    {% else %}<div style="height:12px"></div>{% endif %}
+    <div id="connlist">{% include '_connlist.html' %}</div>
   </div>
 </div>
 
 <script>
 const TEMPLATES = {{ templates|tojson }};
-const IS_ADMIN = false;
 const CATALOG_META = {{ catalog_meta|tojson }};
-// The baseline for a new agent: every read-only (LOW) tool from your connections. A
-// template adds its purposeful writes on top.
-function isBaseline(key, risk, personal){ return risk==='LOW'; }
+const EDITING = {{ 'true' if edit_agent else 'false' }};
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ---- counts: the summary bar, per-source counts, the footer line ----
+function recount(){
+  let a=0,g=0;
+  document.querySelectorAll('#toolsections input[name=skills]:checked').forEach(b=>{ if(b.dataset.risk==='HIGH') g++; else a++; });
+  document.getElementById('n-a').textContent=a; document.getElementById('n-g').textContent=g;
+  const t=a+g||1; document.getElementById('m-a').style.width=(a/t*100)+'%'; document.getElementById('m-g').style.width=(g/t*100)+'%';
+  document.querySelectorAll('.src').forEach(s=>{ const c=s.querySelector('.selc'); if(c) c.textContent=s.querySelectorAll('input[name=skills]:checked').length; });
+  const n=a+g; document.getElementById('actmeta').textContent = n ? (n+' tool'+(n===1?'':'s')+' granted'+(g?', '+g+' held for approval':'')) : 'no tools granted; it can still talk and request connections';
+}
+document.getElementById('toolsections').addEventListener('change', e=>{ if(e.target.matches('input[name=skills]')) recount(); });
+document.getElementById('toolsections').addEventListener('click', e=>{
+  const b=e.target.closest('button.all'); if(!b) return;
+  b.closest('.src').querySelectorAll('input[name=skills]').forEach(c=>c.checked=(b.dataset.act==='all'));
+  recount();
+});
+recount();
+
+// ---- templates ----
+function isBaseline(risk){ return risk==='LOW'; }
 function applyGrants(want){
-  document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{
-    b.checked = isBaseline(b.value, b.dataset.risk, b.dataset.personal==='1') || want.has(b.value.split('__').pop());
-  });
-  document.querySelectorAll('details.tsec').forEach(sec=>{
-    const n=sec.querySelectorAll('input[name=skills]:checked').length;
-    const c=sec.querySelector('.selc'); if(c) c.textContent=n;
-  });
+  document.querySelectorAll('#toolsections input[name=skills]').forEach(b=>{ b.checked = isBaseline(b.dataset.risk) || want.has(b.value.split('__').pop()); });
+  recount();
 }
-function renderTplPrompt(t){
-  const note=document.getElementById('tplnote');
+function tplReady(t){
+  const parts=(t.servers||[]).map(id=>Object.assign({id},CATALOG_META[id]||{name:id,connected:false}));
+  return {parts, need: parts.filter(p=>!p.connected)};
+}
+function renderTplNote(t){
+  const note=document.getElementById('tplnote'); if(!note) return;
   if(!t || !(t.servers||[]).length){ note.innerHTML=''; return; }
-  const parts = t.servers.map(id => Object.assign({id}, CATALOG_META[id] || {name:id, connected:false}));
-  const have = parts.filter(p=>p.connected);
-  const need = parts.filter(p=>!p.connected);
-  let html = '<div class="tplservers">';
-  html += '<div class="tpl-line">This template uses: ' + parts.map(p =>
-    `<span class="srvchip ${p.connected?'ok':'off'}">${p.connected?'\u2713 ':''}${esc(p.name)}</span>`).join(' ') + '</div>';
+  const {parts,need}=tplReady(t);
+  let html='Uses: '+parts.map(p=>`<span class="srvchip ${p.connected?'ok':'off'}">${p.connected?'✓ ':''}${esc(p.name)}</span>`).join('');
   if(need.length){
-    const ids = JSON.stringify(need.map(p=>p.id));
-    const label = need.length===1 ? ('Connect ' + esc(need[0].name)) : ('Connect ' + need.length + ' servers');
-    html += `<div class="tpl-line dim">Read-only tools are granted already. To grant its write tools, connect `
-      + need.map(p=>`<b>${esc(p.name)}</b>`).join(', ') + `.</div>`;
-    if(IS_ADMIN || need.every(p=>p.personal)) html += IS_ADMIN
-      ? `<button type="button" class="btn brass sm" onclick='openConnFor(${ids})'>${label} &rarr;</button>`
-      : `<a class="btn brass sm" href="/connections?connect=${encodeURIComponent(need[0].id)}">${label} &rarr;</a>`;
-    else html += `<div class="tpl-line dim">Ask your admin to connect ` + need.map(p=>esc(p.name)).join(', ') + `.</div>`;
+    html+=`<div style="margin-top:6px">Reads are granted now. For its write tools, connect ${need.map(p=>'<b>'+esc(p.name)+'</b>').join(', ')} on the right.</div>`;
   } else {
-    html += '<div class="tpl-line ok">\u2713 Everything this template needs is connected.</div>';
+    html+='<div style="margin-top:6px;color:var(--low)">✓ Everything it needs is connected.</div>';
   }
-  html += '</div>';
-  note.innerHTML = html;
+  note.innerHTML=html;
 }
-const tplEl = document.getElementById('tpl');
-if (tplEl) tplEl.addEventListener('change', e=>{
-  const t = TEMPLATES.find(x=>x.id===e.target.value);
-  const name=document.getElementById('name'), instr=document.getElementById('instructions');
-  name.value = t ? t.name : '';
-  instr.value = t ? t.instructions : '';
-  document.getElementById('tplid').value = t ? t.id : '';
-  applyGrants(new Set(t ? t.tools : []));
-  renderTplPrompt(t);
-  const tm=document.getElementById('tplmembers');
-  if(tm && t && (t.members||[]).length){
-    const names=t.members.map(id=>{const m=TEMPLATES.find(x=>x.id===id); return m?m.name:id;});
-    tm.style.display='block';
-    tm.innerHTML='This template is a team. If you pick no members above, creating it also creates <b>'+names.map(esc).join('</b> and <b>')+'</b> as members, each with its own tool grants.';
-  } else if(tm && document.getElementById('members')){ tm.style.display='none'; }
-});
-const memBox=document.getElementById('members');
-if(memBox) memBox.addEventListener('change', e=>{
-  if(!e.target.matches('input[name=members]')) return;
-  e.target.closest('.mem').classList.toggle('on', e.target.checked);
-  document.getElementById('memcount').textContent = memBox.querySelectorAll('input[name=members]:checked').length;
-});
-// open the connect modal and highlight the specific server(s) the template needs
-function openConnFor(ids){
-  openConn();
-  requestAnimationFrame(()=>{
-    let first=null;
-    (ids||[]).forEach(id=>{
-      const card=document.querySelector(`#connmodal .mconn[data-id="${id}"]`);
-      if(card){ card.classList.add('flash'); first=first||card;
-        setTimeout(()=>card.classList.remove('flash'), 2400); }
-    });
-    if(first) first.scrollIntoView({block:'center', behavior:'smooth'});
-  });
+const tplBox=document.getElementById('tpls');
+if(tplBox){
+  TEMPLATES.forEach(t=>{ const k=tplBox.querySelector(`.tk[data-k="${t.id}"]`); if(!k) return; const {need}=tplReady(t);
+    k.textContent = need.length ? ('needs '+need.map(p=>p.name).join(', ')) : 'ready'; k.classList.add(need.length?'off':'ok'); });
+  function pickTpl(el){
+    tplBox.querySelectorAll('.tpl').forEach(x=>x.classList.toggle('on', x===el));
+    const t=TEMPLATES.find(x=>x.id===el.dataset.id);
+    document.getElementById('name').value = t ? t.name : '';
+    document.getElementById('instructions').value = t ? t.instructions : '';
+    document.getElementById('tplid').value = t ? t.id : '';
+    applyGrants(new Set(t ? t.tools : []));
+    renderTplNote(t);
+    const tm=document.getElementById('tplmembers');
+    if(tm && t && (t.members||[]).length){
+      const names=t.members.map(id=>{const m=TEMPLATES.find(x=>x.id===id); return m?m.name:id;});
+      tm.style.display='block'; tm.innerHTML='This template is a team. With no members picked, creating it also creates <b>'+names.map(esc).join('</b> and <b>')+'</b> as members.';
+      document.querySelector('.adv').open=true;
+    } else if(tm && document.getElementById('members')){ tm.style.display='none'; }
+  }
+  tplBox.addEventListener('click', e=>{ const el=e.target.closest('.tpl'); if(el) pickTpl(el); });
+  tplBox.addEventListener('keydown', e=>{ const el=e.target.closest('.tpl'); if(el && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); pickTpl(el); } });
 }
 
-function openConn(){document.getElementById('connmodal').style.display='flex';}
+// ---- advanced ----
 function pickIcon(k){
-  const cur=document.getElementById('icon');
-  const clearing = cur.value===k;                 // click the chosen one again to clear
-  cur.value = clearing ? '' : k;
+  const cur=document.getElementById('icon'); const clearing=cur.value===k; cur.value=clearing?'':k;
   document.querySelectorAll('.iconpick .ip').forEach(b=>b.classList.toggle('on', !clearing && b.dataset.key===k));
 }
-function closeConn(){document.getElementById('connmodal').style.display='none';}
-// keep each server section's "granted" count current
-document.getElementById('toolsections').addEventListener('change', e=>{
-  if(!e.target.matches('input[name=skills]')) return;
-  const sec=e.target.closest('details.tsec'); if(!sec) return;
-  const n=sec.querySelectorAll('input[name=skills]:checked').length;
-  const c=sec.querySelector('.selc'); if(c) c.textContent=n;
-});
-function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function gatePill(g){return g==='approval'?'<span class="pill awaiting_approval">needs approval</span>':'<span class="pill">auto-run</span>';}
+const memBox=document.getElementById('members');
+if(memBox) memBox.addEventListener('change', e=>{ if(e.target.matches('input[name=members]')) e.target.closest('.mem').classList.toggle('on', e.target.checked); });
 
+// ---- connect modal ----
+function openConn(){document.getElementById('connmodal').style.display='flex';}
+function closeConn(){document.getElementById('connmodal').style.display='none';}
+document.getElementById('connmodal').addEventListener('click', e=>{ if(e.target.id==='connmodal') closeConn(); });
+function openConnFor(ids){
+  openConn();
+  requestAnimationFrame(()=>{ let first=null; (ids||[]).forEach(id=>{ const card=document.querySelector(`#connmodal .mconn[data-id="${id}"]`);
+    if(card){ card.classList.add('flash'); first=first||card; setTimeout(()=>card.classList.remove('flash'),2400); } });
+    if(first) first.scrollIntoView({block:'center',behavior:'smooth'}); });
+}
+function gateLabel(t){ return `<span class="tg ${t.gate==='approval'?'g':'a'}">${t.gate==='approval'?'asks first':'runs'} &middot; ${t.risk}</span>`; }
 async function refreshTools(){
-  const keep = new Set([...document.querySelectorAll('input[name=skills]:checked')].map(c=>c.value));
-  const existing = new Set([...document.querySelectorAll('input[name=skills]')].map(c=>c.value));
+  const keep=new Set([...document.querySelectorAll('input[name=skills]:checked')].map(c=>c.value));
+  const existing=new Set([...document.querySelectorAll('input[name=skills]')].map(c=>c.value));
   let data; try{ data=await (await fetch('/tools.json')).json(); }catch(_){ return; }
   let html='';
   for(const g of data.groups){
-    const rows = g.tools.map(t=>{
-      const isNew = !existing.has(t.key);
-      const checked = keep.has(t.key) || (isNew && isBaseline(t.key, t.risk, !!t.personal));   // baseline flows down by default
-      return {t, checked};
-    });
-    const sel = rows.filter(r=>r.checked).length;
-    html += `<details class="tsec"><summary><span class="chev">\u25b6</span><b>${esc(g.server)}</b>`
-      +`<span class="cnt">${g.tools.length} tools &middot; <span class="selc">${sel}</span> granted</span></summary><div class="tbody">`;
-    for(const {t,checked} of rows){
-      html += `<label class="skill-row"><input type="checkbox" name="skills" value="${t.key}" data-risk="${t.risk}" data-personal="${t.personal?'1':'0'}" ${checked?'checked':''}>`
-        +`<span class="sk-body"><span class="sk-top"><span class="sk-name">${esc(t.tool)}</span>`
-        +`<span class="stamp ${t.risk}">${t.risk}</span>${gatePill(t.gate)}</span>`
-        +`<span class="sk-desc">${esc(t.description)}</span></span></label>`;
+    html+=`<div class="src"><div class="sh"><b>${esc(g.server)}</b><span class="cnt"><span class="selc">0</span> of ${g.tools.length}</span><button type="button" class="all" data-act="all">grant all</button><button type="button" class="all" data-act="none">none</button></div>`;
+    for(const t of g.tools){
+      const checked = keep.has(t.key) || (!existing.has(t.key) && isBaseline(t.risk));
+      html+=`<label class="trow"><input type="checkbox" name="skills" value="${esc(t.key)}" data-risk="${t.risk}" data-personal="1" ${checked?'checked':''}>`
+        +`<span style="min-width:0"><div class="tn">${esc(t.tool)}</div><div class="tdsc" title="${esc(t.description)}">${esc(t.description)}</div></span>${gateLabel(t)}</label>`;
     }
-    html += `</div></details>`;
+    html+='</div>';
   }
-  document.getElementById('toolsections').innerHTML = html || '<div style="color:var(--dim);font-size:13px">No tools yet. Connect a server above.</div>';
+  document.getElementById('toolsections').innerHTML = html || '<div class="emptytools">No sources connected yet.</div>';
+  recount();
 }
-
-const connlist = document.getElementById('connlist');
+const connlist=document.getElementById('connlist');
 connlist.addEventListener('submit', async e=>{
   if(!e.target.matches('form.connform')) return;
   e.preventDefault();
   const f=e.target, btn=f.querySelector('button'), card=f.closest('.mconn'), s=card&&card.querySelector('.cstatus');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-  if(s) s.innerHTML='<span class="spin"></span> working\u2026';
-  try{ await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))}); }catch(_){}
+  if(s) s.innerHTML='<span class="spin"></span> connecting';
+  let r=null;
+  try{ r=await (await fetch(f.action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new URLSearchParams(new FormData(f))})).json(); }catch(_){}
   try{ connlist.innerHTML = await (await fetch('/connlist')).text(); }catch(_){}
+  if(r && r.error){ const c2=connlist.querySelector(`.mconn[data-id="${card&&card.dataset.id}"] .cstatus`); if(c2) c2.innerHTML='<span style="color:var(--high)">'+esc(r.error)+'</span>'; }
   await refreshTools();
 });
 
-// ---- discover from the official registry, inside the modal ----
+// ---- registry search (admins) ----
 let MDRESULTS=[];
 async function modalDiscover(){
   const q=document.getElementById('mdq').value.trim(), box=document.getElementById('mdres');
   if(!q){ box.innerHTML=''; return; }
-  box.innerHTML='<div class="mdhint">searching the registry\u2026</div>';
+  box.innerHTML='<div class="mdhint">searching the registry</div>';
   let r; try{ r=await (await fetch('/discover.json?q='+encodeURIComponent(q))).json(); }
   catch(_){ box.innerHTML='<div class="mdhint">Registry unreachable, try again in a moment.</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="mdhint">Registry error, try again.</div>'; return; }
-  if(!r.results.length){ box.innerHTML='<div class="mdhint">No verified-publisher servers matched \u201c'+esc(q)+'\u201d.</div>'; return; }
+  if(!r.results.length){ box.innerHTML='<div class="mdhint">No verified-publisher servers matched “'+esc(q)+'”.</div>'; return; }
   MDRESULTS=r.results;
-  box.innerHTML = r.results.map((it,i)=>`
-    <div class="mdcard">
-      <div>
-        <div><span class="mdn">${esc(it.display)}</span>
-          <span class="mdt">${it.transport==='remote'?'remote HTTP':'local package'}</span>
-          <span class="mdt v">\u2713 ${esc(it.publisher)}</span></div>
-        ${it.description?`<div class="mddesc">${esc(it.description)}</div>`:''}
-      </div>
-      <button type="button" class="btn sm" onclick="mdAdd(this,${i})">Add &rarr;</button>
-    </div>`).join('');
+  box.innerHTML=r.results.map((it,i)=>`<div class="mdcard"><div><div><span class="mdn">${esc(it.display)}</span><span class="mdt">${it.transport==='remote'?'remote':'local package'}</span><span class="mdt">✓ ${esc(it.publisher)}</span></div>${it.description?`<div class="mddesc">${esc(it.description)}</div>`:''}</div><button type="button" class="btn sm" onclick="mdAdd(this,${i})">Add &rarr;</button></div>`).join('');
 }
-async function mdAdd(btn, i){
-  const it=MDRESULTS[i];
-  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-  const body=new URLSearchParams({name:it.name, display:it.display, transport:it.transport,
-                                  endpoint:it.endpoint||'', desc:it.description||'', repo:it.repo||''});
+async function mdAdd(btn,i){
+  const it=MDRESULTS[i]; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const body=new URLSearchParams({name:it.name, display:it.display, transport:it.transport, endpoint:it.endpoint||'', desc:it.description||'', repo:it.repo||''});
   try{ await fetch('/discover/add',{method:'POST',headers:{'X-Requested-With':'fetch'},body}); }catch(_){}
   try{ connlist.innerHTML = await (await fetch('/connlist')).text(); }catch(_){}
-  await refreshTools();
-  btn.textContent='Added \u2713';
+  await refreshTools(); btn.textContent='Added ✓';
   const nc=connlist.querySelector('.mconn'); if(nc) nc.scrollIntoView({block:'center',behavior:'smooth'});
 }
 </script>

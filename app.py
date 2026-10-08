@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.19.2"
+WARDEN_VERSION = "0.20"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -708,12 +708,21 @@ def tool_risk():
                 detail={"by": current_owner(), "text": "%s set to %s for every user" % (key, risk)})
     return redirect(_safe_next(request.form.get("back")) or url_for("catalog"))
 
+def _my_connlist_ctx():
+    """The signed-in user's view of the catalog for the builder's connect panel: their own
+    connections by catalog id, status keyed by catalog id, stdio only for admins."""
+    me = current_owner()
+    status = {}
+    for s_ in cm().connected_servers():
+        if _visible(s_):
+            status[s_.get("catalog_id") or s_["id"]] = s_
+    enabled = {c["catalog_id"] for c in store.enabled_connections(me)}
+    entries = [e for e in user_catalog() if e["transport"] != "builtin" and (is_admin() or e["transport"] == "http")]
+    return dict(catalog=entries, status=status, enabled=enabled, mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
+
 @app.route("/connlist")
 def connlist():
-    status = {s["id"]: s for s in cm().connected_servers()}
-    return render_template("_connlist.html", catalog=merged_catalog(), status=status,
-                           enabled={c["id"] for c in store.enabled_connections()},
-                           mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL)
+    return render_template("_connlist.html", **_my_connlist_ctx())
 
 @app.route("/tools.json")
 def tools_json():
@@ -775,9 +784,7 @@ def _builder_ctx(edit_agent=None):
     visible_servers = set(connected_ids)
     def tpl_ok(t):
         return True
-    return dict(groups=groups, catalog=merged_catalog(), status=status,
-                enabled={c["id"] for c in store.enabled_connections()},
-                mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL,
+    return dict(groups=groups, **_my_connlist_ctx(),
                 templates=[t for t in AGENT_TEMPLATES if tpl_ok(t)], catalog_meta=catalog_meta,
                 edit_agent=edit_agent,
                 edit_skills=set(edit_agent["skills"]) if edit_agent else None,
@@ -795,6 +802,14 @@ def edit_agent(aid):
     ag = _owned_agent(aid)
     return render_template("builder.html", **_builder_ctx(ag))
 
+def _budget(form):
+    """'0.50', '$0.50', ' 2 ' and blank are all fine; anything else is treated as no cap."""
+    raw = (form.get("budget_usd") or "").strip().lstrip("$").replace(",", "")
+    try:
+        return max(0.0, float(raw)) if raw else 0
+    except ValueError:
+        return 0
+
 @app.route("/agent/<aid>/update", methods=["POST"])
 def update_agent(aid):
     ag = _owned_agent(aid)
@@ -803,7 +818,7 @@ def update_agent(aid):
     model = request.form.get("model", "").strip() or ag["model"] or rt.MODEL_DEFAULT
     skills = _allowed_skills(request.form)
     store.update_agent(aid, name, instructions, model, skills, icon=request.form.get("icon", ""),
-                       budget_usd=request.form.get("budget_usd") or 0,
+                       budget_usd=_budget(request.form),
                        members=_member_ids(request.form, self_id=aid))
     return redirect(url_for("agent", aid=aid))
 
@@ -825,7 +840,7 @@ def create_agent():
     if tpl and tpl.get("members") and not members:
         members = _create_template_members(tpl)
     aid = store.create_agent(name, instructions, model, skills, owner=current_owner(), icon=request.form.get("icon", ""),
-                             budget_usd=request.form.get("budget_usd") or 0, members=members)
+                             budget_usd=_budget(request.form), members=members)
     return redirect(url_for("agent", aid=aid))
 
 def _create_template_members(tpl):
