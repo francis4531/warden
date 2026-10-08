@@ -1,0 +1,11 @@
+{# 14-day activity strip: one series (conversations per day), one hue, hover shows the day. Variables: days [(date, n)], label #}
+{% set mx = (days | map(attribute=1) | max) or 1 %}
+<div class="strip" title="conversations per day, last 14 days">
+  <div class="sl"><span>{{ label }}</span><span style="color:var(--dim)">{{ days | map(attribute=1) | sum }} in 14 days</span></div>
+  <div class="bars">
+    {% for d, n in days %}
+    <span class="bar" style="height:{{ (4 + 36 * n / mx) if n else 2 }}px;opacity:{{ 1 if n else 0.35 }}" title="{{ d }}: {{ n }} conversation{{ '' if n==1 else 's' }}"></span>
+    {% endfor %}
+  </div>
+  <div class="sx"><span>{{ days[0][0][5:] }}</span><span>today</span></div>
+</div>

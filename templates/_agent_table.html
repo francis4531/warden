@@ -1,0 +1,70 @@
+{# Shared activity table: one row per agent, expandable to its latest conversations.
+   Variables: agents (from _agent_rows), show_owner (bool), can_delete (bool). #}
+<style>
+.atab{border:1px solid var(--line);border-radius:12px;background:var(--ink2);overflow:hidden}
+.atab .hd,.atab .ar>summary{display:grid;grid-template-columns:minmax(0,2fr) repeat(5,minmax(0,.85fr)) minmax(0,1.1fr);gap:10px;align-items:center;padding:10px 16px}
+.atab .hd{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);background:var(--ink)}
+.atab .hd span:not(:first-child),.atab .ar>summary .n{text-align:right}
+.atab .ar{border-top:1px solid var(--line)}
+.atab .ar:first-of-type{border-top:none}
+.atab .ar>summary{list-style:none;cursor:pointer;min-height:54px}
+.atab .ar>summary::-webkit-details-marker{display:none}
+.atab .ar>summary:hover{background:color-mix(in srgb,var(--brass) 4%,transparent)}
+.atab .who{display:flex;align-items:center;gap:10px;min-width:0}
+.atab .who .aico{width:26px;height:26px;flex:none}
+.atab .who .nm{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atab .who .ow{font-size:11.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atab .n{font-family:var(--mono);font-size:12.5px;color:var(--txt)}
+.atab .n small{display:block;font-family:var(--body);font-size:10.5px;color:var(--dim)}
+.atab .n.z{color:var(--dim)}
+.atab .n.hold{color:var(--med);font-weight:600}
+.atab .n.act{color:var(--low)}
+.atab .n .ok{color:var(--low)}.atab .n .no{color:var(--high)}
+.atab .last{font-size:12px;color:var(--mut);text-align:right}
+.atab .last .chev{display:inline-block;margin-left:8px;font-size:9px;color:var(--dim);transition:transform .15s}
+.atab .ar[open]>summary .last .chev{transform:rotate(90deg)}
+.atab .body{padding:4px 16px 12px 52px;background:var(--ink)}
+.atab .cv{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.atab .cv:first-child{border-top:none}
+.atab .cv a{color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atab .cv a:hover{color:var(--brass)}
+.atab .cv .when{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.atab .foot{display:flex;gap:14px;align-items:center;padding:10px 0 2px;font-size:12.5px}
+.atab .foot a{color:var(--brass)}
+.atab .foot form{margin-left:auto}
+@media (max-width:900px){.atab .hd{display:none}.atab .ar>summary{grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr))}.atab .ar>summary .n:nth-child(n+4){display:none}.atab .body{padding-left:16px}}
+</style>
+<div class="atab">
+  <div class="hd"><span>agent</span><span>7 days</span><span>all time</span><span>on hold</span><span>approved</span><span>spend 7d</span><span>last active</span></div>
+  {% for a in agents %}
+  <details class="ar" {{ 'open' if (a.pending and auto_open) }}>
+    <summary>
+      <div class="who"><span class="aico">{{ agent_icon(a.icon, seed=a.id)|safe }}</span><div style="min-width:0"><div class="nm">{{ a.name }}{% if a.team %} <span class="pill" style="margin-left:4px">team</span>{% endif %}</div>{% if show_owner %}<div class="ow">{{ a.owner }}</div>{% endif %}</div></div>
+      <div class="n {{ 'z' if not a.runs7 }}">{{ a.runs7 }}<small>conversation{{ '' if a.runs7==1 else 's' }}</small></div>
+      <div class="n {{ 'z' if not a.runs }}">{{ a.runs }}{% if a.active %}<small class="act">{{ a.active }} active now</small>{% else %}<small>&nbsp;</small>{% endif %}</div>
+      <div class="n {{ 'hold' if a.pending else 'z' }}">{{ a.pending }}<small>{{ ('waiting on owner' if admin_view else 'waiting on you') if a.pending else '&nbsp;'|safe }}</small></div>
+      <div class="n {{ 'z' if not (a.approved or a.denied) }}">{% if a.approved or a.denied %}<span class="ok">{{ a.approved }}</span> <span style="color:var(--dim)">/</span> <span class="no">{{ a.denied }}</span>{% else %}0 / 0{% endif %}<small>approved / denied</small></div>
+      <div class="n {{ 'z' if not a.spend7 }}">${{ '%.2f'|format(a.spend7) }}<small>${{ '%.2f'|format(a.spend) }} all time</small></div>
+      <div class="last">{{ a.last[:16].replace('T',' ') if a.last else 'never run' }}<span class="chev">&#9654;</span></div>
+    </summary>
+    <div class="body">
+      {% for r in a.recent %}
+      <div class="cv">
+        <a href="{{ url_for('run_view', rid=r.id) }}">{{ r.input[:110] }}{{ '…' if r.input|length>110 }}</a>
+        <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
+        <span class="when">{{ r.created_at[5:16].replace('T',' ') }}</span>
+      </div>
+      {% else %}
+      <div class="cv" style="color:var(--dim)">No conversations yet.</div>
+      {% endfor %}
+      <div class="foot">
+        <a href="{{ url_for('agent', aid=a.id) }}">Open agent &rarr;</a>
+        {% if a.runs > 5 %}<a href="{{ url_for('agent', aid=a.id) }}#runs" style="color:var(--dim)">all {{ a.runs }} conversations</a>{% endif %}
+        {% if can_delete %}
+        <form method="post" action="{{ url_for('delete_agent', aid=a.id) }}" onsubmit="return confirm('Delete {{ a.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="btn ghost sm" type="submit" style="color:var(--high)">Delete</button></form>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>

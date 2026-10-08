@@ -11,9 +11,9 @@
 .person>summary .who{min-width:0}
 .person>summary .em{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .person>summary .sub{font-size:11.5px;color:var(--dim);margin-top:2px}
-.person .n{font-family:var(--mono);font-size:13px}
-.person .n small{display:block;font-family:var(--body);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-top:2px}
-.person .n.warn{color:var(--med)}
+.person>summary .n{font-family:var(--mono);font-size:13px}
+.person>summary .n small{display:block;font-family:var(--body);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-top:2px}
+.person>summary .n.warn{color:var(--med)}
 .person .chev{font-size:10px;color:var(--dim);transition:transform .15s}
 .person[open]>summary .chev{transform:rotate(90deg)}
 .person .body{border-top:1px solid var(--line);padding:6px 16px 14px}
@@ -33,7 +33,7 @@
 <div class="page-h">
   <div class="eyebrow">Studio</div>
   <h1>All users and their agents.</h1>
-  <p class="sub">Every user in the studio, what they have built, what it is doing, and what it costs. Open any agent or conversation to read it; acting on it (replying, approving, editing) stays with its owner, and opening someone else's conversation is itself an audit event.</p>
+  <p class="sub">Studio, then user, then agent, then conversation. Open a user for their agents, an agent for its conversations, a conversation for every step. Reading is yours; acting stays with the owner, and opening someone else's conversation is itself an audit event.</p>
 </div>
 
 <div class="grid g4" style="margin-bottom:22px">
@@ -57,20 +57,10 @@
     <div class="n">${{ '%.2f'|format(p.spend) }}<small>{{ '$%.2f today'|format(p.today) if p.today else 'all time' }}</small></div>
     <span class="chev">&#9654;</span>
   </summary>
-  <div class="body">
-    {% for a in p.agents %}
-    <div class="arow">
-      <span class="aico" style="width:24px;height:24px;flex:none">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
-      <span class="an"><a href="{{ url_for('agent', aid=a.id) }}">{{ a.name }}</a>{% if a.team %}<span class="tag">team</span>{% endif %}</span>
-      <span class="am">{{ a.runs }} conv{{ '' if a.runs==1 else 's' }}</span>
-      {% if a.active %}<span class="pill running">{{ a.active }} active</span>{% endif %}
-      {% if a.pending %}<span class="pill awaiting_approval">{{ a.pending }} on hold</span>{% endif %}
-      <span class="am">${{ '%.4f'|format(a.spend) }}</span>
-      <span class="am" style="color:var(--dim)">{{ a.last[:16].replace('T',' ') if a.last else 'never run' }}</span>
-    </div>
-    {% else %}
-    <div class="arow" style="color:var(--dim)">No agents yet.</div>
-    {% endfor %}
+  <div class="body" style="padding:12px 16px 14px">
+    {% set agents = by_owner.get(p.email, []) %}
+    {% if agents %}{% with show_owner=False, can_delete=False, auto_open=False %}{% include '_agent_table.html' %}{% endwith %}
+    {% else %}<div style="color:var(--dim);font-size:13px">No agents yet.</div>{% endif %}
     {% for q in p.requests %}
     <div class="reqline">&#9673; <b>{{ q.agent.name }}</b> is waiting for {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} ({{ p.email }} connects it) &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}">open conversation</a></div>
     {% endfor %}
