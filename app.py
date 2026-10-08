@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.21"
+WARDEN_VERSION = "0.22"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -486,10 +486,46 @@ def home():
     if admin_view():
         _rows, studio_totals = _studio_summary()
         return render_template("overview.html", studio=studio_totals, health=_admin_health(),
-                               recent=_recent_studio_runs(10))
-    return render_template("dashboard.html", agents=store.list_agents(_scope()), runs=store.list_runs(12, _scope()),
+                               agents=_agent_rows(None, limit=12), n_agents=studio_totals["agents"],
+                               days=store.runs_per_day(14))
+    rows = _agent_rows(_scope())
+    return render_template("dashboard.html", agents=rows, days=store.runs_per_day(14, _scope()),
                            pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
-                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified())
+                           tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified(),
+                           spend7=round(sum(r["spend7"] for r in rows), 4), runs7=sum(r["runs7"] for r in rows))
+
+def _agent_rows(owner=None, limit=None):
+    """One row per agent with the numbers a dashboard needs: conversations (7 days and all
+    time), active now, on hold, approved/denied, spend (7 days and all time), last activity,
+    and the five latest conversations for drilling in. owner=None means the whole studio."""
+    since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    week_prefix = None
+    agents = store.list_agents(owner)
+    if not agents:
+        return []
+    ids = [a["id"] for a in agents]
+    rc_all = store.run_counts_by_agent(); rc_7 = store.run_counts_by_agent(since=since)
+    spend_all = store.cost_by_agent()
+    spend_7 = {}
+    for e in store.audit_all(5000):
+        if e["kind"] == "model_call" and e["ts"] >= since and isinstance(e.get("detail"), dict):
+            spend_7[e["agent_id"]] = spend_7.get(e["agent_id"], 0.0) + (e["detail"].get("cost") or 0)
+    pend = {}
+    for a in store.pending_approvals(owner):
+        pend[a["agent_id"]] = pend.get(a["agent_id"], 0) + 1
+    appr = store.approval_stats_by_agent(ids)
+    recent = store.recent_runs_by_agent(ids, 5)
+    rows = []
+    for a in agents:
+        r_all = rc_all.get(a["id"], {"runs": 0, "last": None, "active": 0}); r_7 = rc_7.get(a["id"], {"runs": 0})
+        st = appr.get(a["id"], {})
+        rows.append({**a, "owner": a.get("owner") or "operator", "runs7": r_7["runs"], "runs": r_all["runs"],
+                     "active": r_all["active"], "pending": pend.get(a["id"], 0),
+                     "approved": st.get("approved", 0), "denied": st.get("denied", 0),
+                     "spend7": round(spend_7.get(a["id"], 0.0), 4), "spend": spend_all.get(a["id"], 0.0),
+                     "last": r_all["last"], "team": bool(a.get("members")), "recent": recent.get(a["id"], [])})
+    rows.sort(key=lambda r: (r["pending"] > 0, r["last"] or ""), reverse=True)
+    return rows[:limit] if limit else rows
 
 def _recent_studio_runs(n):
     """Latest conversations across every user, for the admin's overview (read-only links)."""
@@ -1182,6 +1218,8 @@ def _with_team_context(pending):
         r = store.get_run(ap["run_id"])
         ag = store.get_agent(ap["agent_id"])
         ap["agent_name"] = ag["name"] if ag else ""
+        ap["agent_icon"] = (ag or {}).get("icon") or ""
+        ap["run_input"] = (r or {}).get("input") or ""
         ap["lead_name"] = None; ap["lead_run"] = None
         if r and r.get("parent_run_id"):
             root = store.root_run(r)
@@ -1430,19 +1468,54 @@ def studio():
     if not is_admin():
         abort(404)
     rows, totals = _studio_summary()
-    return render_template("studio.html", users=rows, totals=totals)
+    by_owner = {}
+    for a in _agent_rows(None):
+        by_owner.setdefault(a["owner"], []).append(a)
+    return render_template("studio.html", users=rows, totals=totals, by_owner=by_owner)
 
 def _admin_health():
     """The admin's checklist: what is set up, what is broken, what needs them."""
     integ = store.verify_audit()
     errored = [s_ for s_ in cm().connected_servers() if s_.get("status") == "error"]
-    return {"errored": errored, "catalog": len(merged_catalog()),
-            "google_on": _google_connectors_on(), "google_verified": _google_verified(),
-            "policies": len(store.list_policies()),
-            "audit_ok": bool(integ.get("ok")), "audit": integ,
-            "signin_open": signin_open(), "secret_set": vault.from_env(),
-            "allowed": ", ".join(sorted(ALLOWED_DOMAINS and {"@" + d for d in ALLOWED_DOMAINS} or set()) + sorted(ALLOWED_EMAILS)) or "the password",
-            "actionable": [], "waiting": _requests_waiting_on_people()}
+    h = {"errored": errored, "catalog": len(merged_catalog()),
+         "google_on": _google_connectors_on(), "google_verified": _google_verified(),
+         "policies": len(store.list_policies()),
+         "audit_ok": bool(integ.get("ok")), "audit": integ,
+         "signin_open": signin_open(), "secret_set": vault.from_env(),
+         "allowed": ", ".join(sorted(ALLOWED_DOMAINS and {"@" + d for d in ALLOWED_DOMAINS} or set()) + sorted(ALLOWED_EMAILS)) or "the password",
+         "actionable": [], "waiting": _requests_waiting_on_people()}
+    # the same facts as a checklist: state ok | todo | bad, one line, one link
+    checks = []
+    if errored:
+        checks.append({"state": "bad", "title": "Connections in error", "text": "%s. Their owners see it on their Connections page." % ", ".join(s_["name"] for s_ in errored), "href": url_for("catalog"), "cta": "Catalog"})
+    else:
+        checks.append({"state": "ok", "title": "Catalog", "text": "%d servers on offer" % h["catalog"], "href": url_for("catalog"), "cta": "Catalog"})
+    if not h["google_on"]:
+        checks.append({"state": "bad", "title": "Google client not configured", "text": "No user can connect Gmail, Drive or Calendar until it is.", "href": url_for("catalog") + "#google", "cta": "Set it up"})
+    elif not h["google_verified"]:
+        checks.append({"state": "todo", "title": "Google app unverified", "text": "Users see Google's warning page the first time they connect. Go Internal or verify, then mark it.", "href": url_for("catalog") + "#google", "cta": "Google client"})
+    else:
+        checks.append({"state": "ok", "title": "Google", "text": "configured and verified", "href": url_for("catalog") + "#google", "cta": "Google client"})
+    if h["signin_open"]:
+        checks.append({"state": "bad", "title": "Sign-in is open to any Google account", "text": "Set WARDEN_ALLOWED_DOMAINS or WARDEN_ALLOWED_EMAILS in Render.", "href": url_for("studio"), "cta": "Users"})
+    elif not h["secret_set"]:
+        checks.append({"state": "bad", "title": "WARDEN_SECRET_KEY is not set", "text": "Sessions and stored secrets depend on a generated key in the data dir.", "href": url_for("studio"), "cta": "Users"})
+    else:
+        checks.append({"state": "ok", "title": "Sign-in", "text": "restricted to " + h["allowed"], "href": url_for("studio"), "cta": "Users"})
+    if not h["audit_ok"]:
+        checks.append({"state": "bad", "title": "Audit chain broken", "text": "at %s. Investigate before trusting the log." % (integ.get("broken_at") or "unknown"), "href": url_for("audit"), "cta": "Audit log"})
+    else:
+        checks.append({"state": "ok", "title": "Audit chain", "text": "%d events verified" % (integ.get("total") or 0), "href": url_for("audit"), "cta": "Audit log"})
+    if not h["policies"]:
+        checks.append({"state": "todo", "title": "No policies yet", "text": "Only the risk tiers apply. Add spend caps, rate limits, time windows or per-agent rules.", "href": url_for("policies"), "cta": "Add a policy"})
+    else:
+        checks.append({"state": "ok", "title": "Policies", "text": "%d in force" % h["policies"], "href": url_for("policies"), "cta": "Policies"})
+    if h["waiting"]:
+        checks.append({"state": "ok", "title": "Connection requests", "text": "%d waiting on their owners, nothing for you to do" % len(h["waiting"]), "href": url_for("approvals"), "cta": "Approvals"})
+    h["checks"] = checks
+    h["attention"] = [c for c in checks if c["state"] != "ok"]
+    h["fine"] = [c for c in checks if c["state"] == "ok"]
+    return h
 
 def _studio_summary():
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")

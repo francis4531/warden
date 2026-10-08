@@ -2,87 +2,67 @@
 {% set active='home' %}
 {% block title %}Overview · Warden{% endblock %}
 {% block body %}
-
 <style>
-.g4{grid-template-columns:repeat(4,1fr)}
-@media (max-width:900px){.g4{grid-template-columns:1fr 1fr}}
-.tasks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-@media (max-width:1100px){.tasks{grid-template-columns:1fr 1fr}}
-@media (max-width:760px){.tasks{grid-template-columns:1fr}}
-.task{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
-.task .top{display:flex;gap:12px;align-items:flex-start}
-.task .cta{margin-top:auto;display:flex;align-items:center;gap:10px;padding-left:34px}
-.task .cta a.q{color:var(--brass);font-size:12.5px;text-decoration:none}
-.task .st{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:1px}
-.task .st.ok{background:color-mix(in srgb,var(--low) 18%,transparent);color:var(--low)}
-.task .st.todo{background:color-mix(in srgb,var(--med) 18%,transparent);color:var(--med)}
-.task .st.bad{background:color-mix(in srgb,var(--high) 18%,transparent);color:var(--high)}
-.task h4{margin:0 0 3px;font-size:13.5px;font-weight:600}
-.task p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.5}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.top h1{margin:0}
+.top .sub{margin:4px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.6fr);gap:12px;margin-bottom:22px}
+@media (max-width:1100px){.tiles{grid-template-columns:1fr 1fr}}
+.tile{display:flex;flex-direction:column;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);text-decoration:none;color:inherit;min-height:92px}
+.tile .v{font-family:var(--disp);font-size:26px;font-weight:var(--dweight);line-height:1.1}
+.tile .l{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.tile .d{font-size:12px;color:var(--dim);margin-top:auto}
+.tile.warn .v{color:var(--med)}.tile.live .v{color:var(--low)}
+a.tile:hover{border-color:var(--brass)}
+.strip{display:flex;flex-direction:column;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+.strip .sl{display:flex;justify-content:space-between;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.strip .bars{display:flex;align-items:flex-end;gap:3px;height:42px;margin-top:8px}
+.strip .bar{flex:1;background:var(--brass);border-radius:3px 3px 0 0;min-width:4px}
+.strip .sx{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
+.sec{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
+.sec .lbl{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.sec .hint{font-size:12px;color:var(--dim)}
+.sec a.hint{color:var(--brass)}
+.att{border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-bottom:22px;overflow:hidden}
+.att .ar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 16px;border-top:1px solid var(--line)}
+.att .ar:first-child{border-top:none}
+.att .st{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
+.att .st.todo{background:color-mix(in srgb,var(--med) 18%,transparent);color:var(--med)}
+.att .st.bad{background:color-mix(in srgb,var(--high) 18%,transparent);color:var(--high)}
+.att .t{font-size:13.5px;font-weight:600}
+.att .m{font-size:12.5px;color:var(--mut);margin-top:1px}
+.fine{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut);background:var(--ink)}
+.fine a{color:inherit;text-decoration:none}
+.fine a:hover{color:var(--brass)}
+.fine .ok{color:var(--low);margin-right:4px}
 </style>
 
-<div class="page-h">
-  <div class="eyebrow">Admin console</div>
-  <h1>The studio at a glance.</h1>
-  <p class="sub">Who is building what, what needs you, and whether the studio is set up the way you want. Your own agents live under "My agents" in the sidebar, where you get exactly what every user gets.</p>
-  <div style="font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:10px;letter-spacing:.5px">build v{{ version }} &middot; {{ commit }} &middot; deployed {{ deployed_at }}</div>
+<div class="top">
+  <div><div class="eyebrow">Admin console</div><h1>The studio, top down.</h1><p class="sub">What needs your attention, then every agent in the studio with its numbers; open a row for its conversations, read-only.</p></div>
+  <a class="btn ghost" href="{{ url_for('studio') }}">All users &rarr;</a>
 </div>
 
-<div class="section-h"><span class="lbl">Studio at a glance</span><a href="{{ url_for('studio') }}" style="color:var(--brass);font-size:12.5px">All users &rarr;</a></div>
-<div class="grid g4" style="margin-bottom:18px">
-  <a class="card k" href="{{ url_for('studio') }}"><span class="kv">{{ studio.users }}</span><span class="kl">Users</span><span class="kd">{{ studio.agents }} agent{{ '' if studio.agents==1 else 's' }} between them</span></a>
-  <a class="card k" href="{{ url_for('studio') }}"><span class="kv" style="color:{{ 'var(--low)' if studio.active else 'var(--txt)' }}">{{ studio.active }}</span><span class="kl">Active now</span><span class="kd">running or waiting &middot; {{ studio.runs }} conversation{{ '' if studio.runs==1 else 's' }} all time</span></a>
-  {% set nme = studio.pending + health.waiting|length %}
-  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nme else 'var(--txt)' }}">{{ nme }}</span><span class="kl">Waiting on users</span><span class="kd">{{ studio.pending }} action{{ '' if studio.pending==1 else 's' }} waiting on their owners{% if health.waiting %} &middot; {{ health.waiting|length }} connection{{ '' if health.waiting|length==1 else 's' }} waiting on users{% endif %}</span></a>
-  <a class="card k" href="{{ url_for('observability') }}"><span class="kv">${{ '%.2f'|format(studio.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if studio.daily_cap %}of a ${{ '%.2f'|format(studio.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(studio.spend) }} all time</span></a>
+{% set nme = studio.pending + health.waiting|length %}
+<div class="tiles">
+  <a class="tile" href="{{ url_for('studio') }}"><span class="v">{{ studio.users }}</span><span class="l">Users</span><span class="d">{{ studio.agents }} agent{{ '' if studio.agents==1 else 's' }}</span></a>
+  <a class="tile {{ 'live' if studio.active }}" href="{{ url_for('studio') }}"><span class="v">{{ studio.active }}</span><span class="l">Active now</span><span class="d">{{ studio.runs }} conversations all time</span></a>
+  <a class="tile {{ 'warn' if nme }}" href="{{ url_for('approvals') }}"><span class="v">{{ nme }}</span><span class="l">Waiting on users</span><span class="d">{{ studio.pending }} on hold{% if health.waiting %} &middot; {{ health.waiting|length }} to connect{% endif %}</span></a>
+  <a class="tile" href="{{ url_for('observability') }}"><span class="v">${{ '%.2f'|format(studio.today) }}</span><span class="l">Spend today</span><span class="d">{% if studio.daily_cap %}cap ${{ '%.2f'|format(studio.daily_cap) }} &middot; {% endif %}${{ '%.2f'|format(studio.spend) }} all time</span></a>
+  {% with label='Studio activity' %}{% include '_daystrip.html' %}{% endwith %}
 </div>
 
-<div class="section-h"><span class="lbl">Admin tasks</span><span style="font-size:12px;color:var(--dim)">what the studio needs from you</span></div>
-<div class="tasks" style="margin-bottom:26px">
-  {% set st = 'bad' if health.errored else 'ok' %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '!' if health.errored else '&#10003;'|safe }}</span><div><h4>Catalog</h4><p>{% if health.errored %}{{ health.errored|length }} connection{{ '' if health.errored|length==1 else 's' }} in error: {{ health.errored|map(attribute='name')|join(', ') }}. Their owners see it on their Connections page.{% else %}{{ health.catalog }} servers on offer. Users connect what their own agents need; the studio provides nothing on their behalf. Add servers from the MCP Registry, set risk tiers.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('catalog') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('catalog') }}">Open catalog</a>{% endif %}</div>
-  </div>
-  {% set st = 'ok' if (health.google_on and health.google_verified) else ('todo' if health.google_on else 'bad') %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if (health.google_on and health.google_verified) else ('!' if not health.google_on else '3') }}</span><div><h4>Google client</h4><p>{% if not health.google_on %}Not configured: no user can connect Gmail, Drive, or Calendar until a Google client is set.{% elif not health.google_verified %}Working, unverified: users see Google's warning page the first time. Go Internal or verify, then mark it here.{% else %}Configured and verified: one-click connect for everyone.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('catalog') }}#google">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('catalog') }}#google">Open Google client</a>{% endif %}</div>
-  </div>
-  {% set st = 'ok' %}
-  <div class="task">
-    <div class="top"><span class="st ok">&#10003;</span><div><h4>Connection requests</h4><p>{% if health.waiting %}{{ health.waiting|length }} agent{{ '' if health.waiting|length==1 else 's' }} waiting for a source only its owner can connect: {{ health.waiting|map(attribute='agent')|map(attribute='name')|join(', ') }}. Nothing for you to do.{% else %}No agent is waiting on a connection.{% endif %}</p></div></div>
-    <div class="cta"><a class="q" href="{{ url_for('approvals') }}">See requests &rarr;</a></div>
-  </div>
-  {% set st = 'ok' if health.policies else 'todo' %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.policies else '4' }}</span><div><h4>Policies</h4><p>{% if health.policies %}{{ health.policies }} polic{{ 'y' if health.policies==1 else 'ies' }} in force on top of the risk tiers.{% else %}Only the risk tiers apply. Add spend caps, rate limits, time windows, or per-agent rules.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('policies') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('policies') }}">Add a policy</a>{% endif %}</div>
-  </div>
-  {% set st = 'bad' if health.signin_open or not health.secret_set else 'ok' %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '!' if st == 'bad' else '&#10003;'|safe }}</span><div><h4>Sign-in</h4><p>{% if health.signin_open %}Open to any Google account. Set WARDEN_ALLOWED_DOMAINS (your company domain) or WARDEN_ALLOWED_EMAILS so only your users can sign in.{% elif not health.secret_set %}WARDEN_SECRET_KEY is not set; sessions and stored secrets depend on a generated key in the data dir. Set it in the environment.{% else %}Restricted to {{ health.allowed }}. Secret key set in the environment.{% endif %}</p></div></div>
-    <div class="cta"><a class="q" href="{{ url_for('studio') }}">Users &rarr;</a></div>
-  </div>
-  {% set st = 'ok' if health.audit_ok else 'bad' %}
-  <div class="task">
-    <div class="top"><span class="st {{ st }}">{{ '&#10003;'|safe if health.audit_ok else '!' }}</span><div><h4>Audit integrity</h4><p>{% if health.audit_ok %}Hash chain verified across {{ health.audit.total }} event{{ '' if health.audit.total==1 else 's' }}. Nothing altered.{% else %}Chain broken at {{ health.audit.broken_at }}. Investigate before trusting the log.{% endif %}</p></div></div>
-    <div class="cta">{% if st == 'ok' %}<a class="q" href="{{ url_for('audit') }}">Manage &rarr;</a>{% else %}<a class="btn brass sm" href="{{ url_for('audit') }}">Open audit log</a>{% endif %}</div>
-  </div>
-</div>
-
-{% if recent %}
-<div class="section-h"><span class="lbl">Recent activity across the studio</span><span style="font-size:12px;color:var(--dim)">read-only; opening a conversation is an audit event</span></div>
-<div class="list">
-  {% for r in recent %}
-  <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
-    <div class="r-main">
-      <div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
-      <div class="r-meta">{{ r.agent_name }} &middot; {{ r.owner }} &middot; {{ r.created_at[:16].replace('T',' ') }}</div>
-    </div>
-    <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
-  </a>
+<div class="sec"><span class="lbl">{{ 'Needs your attention' if health.attention else 'Studio health' }}</span><span class="hint">{{ health.attention|length }} item{{ '' if health.attention|length==1 else 's' }} to act on &middot; {{ health.fine|length }} fine</span></div>
+<div class="att">
+  {% for c in health.attention %}
+  <div class="ar"><span class="st {{ c.state }}">{{ '!' if c.state=='bad' else '&#8226;'|safe }}</span><div><div class="t">{{ c.title }}</div><div class="m">{{ c.text }}</div></div><a class="btn {{ 'brass' if c.state=='bad' else 'ghost' }} sm" href="{{ c.href }}">{{ c.cta }} &rarr;</a></div>
   {% endfor %}
+  <div class="fine">{% for c in health.fine %}<a href="{{ c.href }}"><span class="ok">&#10003;</span>{{ c.title }}: {{ c.text }}</a>{% endfor %}</div>
 </div>
+
+<div class="sec"><span class="lbl">Agents across the studio</span>{% if n_agents > agents|length %}<a class="hint" href="{{ url_for('studio') }}">{{ agents|length }} most recent of {{ n_agents }} &middot; all users &rarr;</a>{% else %}<span class="hint">sorted by what is on hold, then last active &middot; read-only</span>{% endif %}</div>
+{% if agents %}
+{% with show_owner=True, can_delete=False, auto_open=False %}{% include '_agent_table.html' %}{% endwith %}
+{% else %}
+<div class="empty"><h2>No agents yet</h2>Users appear here as soon as they build one.</div>
 {% endif %}
 {% endblock %}

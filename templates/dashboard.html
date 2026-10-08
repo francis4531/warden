@@ -1,72 +1,68 @@
 {% extends "base.html" %}
 {% set active='home' %}
+{% block title %}My agents · Warden{% endblock %}
 {% block body %}
-<div class="page-h">
-  <div class="eyebrow">{{ 'My agents' if is_admin else 'Governed by default' }}</div>
-  <h1>Every agent here runs under human oversight.</h1>
-  <p class="sub">Build an agent, give it tools over MCP, and let it work. Warden runs low-risk actions on its own and holds anything that moves money or changes state for a human to approve, with a full audit trail behind every step.</p>
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:var(--mut)">
-    <span class="mode {{ mode }}" style="letter-spacing:1px"><span class="dot"></span>{{ 'live model' if mode=='live' else 'sandbox' }}</span>
-    <span style="color:var(--dim)">&middot;</span><span><b style="color:var(--txt)">{{ servers|length }}</b> server{{ '' if servers|length==1 else 's' }} connected</span>
-    <span style="color:var(--dim)">&middot;</span><span><b style="color:var(--txt)">{{ tool_count }}</b> tools governed</span>
-  </div>
-  <div style="font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:10px;letter-spacing:.5px">
-    build v{{ version }} &middot; {{ commit }} &middot; deployed {{ deployed_at }}
-  </div>
+<style>
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.top h1{margin:0}
+.top .sub{margin:4px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.6fr);gap:12px;margin-bottom:22px}
+@media (max-width:1000px){.tiles{grid-template-columns:1fr 1fr}}
+.tile{display:flex;flex-direction:column;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);text-decoration:none;color:inherit;min-height:92px}
+.tile .v{font-family:var(--disp);font-size:26px;font-weight:var(--dweight);line-height:1.1}
+.tile .l{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.tile .d{font-size:12px;color:var(--dim);margin-top:auto}
+.tile.warn .v{color:var(--med)}
+a.tile:hover{border-color:var(--brass)}
+.strip{display:flex;flex-direction:column;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+.strip .sl{display:flex;justify-content:space-between;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.strip .bars{display:flex;align-items:flex-end;gap:3px;height:42px;margin-top:8px}
+.strip .bar{flex:1;background:var(--brass);border-radius:3px 3px 0 0;min-width:4px}
+.strip .sx{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
+.need{border:1px solid color-mix(in srgb,var(--med) 45%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--med) 5%,var(--ink2));margin-bottom:22px;overflow:hidden}
+.need .nh{padding:10px 16px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--med);border-bottom:1px solid var(--line)}
+.need .nr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 16px;border-top:1px solid var(--line)}
+.need .nr:first-of-type{border-top:none}
+.need .nr .aico{width:24px;height:24px}
+.need .nr .t{font-size:13.5px;font-weight:600}
+.need .nr .m{font-size:12px;color:var(--mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sec{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
+.sec .lbl{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.sec .hint{font-size:12px;color:var(--dim)}
+</style>
+
+<div class="top">
+  <div><div class="eyebrow">My agents</div><h1>Your agents, and what they need from you.</h1><p class="sub">Open a row for its latest conversations; open a conversation for every step it took.</p></div>
+  <a class="btn brass" href="{{ url_for('new_agent') }}">+ New agent</a>
 </div>
 
-<div class="grid g3">
-  <a class="card k" href="#agents"><span class="kv">{{ agents|length }}</span><span class="kl">Agents</span><span class="kd">yours in the studio</span></a>
-  {% set nwait = pending|length + open_requests|length %}
-  <a class="card k" href="{{ url_for('approvals') }}"><span class="kv" style="color:{{ 'var(--med)' if nwait else 'var(--txt)' }}">{{ nwait }}</span><span class="kl">Waiting on a human</span><span class="kd">{{ pending|length }} action{{ '' if pending|length==1 else 's' }} on hold &middot; {{ open_requests|length }} connection request{{ '' if open_requests|length==1 else 's' }}</span></a>
-  <a class="card k" href="{{ url_for('connections') }}"><span class="kv">{{ tool_count }}</span><span class="kl">Governed tools</span><span class="kd">across {{ servers|length }} connected server{{ '' if servers|length==1 else 's' }}</span></a>
+{% set nwait = pending|length + open_requests|length %}
+<div class="tiles">
+  <a class="tile {{ 'warn' if nwait }}" href="{{ url_for('approvals') }}"><span class="v">{{ nwait }}</span><span class="l">Needs you</span><span class="d">{{ pending|length }} on hold &middot; {{ open_requests|length }} connection{{ '' if open_requests|length==1 else 's' }} to make</span></a>
+  <div class="tile"><span class="v">{{ runs7 }}</span><span class="l">Conversations, 7 days</span><span class="d">across {{ agents|length }} agent{{ '' if agents|length==1 else 's' }}</span></div>
+  <div class="tile"><span class="v">${{ '%.2f'|format(spend7) }}</span><span class="l">Spend, 7 days</span><span class="d">{{ 'sandbox: nothing billed' if mode=='sandbox' else 'model usage at list price' }}</span></div>
+  {% with label='Activity' %}{% include '_daystrip.html' %}{% endwith %}
 </div>
 
-
-{% if pending|length or open_requests|length %}
-<div class="section-h"><span class="lbl">On hold, needs you</span></div>
-<div class="list">
+{% if nwait %}
+<div class="need">
+  <div class="nh">Needs you</div>
   {% for q in open_requests %}
-  <div class="row">
-    <div class="r-main">
-      <div class="r-title">{{ q.agent.name }} needs a connection <span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent)">{{ q.matches[0].name if q.matches else q.keywords }}</span></div>
-      <div class="r-meta">{{ q.need }}</div>
-    </div>
-    <a class="btn brass sm" href="{{ url_for('approvals') }}">View &rarr;</a>
-  </div>
+  <div class="nr"><span class="aico">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
+    <div style="min-width:0"><div class="t">{{ q.agent.name }} needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} connected</div><div class="m">{{ q.need }}</div></div>
+    <a class="btn brass sm" href="{{ q.matches[0].url if q.matches else url_for('approvals') }}">Connect &rarr;</a></div>
   {% endfor %}
   {% for ap in pending %}
-  <div class="row">
-    <div class="r-main">
-      <div class="r-title">{{ ap.skill.split('__')[-1] }} <span class="stamp {{ ap.risk }}">{{ ap.risk }}</span>{% if ap.lead_name %} <span class="pill" style="margin-left:4px">{{ ap.agent_name }} &middot; via {{ ap.lead_name }}</span>{% endif %}</div>
-      <div class="r-meta">{{ arg_summary(ap.arguments.input) }}</div>
-    </div>
-    <a class="btn brass sm" href="{{ url_for('run_view', rid=(ap.lead_run or ap.run_id)) }}">Review &rarr;</a>
-  </div>
+  <div class="nr"><span class="aico">{{ agent_icon(ap.agent_icon, seed=ap.agent_id)|safe }}</span>
+    <div style="min-width:0"><div class="t">{{ ap.agent_name or 'Agent' }} wants to run {{ ap.skill.split('__')[-1].replace('_',' ') }} <span class="stamp {{ ap.risk }}">{{ ap.risk }}</span>{% if ap.lead_name %} <span class="pill">via {{ ap.lead_name }}</span>{% endif %}</div><div class="m">{{ arg_summary(ap.arguments.input) }}{% if ap.run_input %} &middot; in &ldquo;{{ ap.run_input[:70] }}{{ '…' if ap.run_input|length>70 }}&rdquo;{% endif %}</div></div>
+    <a class="btn brass sm" href="{{ url_for('run_view', rid=(ap.lead_run or ap.run_id)) }}">Review &rarr;</a></div>
   {% endfor %}
 </div>
 {% endif %}
 
-<div class="section-h" id="agents"><span class="lbl">Your agents</span><a class="btn ghost sm" href="{{ url_for('new_agent') }}">+ New agent</a></div>
 {% if agents %}
-<div class="list">
-  {% for a in agents %}
-  <div class="row" style="padding:0">
-    <a href="{{ url_for('agent', aid=a.id) }}" style="display:flex;align-items:center;flex:1;min-width:0;padding:14px 16px;color:inherit;text-decoration:none">
-      <span class="aico" style="width:30px;height:30px;margin-right:12px">{{ agent_icon(a.icon, seed=a.id)|safe }}</span>
-      <div class="r-main" style="flex:1;min-width:0">
-        <div class="r-title">{{ a.name }}</div>
-        <div class="r-meta">{{ a.skills|length }} skill{{ '' if a.skills|length==1 else 's' }}{% if a.members %} &middot; leads a team of {{ a.members|length }}{% endif %} &middot; {{ a.model }}</div>
-      </div>
-      {% if a.members %}<span class="pill" style="color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent);margin-right:6px">team</span>{% endif %}
-      <span class="pill">open &rarr;</span>
-    </a>
-    <form method="post" action="{{ url_for('delete_agent', aid=a.id) }}" style="margin:0 14px 0 0" onsubmit="return confirm('Delete {{ a.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');"><input type="hidden" name="csrf" value="{{ csrf_token }}">
-      <button class="btn ghost sm" type="submit" title="Delete this agent" style="color:var(--high)">Delete</button>
-    </form>
-  </div>
-  {% endfor %}
-</div>
+<div class="sec"><span class="lbl">Agents</span><span class="hint">sorted by what needs you, then last active</span></div>
+{% with show_owner=False, can_delete=True, auto_open=True %}{% include '_agent_table.html' %}{% endwith %}
 {% else %}
 <style>
 .guide{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -83,13 +79,19 @@
 </style>
 <div class="card" style="padding:22px">
   <div class="eyebrow" style="margin-bottom:6px">Start here</div>
-  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">Your first agent in three steps.</h2>
-  <p style="color:var(--mut);font-size:13.5px;margin:0 0 16px">Nothing here needs a token, a key, or a config file. Connect a source with one click, pick a template, run it.</p>
+  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">Your first agent, in one sentence.</h2>
+  <p style="color:var(--mut);font-size:13.5px;margin:0 0 16px">Say what it should do. Warden drafts it, shows what it will ask you about first, and you start talking to it. Connect a source when it needs one.</p>
   <div class="guide">
     {% set anyp = personal|selectattr('connected')|list|length %}
+    <div class="gstep">
+      <div class="n">1</div>
+      <h3>Describe it</h3>
+      <p>"Handle refund requests from customers who were charged twice." That is enough to start.</p>
+      <a class="btn brass sm" href="{{ url_for('new_agent') }}">New agent &rarr;</a>
+    </div>
     <div class="gstep {{ 'done' if anyp }}">
-      <div class="n">{{ '&#10003;'|safe if anyp else '1' }}</div>
-      <h3>Connect a source</h3>
+      <div class="n">{{ '&#10003;'|safe if anyp else '2' }}</div>
+      <h3>Connect what it needs</h3>
       <p>Every connection is yours: only your agents can use it, and you can disconnect any time.</p>
       <div class="pc">
         {% for p in personal[:3] %}
@@ -104,33 +106,12 @@
       <a href="{{ url_for('connections') }}" style="color:var(--brass);font-size:12.5px">All connections &rarr;</a>
     </div>
     <div class="gstep">
-      <div class="n">2</div>
-      <h3>Build an agent</h3>
-      <p>Pick a template, such as Inbox Prioritizer, and Warden grants it the read-only tools from what you connected. Anything that changes state will ask you first.</p>
-      <a class="btn brass sm" href="{{ url_for('new_agent') }}">Build an agent &rarr;</a>
-    </div>
-    <div class="gstep">
       <div class="n">3</div>
-      <h3>Run it and stay in control</h3>
-      <p>Talk to your agent in a conversation. It works on its own for reads, pauses for your approval on anything risky, and every step lands on the audit log.</p>
+      <h3>Stay in control</h3>
+      <p>It works on its own for reads, pauses for your approval on anything that changes a system, and every step lands on the audit log.</p>
       <a href="{{ url_for('architecture') }}" style="color:var(--brass);font-size:12.5px">How governance works &rarr;</a>
     </div>
   </div>
-</div>
-{% endif %}
-
-{% if runs %}
-<div class="section-h"><span class="lbl">Recent runs</span></div>
-<div class="list">
-  {% for r in runs %}
-  <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
-    <div class="r-main">
-      <div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
-      <div class="r-meta">{{ r.created_at[:16].replace('T',' ') }}</div>
-    </div>
-    <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
-  </a>
-  {% endfor %}
 </div>
 {% endif %}
 {% endblock %}

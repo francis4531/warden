@@ -390,13 +390,47 @@ def cost_by_agent(iso_prefix=None):
             pass
     return {k: round(v, 6) for k, v in out.items()}
 
-def run_counts_by_agent():
+def runs_per_day(days=14, owner=None):
+    """Top-level conversations started per UTC day for the last `days` days, oldest first,
+    as [(YYYY-MM-DD, n)]; days with none are included as 0."""
+    import datetime as _dt
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    start = (today - _dt.timedelta(days=days - 1)).isoformat()
+    c = _conn()
+    q = ("SELECT substr(created_at,1,10) AS d, COUNT(*) AS n FROM runs WHERE created_at >= ? "
+         "AND (parent_run_id IS NULL OR parent_run_id='') AND (eval_run_id IS NULL OR eval_run_id='')")
+    args = [start]
+    if owner is not None:
+        q += " AND owner=?"; args.append(owner)
+    rows = c.execute(q + " GROUP BY d", args).fetchall(); c.close()
+    got = {r["d"]: r["n"] for r in rows}
+    return [((today - _dt.timedelta(days=i)).isoformat(), got.get((today - _dt.timedelta(days=i)).isoformat(), 0))
+            for i in range(days - 1, -1, -1)]
+
+def recent_runs_by_agent(agent_ids, per_agent=5):
+    """The latest top-level conversations of each agent, newest first."""
+    if not agent_ids: return {}
+    c = _conn()
+    q = ("SELECT * FROM runs WHERE agent_id IN (%s) AND (parent_run_id IS NULL OR parent_run_id='') "
+         "AND (eval_run_id IS NULL OR eval_run_id='') ORDER BY created_at DESC" % ",".join("?" * len(agent_ids)))
+    rows = c.execute(q, tuple(agent_ids)).fetchall(); c.close()
+    out = {}
+    for r in rows:
+        lst = out.setdefault(r["agent_id"], [])
+        if len(lst) < per_agent:
+            lst.append(dict(r))
+    return out
+
+def run_counts_by_agent(since=None):
     """(runs, last activity, running-or-waiting) per agent id, top-level runs only."""
     c = _conn()
-    rows = c.execute("""SELECT agent_id, COUNT(*) AS n, MAX(updated_at) AS last,
-                        SUM(CASE WHEN status IN ('running','awaiting_approval') THEN 1 ELSE 0 END) AS active
-                        FROM runs WHERE (parent_run_id IS NULL OR parent_run_id='') AND (eval_run_id IS NULL OR eval_run_id='')
-                        GROUP BY agent_id""").fetchall()
+    q = """SELECT agent_id, COUNT(*) AS n, MAX(updated_at) AS last,
+                  SUM(CASE WHEN status IN ('running','awaiting_approval') THEN 1 ELSE 0 END) AS active
+           FROM runs WHERE (parent_run_id IS NULL OR parent_run_id='') AND (eval_run_id IS NULL OR eval_run_id='')"""
+    args = []
+    if since:
+        q += " AND created_at >= ?"; args.append(since)
+    rows = c.execute(q + " GROUP BY agent_id", args).fetchall()
     c.close()
     return {r["agent_id"]: {"runs": r["n"], "last": r["last"], "active": r["active"] or 0} for r in rows}
 
