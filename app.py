@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.20"
+WARDEN_VERSION = "0.21"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -795,7 +795,81 @@ def _builder_ctx(edit_agent=None):
 
 @app.route("/new")
 def new_agent():
+    """The simple builder: one sentence in, a plain-language card out."""
+    return render_template("simple.html")
+
+@app.route("/new/advanced")
+def new_agent_advanced():
     return render_template("builder.html", **_builder_ctx())
+
+def _draft_sources():
+    """Sources this user could connect but has not, for the draft to pick from."""
+    me = current_owner()
+    have = {c["catalog_id"] for c in store.enabled_connections(me)}
+    out = []
+    for e in user_catalog():
+        if e["transport"] == "builtin" or e["id"] in have:
+            continue
+        if e["transport"] != "http" and not is_admin():
+            continue
+        out.append({"id": e["id"], "name": e["name"], "desc": e.get("desc", ""), "personal": bool(e.get("personal"))})
+    return out
+
+@app.route("/draft", methods=["POST"])
+def draft():
+    sentence = (request.form.get("sentence") or (request.get_json(silent=True) or {}).get("sentence") or "").strip()
+    if len(sentence) < 8:
+        return {"error": "Say a little more about what it should do."}, 400
+    tools = connected_tools()
+    sources = _draft_sources()
+    try:
+        d = rt.draft_agent(sentence, tools, sources, owner=current_owner())
+    except Exception as ex:
+        return {"error": "Could not draft that right now: " + rt._friendly_error(ex)[:200]}, 502
+    by_key = {t["key"]: t for t in tools}
+    chosen = [by_key[k] for k in d["tool_keys"] if k in by_key]
+    by_id = {s_["id"]: s_ for s_ in sources}
+    needs = []
+    for sid in d["sources"]:
+        e = by_id.get(sid)
+        if e:
+            needs.append({**e, "url": url_for("connections", connect=sid)})
+    return {"name": d["name"], "summary": d["summary"], "instructions": d["instructions"], "sandbox": d.get("sandbox", False),
+            "tools": [{"key": t["key"], "tool": t["tool"], "server": t["server_name"], "risk": t["risk"], "gate": t["gate"],
+                       "description": t["description"]} for t in chosen],
+            "needs": needs}
+
+@app.route("/agents/simple", methods=["POST"])
+def create_agent_simple():
+    """Create from the card: name, instructions, the tools it listed, and a stance per
+    write tool (own | ask | never) which becomes a per-agent policy. Optionally start the
+    first conversation right away."""
+    f = request.form
+    name = (f.get("name") or "").strip() or "Assistant"
+    instructions = (f.get("instructions") or "").strip()
+    skills = _allowed_skills(f)
+    stances = {}
+    for k in skills:
+        st = f.get("stance__" + k)
+        if st in ("own", "ask", "never"):
+            stances[k] = st
+    aid = store.create_agent(name, instructions, rt.MODEL_DEFAULT, skills, owner=current_owner())
+    for k, st in stances.items():
+        tool = k.split("__")[-1]
+        risk = rt.risk_for(k)["risk"]
+        if st == "never":
+            store.create_policy("%s: never %s" % (name, tool), "deny", agent_id=aid, tool=k, priority=10)
+        elif st == "ask" and risk != "HIGH":
+            store.create_policy("%s: ask before %s" % (name, tool), "require_approval", agent_id=aid, tool=k, priority=20)
+        # 'own' on a HIGH tool is not offered: the gate is not the user's to relax
+    store.audit(None, aid, "agent_created", detail={"by": current_owner(), "how": "simple", "tools": len(skills),
+                                                   "stances": {k.split("__")[-1]: v for k, v in stances.items()}})
+    first = (f.get("first") or "").strip()
+    if first:
+        rid = store.create_run(aid, first)
+        _advance_bg(rid)
+        return redirect(url_for("run_view", rid=rid))
+    return redirect(url_for("agent", aid=aid))
 
 @app.route("/agent/<aid>/edit")
 def edit_agent(aid):

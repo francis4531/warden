@@ -5,12 +5,12 @@ from conftest import login, K, ADMIN, BOB
 
 def test_builder_renders_for_user_and_admin(client, warden):
     login(client, BOB)
-    html = client.get("/new").data.decode()
+    html = client.get("/new/advanced").data.decode()
     assert "What it can touch" in html and 'name="skills"' in html and "Start from" in html
     assert "mcp-server-fetch" not in html, "stdio servers are not offered to users"
     assert "Search the MCP Registry" not in html
     login(client, ADMIN, hat="agents")
-    html = client.get("/new").data.decode()
+    html = client.get("/new/advanced").data.decode()
     assert "Search the MCP Registry" in html and "mcp-server-fetch" in html
 
 

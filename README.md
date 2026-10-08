@@ -36,6 +36,18 @@ the model, but the governance around letting an agent act.
   on the record), not separation of duties. Admins see pending actions and cannot act on
   them.
 
+## Two ways to build an agent
+
+The default (Build an agent) is one sentence: "Handle refund requests from customers who
+were charged twice". Warden drafts a name, instructions, the tools it needs from the
+sources you have connected, and the sources it still lacks, and shows a card in plain
+language: what it does on its own, what it asks you about first, what it needs. Each
+write action has a stance (on its own, ask me first, never) which becomes a per-agent
+policy; a HIGH action can be made stricter from the card but never looser. Type a first
+task and the conversation starts. The model drafts it live; in sandbox mode a keyword
+planner stands in. Advanced setup keeps every dial: templates, each tool by name,
+model, budget, team.
+
 ## Agents know where they run
 
 Every agent's system prompt states that it runs inside Warden, lists its granted tools by

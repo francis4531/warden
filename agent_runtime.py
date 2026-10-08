@@ -993,3 +993,86 @@ def _approval_for(run_id, tool_use_id):
 def _safe(t):
     try: return json.loads(t)
     except Exception: return t
+
+
+# ---- drafting an agent from one sentence ----
+# The simple builder: a user says what the agent should do; Warden proposes a name,
+# instructions, which of the user's tools it needs and which sources it still lacks. The
+# model drafts it live; in sandbox mode a keyword heuristic stands in.
+_DRAFT_NAMES = [
+    (("refund", "chargeback", "billing", "invoice"), "Billing Resolver"),
+    (("inbox", "email", "gmail", "mail"), "Inbox Triage"),
+    (("ticket", "support", "helpdesk", "customer"), "Support Triage"),
+    (("research", "web", "search", "documentation"), "Research Analyst"),
+    (("repo", "repository", "github", "code", "pull"), "Code Assistant"),
+    (("calendar", "meeting", "schedule"), "Calendar Assistant"),
+    (("incident", "alert", "on-call", "oncall", "pager"), "Incident Responder"),
+    (("jira", "confluence", "issue", "sprint"), "Project Assistant"),
+    (("sql", "warehouse", "database", "query", "report"), "Data Analyst"),
+]
+
+def _draft_sandbox(sentence, tools, catalog):
+    words = set(re.split(r"[^a-z0-9]+", (sentence or "").lower()))
+    name = next((n for keys, n in _DRAFT_NAMES if any(k in words for k in keys)), "Assistant")
+    chosen = []
+    for t in tools:
+        hay = set(re.split(r"[^a-z0-9]+", (t["tool"] + " " + t["description"]).lower()))
+        hit = len(words & hay) >= 2 or any(w in t["tool"].lower() for w in words if len(w) > 4)
+        if t["risk"] == "LOW" or hit:
+            chosen.append(t["key"])
+    # a source is "needed" only when the sentence names it (or an obvious synonym); the
+    # keyword matcher used for connection requests is too eager for a draft
+    syn = {"google_gmail": {"inbox", "email", "emails", "gmail", "mail"}, "google_calendar": {"calendar", "meeting", "meetings"},
+           "google_drive": {"drive", "docs", "documents", "spreadsheet"}, "github": {"github", "repo", "repos", "repository", "repositories"},
+           "atlassian": {"jira", "confluence"}, "slack": {"slack"}, "notion": {"notion"}, "linear": {"linear"}}
+    needs = []
+    for c in catalog:
+        strong = set(re.split(r"[^a-z0-9]+", (c["name"].split(" (")[0] + " " + c["id"]).lower())) - {"", "google"}
+        if (words & strong) or (words & syn.get(c["id"], set())):
+            needs.append(c["id"])
+    needs = needs[:2]
+    s = (sentence or "").strip().rstrip(".")
+    instr = ("You %s. Look things up before you act, never guess at numbers or names, and say plainly when "
+             "you cannot do something. Anything that changes a system of record is held for the user to approve." % (s[0].lower() + s[1:] if s else "help"))
+    return {"name": name, "summary": s[0].upper() + s[1:] + "." if s else "", "instructions": instr,
+            "tool_keys": chosen, "sources": needs}
+
+def draft_agent(sentence, tools, catalog, owner=None):
+    """Return {name, summary, instructions, tool_keys, sources}. tools: the user's connected
+    tools [{key, tool, description, risk, server_name}]; catalog: connectable sources
+    [{id, name, desc}] not yet connected. sources: catalog ids the agent would need."""
+    if SANDBOX:
+        d = _draft_sandbox(sentence, tools, catalog)
+        d["sandbox"] = True
+        return d
+    import anthropic
+    client = anthropic.Anthropic(timeout=MODEL_TIMEOUT, max_retries=1)
+    tool_lines = "\n".join("- %s | %s | %s | %s" % (t["key"], t["server_name"], t["risk"], (t["description"] or "")[:140]) for t in tools) or "- (none connected yet)"
+    cat_lines = "\n".join("- %s | %s | %s" % (c["id"], c["name"], (c.get("desc") or "")[:120]) for c in catalog) or "- (none)"
+    prompt = (
+        "A user of an enterprise agent studio wrote one sentence about what they want an agent to do:\n\n"
+        "\"%s\"\n\n"
+        "Tools the user has connected (key | source | risk | what it does):\n%s\n\n"
+        "Sources the user could connect but has not (id | name | what it does):\n%s\n\n"
+        "Draft the agent. Reply with JSON only, no prose, with exactly these keys:\n"
+        "name: 2 or 3 words, a job title, no word 'agent';\n"
+        "summary: one sentence, second person is fine, what it does for the user;\n"
+        "instructions: 3 to 6 sentences the agent will read before every conversation: its job, how to work, "
+        "what to check before acting, what it must never do without asking. Plain language, no markdown;\n"
+        "tool_keys: the keys from the connected list this agent needs (include the reads it needs; include a "
+        "write only if the sentence calls for it);\n"
+        "sources: ids from the not-connected list this agent would need, at most 2, empty if none.\n"
+        % (sentence.strip()[:600], tool_lines, cat_lines))
+    resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=800,
+                                  messages=[{"role": "user", "content": prompt}])
+    text = "".join(getattr(b, "text", "") for b in resp.content)
+    m = re.search(r"\{.*\}", text, re.S)
+    d = json.loads(m.group(0)) if m else {}
+    valid = {t["key"] for t in tools}
+    cat_ids = {c["id"] for c in catalog}
+    return {"name": str(d.get("name") or "Assistant")[:60],
+            "summary": str(d.get("summary") or "")[:300],
+            "instructions": str(d.get("instructions") or "")[:2000],
+            "tool_keys": [k for k in (d.get("tool_keys") or []) if k in valid],
+            "sources": [s_ for s_ in (d.get("sources") or []) if s_ in cat_ids][:2],
+            "sandbox": False}
