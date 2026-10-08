@@ -1076,3 +1076,168 @@ def draft_agent(sentence, tools, catalog, owner=None):
             "tool_keys": [k for k in (d.get("tool_keys") or []) if k in valid],
             "sources": [s_ for s_ in (d.get("sources") or []) if s_ in cat_ids][:2],
             "sandbox": False}
+
+
+# ---- drafting a policy from one sentence ----
+# "Require approval for refunds over $500", "never let the Billing agent deploy", "no more
+# than 3 refunds in one conversation", "auto-run refunds under $100", "block any high-risk
+# tool after 6pm". Live, the model turns the sentence into one structured rule; in sandbox
+# (and if the model's answer does not parse) a small grammar does the common cases.
+_POLICY_SYNONYMS = {
+    "refund": "issue_refund", "refunds": "issue_refund", "ticket": "create_ticket", "tickets": "create_ticket",
+    "deploy": "deploy", "deploys": "deploy", "deployment": "deploy", "email": "send", "emails": "send",
+    "message": "send", "messages": "send", "sql": "execute_sql", "query": "execute_sql", "queries": "execute_sql",
+    "page": "create_page", "pages": "create_page", "issue": "create_issue", "issues": "create_issue",
+    "comment": "add_comment", "comments": "add_comment", "merge": "merge", "merges": "merge",
+}
+_NUM = r"\$?\s*(?P<n>\d+(?:[.,]\d+)?)\s*(?P<k>k\b)?"
+
+def _policy_tool(words, tool_names):
+    """The tool a sentence talks about: an exact tool name, a synonym, or a word that is a
+    substring of exactly one connected tool."""
+    names = set(tool_names or [])
+    for w in words:
+        if w in names:
+            return w
+    for w in words:
+        t = _POLICY_SYNONYMS.get(w)
+        if t and (t in names or not names):
+            return t
+    for w in words:
+        if len(w) < 4:
+            continue
+        hits = [n for n in names if w in n]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+def _draft_policy_rules(sentence, tool_names, agents):
+    s = " " + (sentence or "").strip().lower() + " "
+    words = re.split(r"[^a-z0-9_]+", s)
+    out = {"name": "", "agent_id": "*", "tool": "*", "field": "", "op": "", "value": "", "effect": None, "priority": 100}
+    # effect
+    if re.search(r"\b(never|block|deny|forbid|prohibit|not allowed|don'?t allow|no more than|at most|max(?:imum)?)\b", s):
+        out["effect"] = "deny"
+    elif re.search(r"\b(auto|automatic|automatically|without approval|on its own|allow|let .* run|no approval)\b", s):
+        out["effect"] = "allow"
+    elif re.search(r"\b(approval|approve|ask|gate|hold|review|confirm|sign.?off)\b", s):
+        out["effect"] = "require_approval"
+    # agent
+    for a in sorted(agents or [], key=lambda a: -len(a.get("name") or "")):   # longest name first
+        nm = (a.get("name") or "").strip().lower()
+        if len(nm) >= 3 and re.search(r"(?<![a-z0-9])" + re.escape(nm) + r"(?![a-z0-9])", s):
+            out["agent_id"] = a["id"]; break
+    # tool
+    if re.search(r"\b(any|every|all)\b.{0,12}\b(high|high-risk|risky)\b", s) or re.search(r"\bhigh-?risk\b", s):
+        out["tool"] = "*"; out["field"] = "__risk__"; out["op"] = "=="; out["value"] = "HIGH"
+    else:
+        t = _policy_tool(words, tool_names)
+        if t:
+            out["tool"] = t
+    # conditions, first match wins
+    m = re.search(r"\b(?<!no )(?<!not )(?:over|above|more than|greater than|exceeding|bigger than|larger than|\>)\s*" + _NUM, s)
+    if m and out["field"] != "__risk__" and not re.search(r"\b(no more than|not more than|at most|up to)\b", s):
+        v = m.group("n").replace(",", ""); v = str(int(float(v) * 1000)) if m.group("k") else v
+        if re.search(r"\b(times|refunds|calls|runs|attempts|per conversation|in a run|in one conversation|in a conversation)\b", s[m.end():m.end()+40]) and not re.search(r"\$", m.group(0)):
+            out["field"], out["op"], out["value"] = "__count__", ">=", str(int(float(v)) + 1)   # "more than 3" = from the 4th
+        else:
+            out["field"], out["op"], out["value"] = "amount", ">", v
+    else:
+        m = re.search(r"\b(?:under|below|less than|smaller than|up to|at most|no more than|\<=?)\s*" + _NUM, s)
+        if m and out["field"] != "__risk__":
+            v = m.group("n").replace(",", "")
+            if re.search(r"\b(times|refunds|calls|runs|attempts|per conversation|in a run|in one conversation|in a conversation)\b", s[m.end():m.end()+40]) and not re.search(r"\$", m.group(0)):
+                out["field"], out["op"], out["value"] = "__count__", ">=", str(int(float(v)) + (1 if out["effect"] == "deny" else 0))
+                if out["effect"] == "deny":
+                    out["name"] = out["name"] or ""
+            else:
+                out["field"], out["op"], out["value"] = "amount", "<=", v
+                if out["effect"] is None:
+                    out["effect"] = "allow"
+    m = re.search(r"\b(\d{1,2})\s*(am|pm)\b|\bafter\s+(\d{1,2})(?::\d{2})?\b", s)
+    if m and not out["field"]:
+        h = int(m.group(1) or m.group(3)); ap = m.group(2)
+        if ap == "pm" and h < 12: h += 12
+        if ap == "am" and h == 12: h = 0
+        if re.search(r"\bafter\b", s):
+            out["field"], out["op"], out["value"] = "__hour__", ">=", str(h)
+        elif re.search(r"\bbefore\b", s):
+            out["field"], out["op"], out["value"] = "__hour__", "<", str(h)
+    m = re.search(r"\b(\d+)\s*(?:times|refunds|calls|runs|attempts)\b", s)
+    if m and not out["field"]:
+        n = int(m.group(1))
+        out["field"], out["op"], out["value"] = "__count__", ">=", str(n + (1 if out["effect"] == "deny" and re.search(r"\b(no more than|at most|max)", s) else 0))
+    if re.search(r"\b(weekend|saturday|sunday)\b", s) and not out["field"]:
+        out["field"], out["op"], out["value"] = "__weekday__", ">=", "5"
+    if out["effect"] is None:
+        out["effect"] = "require_approval"
+    if out["effect"] == "deny":
+        out["priority"] = 10
+    elif out["effect"] == "allow":
+        out["priority"] = 50
+    return out
+
+def describe_rule(p, agents=None, tool_label=None):
+    """A rule as a sentence an admin can read back: who, what, when, then what."""
+    agent = "any agent"
+    if p.get("agent_id") and p["agent_id"] != "*":
+        agent = next((a["name"] for a in (agents or []) if a["id"] == p["agent_id"]), p["agent_id"])
+    tool = p.get("tool") or "*"
+    what = "any action" if tool in ("*", "") else ((tool_label or tool).split("__")[-1].replace("_", " "))
+    f, op, v = p.get("field") or "", p.get("op") or "", p.get("value") or ""
+    when = ""
+    if f == "__risk__":
+        when = "when the action is %s risk" % v
+    elif f == "__count__":
+        when = "from the %s time in one conversation" % ({"1": "first", "2": "second", "3": "third"}.get(v, v + "th") if op == ">=" else v)
+    elif f == "__hour__":
+        when = ("after %s:00 UTC" % v) if op in (">", ">=") else ("before %s:00 UTC" % v)
+    elif f == "__weekday__":
+        when = "at the weekend" if v in ("5", "6") and op == ">=" else "on weekday %s" % v
+    elif f:
+        sym = {">": "over", ">=": "at least", "<": "under", "<=": "up to", "==": "equal to", "!=": "other than", "contains": "containing", "exists": "present"}.get(op, op)
+        when = "when %s is %s %s" % (f.replace("_", " "), sym, v) if op != "exists" else "when %s is present" % f.replace("_", " ")
+    effect = {"allow": "runs on its own", "require_approval": "asks a human first", "deny": "is never allowed"}[p.get("effect") or "require_approval"]
+    return "%s: %s %s%s." % (agent[0].upper() + agent[1:], what, effect, (", " + when) if when else "")
+
+def draft_policy(sentence, tool_names, agents):
+    """{name, agent_id, tool, field, op, value, effect, priority, summary, sandbox}."""
+    if SANDBOX:
+        d = _draft_policy_rules(sentence, tool_names, agents); d["sandbox"] = True
+    else:
+        import anthropic
+        client = anthropic.Anthropic(timeout=MODEL_TIMEOUT, max_retries=1)
+        prompt = (
+            "An admin of an enterprise agent studio wrote a governance rule in plain language:\n\n\"%s\"\n\n"
+            "Tools that exist (bare names): %s\nAgents: %s\n\n"
+            "Turn it into exactly one structured rule. Reply with JSON only, keys:\n"
+            "effect: one of allow (run without asking), require_approval (hold for a human), deny (block);\n"
+            "agent_id: the id of the agent named, else \"*\";\n"
+            "tool: a bare tool name from the list, else \"*\" for any action;\n"
+            "field: \"\" for no condition, or an argument name such as amount, or one of __count__ (times the tool "
+            "ran in this conversation), __hour__ (0-23 UTC), __weekday__ (0=Mon), __risk__ (LOW/MED/HIGH);\n"
+            "op: one of > >= < <= == != contains exists, or \"\";\n"
+            "value: the number or text to compare with, as a string, or \"\";\n"
+            "name: 2 to 5 words naming the rule.\n"
+            "A dollar amount is the argument 'amount'. 'No more than N' is __count__ >= N+1 with effect deny.\n"
+            % (sentence.strip()[:500], ", ".join(sorted(set(tool_names or []))[:80]) or "(none)",
+               "; ".join("%s=%s" % (a["id"], a["name"]) for a in (agents or [])[:40]) or "(none)"))
+        try:
+            resp = client.messages.create(model=MODEL_DEFAULT, max_tokens=400, messages=[{"role": "user", "content": prompt}])
+            text = "".join(getattr(b, "text", "") for b in resp.content)
+            m = re.search(r"\{.*\}", text, re.S)
+            j = json.loads(m.group(0)) if m else {}
+            d = {"name": str(j.get("name") or "")[:60], "agent_id": str(j.get("agent_id") or "*"),
+                 "tool": str(j.get("tool") or "*"), "field": str(j.get("field") or ""), "op": str(j.get("op") or ""),
+                 "value": str(j.get("value") or ""), "effect": j.get("effect"), "priority": 100, "sandbox": False}
+            if d["effect"] not in ("allow", "require_approval", "deny") or d["op"] not in ("", ">", ">=", "<", "<=", "==", "!=", "contains", "exists"):
+                raise ValueError("bad draft")
+            if d["agent_id"] != "*" and d["agent_id"] not in {a["id"] for a in (agents or [])}:
+                d["agent_id"] = "*"
+            d["priority"] = 10 if d["effect"] == "deny" else 50 if d["effect"] == "allow" else 100
+        except Exception:
+            d = _draft_policy_rules(sentence, tool_names, agents); d["sandbox"] = False; d["fallback"] = True
+    d["summary"] = describe_rule(d, agents)
+    if not d.get("name"):
+        d["name"] = d["summary"].split(":", 1)[-1].strip().rstrip(".")[:60]
+    return d
