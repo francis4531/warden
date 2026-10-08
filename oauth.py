@@ -15,6 +15,8 @@ A connection's stored "token" is JSON:
    "expires_at":<unix>,"token_endpoint":..,"client_id":..,"client_secret":..,"scopes":[..]}
 Plain strings (pasted API keys) keep working as before.
 """
+import logging
+log = logging.getLogger("warden.oauth")
 import os, json, time, base64, hashlib, secrets, urllib.parse, urllib.request, urllib.error
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -61,6 +63,23 @@ def google_authorize_url(client_id, redirect_uri, scopes, state):
               "scope": " ".join(["openid", "email"] + list(scopes)), "state": state,
               "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true"}
     return GOOGLE_AUTH + "?" + urllib.parse.urlencode(params)
+
+GOOGLE_REVOKE = "https://oauth2.googleapis.com/revoke"
+
+def revoke(token):
+    """Tell the provider to forget a token when the user disconnects. Best effort: a
+    failure here never blocks the disconnect, which deletes Warden's copy regardless."""
+    d = parse(token)
+    if not d or d.get("provider") != "google":
+        return False
+    for t in (d.get("refresh_token"), d.get("access_token")):
+        if not t:
+            continue
+        try:
+            _post(GOOGLE_REVOKE, {"token": t}); return True
+        except Exception as e:
+            log.warning("revoke failed: %s", e)
+    return False
 
 def google_exchange(client_id, client_secret, redirect_uri, code, scopes):
     t = _post(GOOGLE_TOKEN, {"code": code, "client_id": client_id, "client_secret": client_secret,

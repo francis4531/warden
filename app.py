@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.24.1"
+WARDEN_VERSION = "0.25.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -126,7 +126,7 @@ ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS",
 AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
 rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
 rt.HIDDEN_CATALOG = lambda: hidden_catalog()
-_PUBLIC_ENDPOINTS = {"landing", "login", "logout", "google_login", "google_callback", "healthz", "static"}
+_PUBLIC_ENDPOINTS = {"landing", "privacy", "login", "logout", "google_login", "google_callback", "healthz", "static"}
 # OAuth callbacks for connections come back from a provider with a state we issued; auth is
 # still required (the operator started the flow while signed in), they are just not admin-gated twice
 
@@ -474,6 +474,14 @@ app.jinja_env.globals["arg_summary"] = arg_summary
 def landing():
     return render_template("landing.html")
 
+@app.route("/privacy")
+def privacy():
+    """What this studio collects and why. Public, so a Google OAuth consent screen can link
+    it. The contact is the studio's first admin unless WARDEN_PRIVACY_CONTACT says otherwise."""
+    contact = os.environ.get("WARDEN_PRIVACY_CONTACT") or (sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "")
+    return render_template("privacy.html", contact=contact, base=os.environ.get("WARDEN_BASE_URL", request.url_root.rstrip("/")),
+                           updated="2026-10-08")
+
 @app.route("/app")
 def home():
     servers = cm().connected_servers()
@@ -655,6 +663,7 @@ def disable_connection():
     # every connection is personal (v0.15); only its owner can disconnect it, admins included
     if (row.get("owner") or "") != current_owner():
         abort(403)
+    oauth.revoke(row.get("token") or "")              # the provider forgets it too
     store.disable_connection(cid); cm().disconnect(cid)
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True}

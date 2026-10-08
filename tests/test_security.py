@@ -182,3 +182,26 @@ def test_every_outbound_request_identifies_warden():
     assert r.get_header("User-agent", "").startswith("Warden/")
     url, headers = cm._http_params("github", {"catalog_id": "github", "token": "ghp_x"})
     assert headers["User-Agent"].startswith("Warden/") and headers["Authorization"] == "Bearer ghp_x"
+
+
+# ---- privacy page: public, linked from the home page, says what the consent screen needs ----
+def test_privacy_policy_is_public_and_linked(client):
+    r = client.get("/privacy")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    for must in ("Google API Services User Data Policy", "Limited Use", "gmail.readonly", "Disconnecting", "encrypted at rest", "Anthropic"):
+        assert must in body, must
+    home = client.get("/").get_data(as_text=True)
+    assert 'href="/privacy"' in home
+
+
+def test_disconnect_revokes_google_tokens(client, warden, monkeypatch):
+    import oauth, json
+    store = warden["store"]
+    seen = []
+    monkeypatch.setattr(oauth, "_post", lambda url, data, headers=None: seen.append((url, data)) or {})
+    tok = json.dumps({"type": "oauth", "provider": "google", "refresh_token": "r1", "access_token": "a1"})
+    assert oauth.revoke(tok) is True
+    assert seen == [(oauth.GOOGLE_REVOKE, {"token": "r1"})]
+    assert oauth.revoke(json.dumps({"type": "oauth", "provider": "mcp", "access_token": "x"})) is False
+    assert oauth.revoke("ghp_plain") is False

@@ -189,6 +189,10 @@ the whole governance flow works offline. For live model calls:
     export WARDEN_MODEL=claude-sonnet-4-6   # optional; a model on your account
     python app.py
 
+## Privacy policy and Google verification
+
+`/privacy` is a public page that says what the studio collects, why, where it goes, how long it is kept, and how to remove it. It is written to satisfy Google's OAuth branding review: link it from your OAuth consent screen as the privacy policy URL, set the home page URL to the studio's base URL (the home page links to `/privacy`), and verify the domain in Google Search Console. `WARDEN_PRIVACY_CONTACT` sets the contact shown on the page; it defaults to the first admin email. Disconnecting a Google connection revokes the token at Google as well as deleting the studio's copy.
+
 ## Deploy (Render)
 
 Python is pinned to 3.13 by `.python-version` (Render's native runtime defaults to the

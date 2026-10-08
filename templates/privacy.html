@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy policy &middot; Warden</title>
+<meta name="description" content="What this Warden studio collects, why, where it goes, how long it is kept, and how to remove it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#0d0f15;--ink2:#141824;--line:#232a3a;--line2:#313a4f;--txt:#eef1f7;--mut:#9aa4bb;--dim:#5f6a82;--accent:#6f8dff;--accent2:#8a7dff;
+    --body:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--ink);color:var(--txt);font-family:var(--body);line-height:1.65;-webkit-font-smoothing:antialiased;min-height:100vh}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px 60px}
+  .top{display:flex;align-items:center;justify-content:space-between;padding:22px 0;border-bottom:1px solid var(--line);margin-bottom:34px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:17px;text-decoration:none;color:inherit}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#0b0d13;font-weight:800;font-size:17px}
+  .top a.enter{font-size:13.5px;font-weight:600;color:var(--txt);text-decoration:none;border:1px solid var(--line2);border-radius:9px;padding:9px 16px}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.2;margin-bottom:8px}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--dim);margin-bottom:30px}
+  h2{font-size:17px;font-weight:700;margin:30px 0 8px;letter-spacing:-.01em}
+  p{color:var(--mut);font-size:14.5px;margin-bottom:10px}
+  p b{color:var(--txt);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:8px 0 12px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--mut)}
+  th{color:var(--txt);font-weight:600;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+  td:first-child{color:var(--txt);font-weight:600;white-space:nowrap}
+  code{font-family:var(--mono);font-size:12.5px;color:var(--txt);background:var(--ink2);padding:1px 5px;border-radius:5px}
+  a{color:var(--accent)}
+  footer{border-top:1px solid var(--line);margin-top:44px;padding:22px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="{{ url_for('landing') }}"><span class="logo">W</span>Warden</a>
+    <a class="enter" href="{{ url_for('home') }}">Open the studio &rarr;</a>
+  </div>
+
+  <div class="eyebrow">Privacy policy</div>
+  <h1>What this studio collects, and why.</h1>
+  <div class="meta">Applies to {{ base }} &middot; last updated {{ updated }}{% if contact %} &middot; contact {{ contact }}{% endif %}</div>
+
+  <p>Warden is an enterprise AI agent studio. Users build agents, connect the agents to their own accounts (email, files, calendars, code, tickets), and talk to them. Every action an agent takes is governed and recorded. This page says plainly what data the studio handles in order to do that, where it goes, how long it stays, and how to remove it. It is written for the users of this studio and for the providers (Google among them) whose accounts users connect.</p>
+
+  <h2>Who runs it</h2>
+  <p>This studio is operated by its admin{% if contact %}, reachable at <b>{{ contact }}</b>{% endif %}. The software is Warden, open source at <a href="https://github.com/francis4531/warden">github.com/francis4531/warden</a>. Each installation is separate: data in this studio is held only by this studio's operator, not by the Warden project.</p>
+
+  <h2>What is collected</h2>
+  <table>
+    <tr><th>Data</th><th>Why</th><th>Where it is kept</th></tr>
+    <tr><td>Your sign-in</td><td>Your email address (from Google sign-in or a studio password) identifies you, decides whether you may enter, and marks everything you create as yours.</td><td>In the studio's database, as the owner field on your agents, conversations and connections.</td></tr>
+    <tr><td>Agents you build</td><td>The name, instructions, chosen tools and policies of each agent, so it can run.</td><td>Database.</td></tr>
+    <tr><td>Conversations</td><td>What you ask an agent, what it answers, and every tool call and result along the way, so you can read back what happened and approve or decline what it wants to do.</td><td>Database.</td></tr>
+    <tr><td>Connection tokens</td><td>When you connect an account (Google, GitHub, Atlassian, any MCP server), the studio stores the OAuth token that provider issued so your agents can act on your behalf. Admin-entered tokens are never shared with users; each connection belongs to one user.</td><td>Database, encrypted at rest with a key the operator holds outside the database.</td></tr>
+    <tr><td>Audit log</td><td>A hash-chained record of every step an agent took, every approval, denial and declined request, and every change to policies and connections. It is tamper-evident on purpose and outlives the agent.</td><td>Database.</td></tr>
+    <tr><td>Usage and cost</td><td>Model tokens used per conversation and the spend they imply, to enforce budgets and caps.</td><td>Database.</td></tr>
+    <tr><td>Session cookie</td><td>One cookie keeps you signed in. It is HttpOnly, SameSite, and sent only over HTTPS. There are no advertising or analytics cookies.</td><td>Your browser.</td></tr>
+  </table>
+
+  <h2>Google user data</h2>
+  <p>If you connect Gmail, Google Drive, Docs, Sheets or Calendar, the studio asks Google only for the scopes the connection you chose needs: <b>read-only</b> by default (<code>gmail.readonly</code>, <code>drive.readonly</code>, <code>calendar.readonly</code>, <code>documents.readonly</code>, <code>spreadsheets.readonly</code>), and the matching write scope only if you explicitly choose a write connection. The consent screen lists exactly what is requested each time.</p>
+  <p>Google data is used for one purpose: <b>to carry out the tasks you give your own agents</b>. An agent reads your mail, files or events only when a conversation you started calls for it, each read is a tool call you can see in the conversation and in the audit log, and anything beyond a read pauses for your approval before it happens. Google data is never used for advertising, never sold, never used to train models, and never shown to the studio's admin or to other users. Admins can see that a connection exists and what tools it exposes; they cannot use it.</p>
+  <p>The studio's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+  <h2>Who else sees data</h2>
+  <p><b>The model provider.</b> To answer you, the studio sends the conversation, the agent's instructions, and the results of tool calls (which can include content from your connected accounts, such as the text of an email an agent read) to Anthropic's API, which generates the agent's replies. Anthropic's handling of API data is described in its <a href="https://www.anthropic.com/legal/privacy">privacy policy</a>; by default API inputs are not used to train Anthropic's models.</p>
+  <p><b>The providers you connect.</b> When an agent uses a tool, the request goes to that provider (Google, GitHub, Atlassian, or the MCP server you connected) with your token. Nothing goes to a provider you have not connected.</p>
+  <p><b>Telemetry, if the operator turns it on.</b> The operator can export traces of agent runs to their own observability service (OpenTelemetry to Datadog, Grafana or similar). Tool names, risk tiers, outcomes and latency are exported; request and result contents are not exported unless the operator explicitly enables payload tracing, and even then known sensitive fields (tokens, keys, email addresses, card numbers) are redacted first.</p>
+  <p><b>A visit counter.</b> The public pages of this studio send the page address and a timestamp to the operator's own visit counter so the operator can see how many visits the studio gets. No cookie, no identity, and nothing from inside your conversations is sent.</p>
+  <p>No other third party receives data. Nothing is shared for advertising.</p>
+
+  <h2>How long it is kept</h2>
+  <p>Connection tokens are kept until you disconnect. Disconnecting deletes the studio's copy immediately and, for Google, also asks Google to revoke the token so it stops working everywhere. You can additionally remove the studio at any time from your <a href="https://myaccount.google.com/permissions">Google account permissions</a>.</p>
+  <p>Agents, conversations and usage records are kept until you delete the agent, which removes its conversations, pending approvals and eval suites. The audit log is kept: it records what was done, not the contents of your accounts, and its purpose is to remain after everything else is gone.</p>
+  <p>The operator may delete a user's data entirely on request{% if contact %} at {{ contact }}{% endif %}.</p>
+
+  <h2>How it is protected</h2>
+  <p>Tokens are encrypted at rest. Sessions are signed with a secret that exists only in the operator's environment. Every form and request is protected against cross-site forgery. Spawned connection processes receive only the token for that one connection, never the studio's own secrets. The audit log is hash-chained with a keyed signature so edits are detectable. Only a listed admin can see across users, and admin oversight is read-only: an admin cannot run a user's agent, use a user's connection, or approve on a user's behalf.</p>
+
+  <h2>Changes</h2>
+  <p>When this page changes, the date at the top changes with it.</p>
+
+  <footer>Warden v{{ version }} &middot; <a href="{{ url_for('landing') }}">Home</a> &middot; <a href="{{ url_for('architecture') }}">Architecture</a></footer>
+</div>
+</body>
+</html>
