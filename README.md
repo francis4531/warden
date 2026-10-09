@@ -198,6 +198,20 @@ the whole governance flow works offline. For live model calls:
 
 `/privacy` is a public page that says what the studio collects, why, where it goes, how long it is kept, and how to remove it. It is written to satisfy Google's OAuth branding review: link it from your OAuth consent screen as the privacy policy URL, set the home page URL to the studio's base URL (the home page links to `/privacy`), and verify the domain in Google Search Console. `WARDEN_PRIVACY_CONTACT` sets the contact shown on the page; it defaults to the first admin email. Disconnecting a Google connection revokes the token at Google as well as deleting the studio's copy.
 
+## Web access without a connection
+
+Every agent can search the public web and read pages with nothing to connect. Both run on
+the model provider's side, so they work the moment a model key is set. They are reads, so
+they run without approval; each search and fetch is a line on the audit log (what was asked
+for and which pages came back), a search costs $0.01 on top of tokens and is added to the
+run's cost, and a run's budget and call ceiling still apply. Under Catalog, an admin
+switches search and page reading on or off for the whole studio, may allow only named
+domains or block named domains, and sets the most searches per model turn. Web search must
+be enabled for the organization that owns `ANTHROPIC_API_KEY` (Anthropic Console, privacy
+settings); if it is not, a run fails with a message that says so. Two limits to know: the
+studio's own gate does not sit between the agent and the page (the switches, domain lists
+and audit log are the controls), and sandbox mode has no model, so web access is live only.
+
 ## Deploy (Render)
 
 Python is pinned to 3.13 by `.python-version` (Render's native runtime defaults to the
