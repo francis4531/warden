@@ -245,8 +245,10 @@ Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-so
   restrict who may sign in. With neither set, any Google account can sign in and the
   admin Overview flags it.
 - `WARDEN_ADMIN_EMAILS=admin@example.com` names the admins.
-- `WARDEN_PASSWORD` keeps a single shared password sign-in as a fallback; everyone who
-  uses it shares one workspace named `operator`. Leave it unset once Google sign-in works.
+- There is no password sign-in: every user is a Google account. (Before v0.26 a
+  `WARDEN_PASSWORD` fallback signed in as a shared `operator` user. On the first boot of
+  v0.26 with Google sign-in on, agents and connections owned by `operator`, or by no one,
+  are removed and the removal is written to the audit log. The variable is now ignored.)
 - Every form and request from Warden's own pages carries a CSRF token; cookies are
   `SameSite=Lax`, `HttpOnly`, and `Secure` on Render (set `WARDEN_HTTPS=1` elsewhere
   behind TLS).

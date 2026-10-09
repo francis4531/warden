@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.25.1"
+WARDEN_VERSION = "0.26.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -85,12 +85,11 @@ if not vault.from_env():
 
 # ---- authentication ----
 # Sign in with Google (OAuth 2.0), optionally restricted to an email allow-list.
-# A single operator password is kept as a fallback. The landing page and /healthz stay
-# public; everything else requires sign-in. If neither method is configured the app runs
-# open, for local development only.
+# Every user is a Google account; there is no shared password and no anonymous "operator".
+# The landing page, /privacy and /healthz stay public; everything else requires sign-in.
+# Without a Google client the app runs open, for local development only.
 import hmac, secrets, urllib.parse, urllib.request, json as _authjson
 from flask import session
-AUTH_PASSWORD = os.environ.get("WARDEN_PASSWORD", "")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_ON = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
@@ -123,17 +122,17 @@ def _email_allowed(email):
 def signin_open():
     return GOOGLE_ON and not ALLOWED_EMAILS and not ALLOWED_DOMAINS
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("WARDEN_ADMIN_EMAILS", "").split(",") if e.strip()}
-AUTH_ON = bool(GOOGLE_ON or AUTH_PASSWORD)
+AUTH_ON = GOOGLE_ON
 rt.ADMIN_INFO = {"auth_on": AUTH_ON, "admins": sorted(ADMIN_EMAILS)}
 rt.HIDDEN_CATALOG = lambda: hidden_catalog()
 _PUBLIC_ENDPOINTS = {"landing", "privacy", "login", "logout", "google_login", "google_callback", "healthz", "static"}
 # OAuth callbacks for connections come back from a provider with a state we issued; auth is
-# still required (the operator started the flow while signed in), they are just not admin-gated twice
+# still required (the user started the flow while signed in), they are just not admin-gated twice
 
 def current_owner():
     """The signed-in user's identity, used to scope their workspace. Falls back to a
-    single 'operator' bucket when auth is off (local/dev, everything is one user's)."""
-    return session.get("email") or "operator"
+    single 'local' bucket when auth is off (local development, everything is one user's)."""
+    return session.get("email") or "local"
 
 def is_admin():
     """Admins manage shared infrastructure (connections, policies, tokens). Regular users
@@ -284,20 +283,14 @@ def _safe_next(n):
     return n
 
 def _login_ctx(**kw):
-    return dict(google_on=GOOGLE_ON, has_password=bool(AUTH_PASSWORD),
+    return dict(google_on=GOOGLE_ON,
                 next=request.args.get("next", ""), **kw)
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login")
 def login():
     if not AUTH_ON or session.get("auth"):
         return redirect(url_for("home"))
-    error = None
-    if request.method == "POST":
-        if AUTH_PASSWORD and hmac.compare_digest(request.form.get("password", ""), AUTH_PASSWORD):
-            session["auth"] = True; session["email"] = "operator"; session.permanent = True
-            return redirect(_safe_next(request.form.get("next")) or url_for("home"))
-        error = "Incorrect password."
-    return render_template("login.html", error=error, **_login_ctx())
+    return render_template("login.html", error=request.args.get("error"), **_login_ctx())
 
 @app.route("/auth/google")
 def google_login():
@@ -417,6 +410,30 @@ def connected_tools():
         out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk})
     return out
 
+_RETIRED_OWNERS = ("", "operator")
+
+def _retire_operator():
+    """Before v0.26 a shared password signed in as an anonymous "operator" user, and early
+    agents had no owner at all. Every user is now a Google account, so on a signed-in studio
+    those agents, their conversations and their connections are removed once. The audit
+    log keeps what they did. With sign-in off (local development) nothing is touched."""
+    if not AUTH_ON:
+        return []
+    import store as _st
+    gone = []
+    for ag in _st.list_agents(None):
+        if (ag.get("owner") or "") in _RETIRED_OWNERS:
+            _st.delete_agent(ag["id"]); gone.append(ag["name"])
+    conns = []
+    for c_ in _st.enabled_connections():
+        if c_["transport"] != "builtin" and (c_.get("owner") or "") == "operator":
+            _st.disable_connection(c_["id"]); conns.append(c_["catalog_id"])
+    if gone or conns:
+        _st.audit(None, None, "operator_retired", detail={"agents": gone, "connections": conns,
+                  "text": "removed %d agent%s and %d connection%s owned by the retired operator user" % (
+                      len(gone), "" if len(gone) == 1 else "s", len(conns), "" if len(conns) == 1 else "s")})
+    return gone
+
 def _migrate_shared_connections():
     """Before v0.15 an admin could connect a system for the whole studio. Those rows become
     the admin's own personal connections (nothing is shared any more), and agents that held
@@ -426,14 +443,14 @@ def _migrate_shared_connections():
         if c_.get("owner") or c_["transport"] == "builtin":
             continue
         cid = c_["catalog_id"]
-        owner = c_.get("connected_by") or (sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "operator")
+        owner = c_.get("connected_by") or (sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "local")
         new_key = _st.conn_key(cid, owner)
         _st.reown_connection(c_["id"], new_key, owner)
         for ag in _st.list_agents(None):
             skills = ag.get("skills") or []
             if not any(k.startswith(c_["id"] + "__") for k in skills):
                 continue
-            if (ag.get("owner") or "operator") == owner:
+            if (ag.get("owner") or "local") == owner:
                 skills = [new_key + k[len(c_["id"]):] if k.startswith(c_["id"] + "__") else k for k in skills]
             else:
                 skills = [k for k in skills if not k.startswith(c_["id"] + "__")]
@@ -527,7 +544,7 @@ def _agent_rows(owner=None, limit=None):
     for a in agents:
         r_all = rc_all.get(a["id"], {"runs": 0, "last": None, "active": 0}); r_7 = rc_7.get(a["id"], {"runs": 0})
         st = appr.get(a["id"], {})
-        rows.append({**a, "owner": a.get("owner") or "operator", "runs7": r_7["runs"], "runs": r_all["runs"],
+        rows.append({**a, "owner": a.get("owner") or "unowned", "runs7": r_7["runs"], "runs": r_all["runs"],
                      "active": r_all["active"], "pending": pend.get(a["id"], 0),
                      "approved": st.get("approved", 0), "denied": st.get("denied", 0),
                      "spend7": round(spend_7.get(a["id"], 0.0), 4), "spend": spend_all.get(a["id"], 0.0),
@@ -540,7 +557,7 @@ def _recent_studio_runs(n):
     out = []
     for r in store.list_runs(n, None):
         ag = store.get_agent(r["agent_id"])
-        out.append({**r, "agent_name": ag["name"] if ag else "deleted agent", "owner": r.get("owner") or "operator"})
+        out.append({**r, "agent_name": ag["name"] if ag else "deleted agent", "owner": r.get("owner") or "unowned"})
     return out
 
 def _credential_identity(cid, token):
@@ -1623,7 +1640,7 @@ def _studio_summary():
             personal_by_owner[c_["owner"]] = personal_by_owner.get(c_["owner"], 0) + 1
     people = {}
     for ag in store.list_agents(None):
-        own = ag.get("owner") or "operator"
+        own = ag.get("owner") or "unowned"
         p = people.setdefault(own, {"email": own, "agents": [], "runs": 0, "active": 0, "spend": 0.0, "today": 0.0,
                                     "pending": 0, "last": None, "requests": req_by_owner.get(own, []),
                                     "personal": personal_by_owner.get(own, 0), "admin": own.lower() in ADMIN_EMAILS})
@@ -2025,7 +2042,7 @@ def healthz():
     if _authed() and is_admin():
         dd = store.DATA_ROOT
         out.update({"mode": rt.mode(), "servers": len(cm().connected_servers()),
-                    "auth": {"on": AUTH_ON, "google": GOOGLE_ON, "password": bool(AUTH_PASSWORD),
+                    "auth": {"on": AUTH_ON, "google": GOOGLE_ON, 
                              "admins_set": bool(ADMIN_EMAILS), "allowlist_set": bool(ALLOWED_EMAILS or ALLOWED_DOMAINS),
                              "allowed_domains": sorted(ALLOWED_DOMAINS), "allowed_emails": sorted(ALLOWED_EMAILS),
                              "env_has_allowed_domains": "WARDEN_ALLOWED_DOMAINS" in os.environ,
@@ -2041,6 +2058,10 @@ try:
     _migrate_shared_connections()
 except Exception as _mx:
     print("shared-connection migration skipped:", _mx)
+try:
+    _retire_operator()
+except Exception as _rx:
+    print("operator cleanup skipped:", _rx)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=False, threaded=True)
