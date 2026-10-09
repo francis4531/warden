@@ -6,6 +6,10 @@
 .attachbtn{font-size:12px;color:var(--mut);cursor:pointer;border:1px dashed var(--line2);border-radius:8px;padding:5px 10px;white-space:nowrap;align-self:center}
 .attachbtn:hover{color:var(--txt);border-color:var(--brass)}
 .filesline{font-size:11.5px;color:var(--dim);margin-top:6px}
+.keepbar{display:none;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 0;padding:12px 16px;border:1px solid color-mix(in srgb,var(--brass) 45%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--brass) 6%,var(--ink2))}
+.keepbar.on{display:flex}
+.keepbar .kt{flex:1;min-width:220px;font-size:13px;color:var(--mut);line-height:1.5}
+.keepbar .kt b{color:var(--txt);font-weight:600}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 .livedot{width:8px;height:8px;border-radius:50%;background:var(--brass-b);display:inline-block;animation:pulse 1s infinite}
 .msg{max-width:82%;padding:12px 16px;border-radius:13px;margin:12px 0;font-size:14px;line-height:1.6}
@@ -98,12 +102,13 @@
 </style>
 
 <div class="page-h" style="margin-bottom:12px">
-  <div class="eyebrow">{{ 'Team conversation' if is_team else 'Conversation' }} &middot; {{ agent.name }}{% if parent %} <span style="color:var(--dim);letter-spacing:0;text-transform:none;font-weight:500">&middot; delegated by <a href="{{ url_for('run_view', rid=parent.id) }}" style="color:var(--brass)">{{ lead.name if lead else 'lead' }}</a></span>{% endif %}</div>
+  <div class="eyebrow">{% if agent.scratch %}Quick chat{% else %}{{ 'Team conversation' if is_team else 'Conversation' }} &middot; {{ agent.name }}{% endif %}{% if parent %} <span style="color:var(--dim);letter-spacing:0;text-transform:none;font-weight:500">&middot; delegated by <a href="{{ url_for('run_view', rid=parent.id) }}" style="color:var(--brass)">{{ lead.name if lead else 'lead' }}</a></span>{% endif %}</div>
   <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
     <span id="statuspill" class="pill {{ run.status }}">{{ run.status.replace('_',' ') }}</span>
     <span style="color:var(--dim);font-family:var(--mono);font-size:11.5px">{{ run.id }}</span>
     <a style="color:var(--brass);font-size:12px;margin-left:auto" href="{{ url_for('run_trace', rid=run.id) }}">View trace &rarr;</a>
-    <a style="color:var(--dim);font-size:12px" href="{{ url_for('agent', aid=agent.id) }}">&larr; {{ agent.name }}</a>
+    {% if agent.scratch %}<a style="color:var(--dim);font-size:12px" href="{{ url_for('home') }}">&larr; Home</a>
+    {% else %}<a style="color:var(--dim);font-size:12px" href="{{ url_for('agent', aid=agent.id) }}">&larr; {{ agent.name }}</a>{% endif %}
   </div>
 </div>
 
@@ -113,6 +118,9 @@
 <div id="activity" class="activity" style="display:none"><span class="livedot"></span><span id="activitytext">working&hellip;</span></div>
 
 {% if readonly %}<div class="evalnote" style="margin-top:10px">Owned by <b>{{ run.owner }}</b>. You are viewing as admin, read-only: replying, approving, and marking answers stay with the owner.</div>{% endif %}
+{% if agent.scratch and not readonly and not eval_run %}
+<div id="keepbar" class="keepbar"><div class="kt"><b>Want this done again?</b> Keep it as an agent: Warden writes the instructions from this chat and keeps only the tools it used.</div><a class="btn brass sm" href="{{ url_for('keep_view', rid=run.id) }}">Keep as an agent &rarr;</a></div>
+{% endif %}
 <div id="fbbar" class="fbbar" {{ 'hidden' if readonly }}>
   {% if annotations %}
   <span class="done">Marked <b>{{ 'good' if annotations[-1].verdict=='up' else ('wrong' if annotations[-1].verdict=='down' else 'noted') }}</b>{% if annotations[-1].category %} &middot; {{ annotations[-1].category }}{% endif %}{% if annotations[-1].note %} &middot; {{ annotations[-1].note }}{% endif %}
@@ -347,6 +355,7 @@ async function poll(){
   hint.textContent = d.status==='awaiting_approval' ? ((d.waiting_on||[]).length ? 'A team member is waiting on you. Resolve the approval above to continue.' : 'Resolve the approval above to continue.') : (d.status==='running' ? (d.team?'Team is working\u2026':'Agent is working\u2026') : '');
   if(atBottom && (chatChanged || busy)) window.scrollTo(0,document.body.scrollHeight);
   document.getElementById('fbbar').classList.toggle('on', !busy && d.events.some(e=>e.kind==='final'));
+  const kb=document.getElementById('keepbar'); if(kb) kb.classList.toggle('on', !busy && d.events.some(e=>e.kind==='final'));
   if(busy) setTimeout(poll, d.status==='running'?900:2500);
   else if(!inp.disabled){ inp.focus(); }
 }

@@ -75,6 +75,9 @@ def init():
         c.execute("ALTER TABLE agents ADD COLUMN owner TEXT")
     if "members" not in acols:
         c.execute("ALTER TABLE agents ADD COLUMN members TEXT")
+    # v0.30: a person's quick-chat assistant is a hidden agent (scratch=1), one per owner
+    if "scratch" not in acols:
+        c.execute("ALTER TABLE agents ADD COLUMN scratch INTEGER DEFAULT 0")
     rcols = [r["name"] for r in c.execute("PRAGMA table_info(runs)").fetchall()]
     if "owner" not in rcols:
         c.execute("ALTER TABLE runs ADD COLUMN owner TEXT")
@@ -127,13 +130,29 @@ def _agent_row(r):
     return d
 
 # ---- agents ----
-def create_agent(name, instructions, model, skills, icon="", budget_usd=0, owner="", members=None):
+def create_agent(name, instructions, model, skills, icon="", budget_usd=0, owner="", members=None, scratch=0):
     c = _conn(); aid = _id("ag")
-    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd,owner,members) "
-              "VALUES(?,?,?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO agents(id,name,instructions,model,skills,created_at,icon,budget_usd,owner,members,scratch) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
               (aid, name, instructions, model, json.dumps(skills), now(), icon or "",
-               float(budget_usd or 0), owner or "", json.dumps(list(members or []))))
+               float(budget_usd or 0), owner or "", json.dumps(list(members or [])), 1 if scratch else 0))
     c.commit(); c.close(); return aid
+
+def ensure_assistant(owner, name, instructions, model, skills):
+    """The owner's quick-chat assistant: created on first use, then kept in step with what the
+    owner has connected (its tool grants) and with the current instructions. Never listed with
+    the owner's agents. Returns the agent id."""
+    c = _conn()
+    r = c.execute("SELECT id, skills, instructions, name FROM agents WHERE owner=? AND scratch=1 ORDER BY created_at LIMIT 1",
+                  (owner or "",)).fetchone()
+    c.close()
+    if not r:
+        return create_agent(name, instructions, model, skills, owner=owner or "", scratch=1)
+    if json.loads(r["skills"] or "[]") != list(skills) or r["instructions"] != instructions or r["name"] != name:
+        c = _conn()
+        c.execute("UPDATE agents SET skills=?, instructions=?, name=? WHERE id=?", (json.dumps(list(skills)), instructions, name, r["id"]))
+        c.commit(); c.close()
+    return r["id"]
 
 def update_agent(aid, name, instructions, model, skills, icon=None, budget_usd=None, members=None):
     c = _conn()
@@ -170,12 +189,17 @@ def get_agent(aid):
     if not r: return None
     return _agent_row(r)
 
-def list_agents(owner=None):
+def list_agents(owner=None, include_scratch=False):
+    """Agents newest first. A person's quick-chat assistant (scratch) is left out unless asked for:
+    it is not something they built, so it never shows up in their lists, pickers or counts."""
     c = _conn()
-    if owner is None:
-        rows = c.execute("SELECT * FROM agents ORDER BY created_at DESC").fetchall()
-    else:
-        rows = c.execute("SELECT * FROM agents WHERE owner=? ORDER BY created_at DESC", (owner,)).fetchall()
+    where, args = [], []
+    if owner is not None:
+        where.append("owner=?"); args.append(owner)
+    if not include_scratch:
+        where.append("COALESCE(scratch,0)=0")
+    rows = c.execute("SELECT * FROM agents" + ((" WHERE " + " AND ".join(where)) if where else "") +
+                     " ORDER BY created_at DESC", tuple(args)).fetchall()
     c.close()
     return [_agent_row(r) for r in rows]
 

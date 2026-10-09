@@ -37,6 +37,26 @@ the model, but the governance around letting an agent act.
   on the record), not separation of duties. Admins see pending actions and cannot act on
   them.
 
+## Chat first, agents second
+
+The home page opens on one box: "What do you need done?" Type it (and attach files if you
+like) and the conversation starts, with no agent to build and nothing to connect first. It
+runs on a hidden quick-chat assistant, one per person, that holds every tool the person has
+connected at that moment, plus built-in web search and fetch. In a quick chat Warden reads
+on its own and asks before it changes anything: any tool above LOW risk is held for
+approval (`rt.decide`, policy name "Quick chat: asks before changing anything"), on top of
+HIGH tools that always are, and a studio policy that explicitly allows or denies a tool
+still wins. The assistant is never listed with the person's agents, pickers or counts, but
+its conversations and spend appear in Recent and in the totals, and the admin's oversight
+(read-only, as ever) covers them.
+
+When a chat goes well, "Keep as an agent" turns it into one. Warden reads the conversation
+(file contents never included), drafts a name and generalized instructions, and keeps
+exactly the tools the chat used. Anything that changes something defaults to "ask me
+first", because in the chat each change was approved one at a time. The original task is
+waiting in the new agent's box so it can run again straight away. The audit log records
+how the agent came to be (`agent_created`, how `kept_from_chat`, with the source run).
+
 ## Two ways to build an agent
 
 The default (Build an agent) is one sentence: "Handle refund requests from customers who
@@ -123,7 +143,7 @@ category, and any conversation becomes a case with one click.
 
 An admin has two jobs, so Warden gives them two places. A switch at the top of the sidebar
 picks between the Admin console (Overview, Users, Catalog, Policies, Approvals, Audit log,
-Observability, Architecture: the studio as a whole) and My agents (Dashboard, Build an
+Observability, Architecture: the studio as a whole) and My agents (Home, Build an
 agent, Connections, Approvals, Evals: exactly what every user gets, scoped to the admin's
 own agents and accounts). Permissions never depend on the switch; only what a page shows.
 Users never see it.

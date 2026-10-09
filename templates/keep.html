@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% set active='home' %}
+{% block title %}Keep as an agent · Warden{% endblock %}
+{% block body %}
+<style>
+.keep{max-width:760px;margin:0 auto}
+.keep .thinking{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:13.5px;margin-top:16px;justify-content:center}
+.keep .err{color:var(--high);font-size:13px;margin-top:10px;text-align:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--brass-b);border-radius:50%;display:inline-block;animation:spin .7s linear infinite}
+.jcard textarea.instr{display:block;width:100%;min-height:120px;margin:0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--ink);color:var(--txt);font-family:var(--body);font-size:13.5px;line-height:1.6;resize:vertical}
+.jcard .ilab{padding:6px 22px 0;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.jcard .ibox{padding:8px 22px 16px}
+</style>
+{% include "_jcard_css.html" %}
+
+<div class="page-h" style="text-align:center;max-width:760px;margin-left:auto;margin-right:auto">
+  <div class="eyebrow">Keep as an agent</div>
+  <h1>Turn this chat into an agent that does it again.</h1>
+  <p class="sub" style="margin-left:auto;margin-right:auto">Warden reads the conversation, writes what worked as instructions, and keeps only the tools it used. Nothing it could not do before becomes possible.</p>
+</div>
+
+<div class="keep">
+  <div class="thinking" id="thinking"><span class="spin"></span><span>Reading the conversation and drafting the agent</span></div>
+  <div class="err" id="err"></div>
+</div>
+
+<form method="post" action="{{ url_for('create_agent_simple') }}" class="jcard" id="jcard"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="from_run" value="{{ run.id }}">
+  <div id="f-skills"></div>
+  <div class="jh"><span class="aico" id="j-ico"></span><div style="flex:1;min-width:0"><input class="nm" name="name" id="j-name" required autocomplete="off"><textarea class="sum" id="j-sum" rows="1" placeholder="What it does, in a sentence"></textarea></div></div>
+  <div class="ilab">Instructions it reads before every conversation</div>
+  <div class="ibox"><textarea class="instr" name="instructions" id="f-instr"></textarea></div>
+  <div class="jl">
+    <div class="jrow"><div class="k a">On its own</div><div class="v" id="j-own"></div></div>
+    <div class="jrow"><div class="k g">Asks you first</div><div class="v" id="j-ask"></div></div>
+    <div class="jrow"><div class="k">Also built in</div><div class="v" id="j-web" style="color:var(--mut)"></div></div>
+  </div>
+  <div class="may" id="may"><div style="font-size:12.5px;color:var(--mut);padding:10px 0 6px">In the chat you approved each change one at a time. Say how far this agent may go on its own.</div><div id="may-rows"></div></div>
+  <div class="jnote" id="j-note" style="display:none"></div>
+  <div class="jact">
+    <button class="btn brass" type="submit">Create agent</button>
+    <span style="color:var(--dim);font-size:12.5px;flex:1;min-width:200px">Your task is waiting in its box so you can run it again straight away.</span>
+    <button type="button" class="q" id="may-toggle">Change what it may do</button>
+    <a class="q" href="{{ url_for('run_view', rid=run.id) }}">Back to the chat</a>
+  </div>
+</form>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const nice=t=>t.replace(/[_\-]+/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
+$('j-sum').addEventListener('input',e=>{ e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; });
+$('may-toggle').addEventListener('click',()=>{ const m=$('may'); m.style.display=m.style.display==='block'?'none':'block'; });
+let DRAFT=null;
+const chip=t=>`<span class="t">${esc(nice(t.tool))} <small>· ${esc(t.server)}</small></span>`;
+function lines(){
+  // a tool's current stance decides which line it sits on
+  const stance=t=>{ const r=document.querySelector(`input[name="stance__${CSS.escape(t.key)}"]:checked`); return r?r.value:(t.risk==='LOW'?'own':'ask'); };
+  const own=DRAFT.tools.filter(t=>stance(t)==='own'), ask=DRAFT.tools.filter(t=>stance(t)==='ask'), never=DRAFT.tools.filter(t=>stance(t)==='never');
+  $('j-own').innerHTML = own.map(chip).join('') || '<span style="color:var(--dim)">nothing: it only reads what is built in</span>';
+  $('j-ask').innerHTML = ask.map(chip).join('') + never.map(t=>`<span class="t" style="color:var(--dim);text-decoration:line-through">${esc(nice(t.tool))}</span>`).join('') || '<span style="color:var(--dim)">nothing: it only reads</span>';
+}
+function render(d){
+  $('j-name').value=d.name; $('j-sum').value=d.summary; $('f-instr').value=d.instructions;
+  $('j-ico').innerHTML='<svg viewBox="0 0 40 40" width="44" height="44"><circle cx="20" cy="20" r="17" fill="var(--brass)" opacity=".85"/><circle cx="14" cy="15" r="4" fill="#fff" opacity=".7"/></svg>';
+  $('j-web').textContent = (d.web&&d.web.length) ? d.web.map(nice).join(' and ')+' work in every agent with nothing to connect.' : 'Web access is switched off for this studio.';
+  $('f-skills').innerHTML = d.tools.map(t=>`<input type="hidden" name="skills" value="${esc(t.key)}">`).join('');
+  const writes=d.tools.filter(t=>t.risk!=='LOW');
+  $('may-rows').innerHTML = writes.map(t=>{
+    const high=t.risk==='HIGH';
+    return `<div class="mrow"><div class="mn">${esc(nice(t.tool))}<small>${esc(t.description)}</small></div>
+      <div class="seg">${high?'':`<label><input type="radio" name="stance__${esc(t.key)}" value="own">on its own</label>`}
+      <label><input type="radio" name="stance__${esc(t.key)}" value="ask" checked>ask me first</label>
+      <label class="never"><input type="radio" name="stance__${esc(t.key)}" value="never">never</label></div></div>`;
+  }).join('') || '<div class="mrow"><div class="mn" style="color:var(--dim)">It only reads. Nothing to decide.</div></div>';
+  $('may-toggle').style.display = writes.length ? 'inline' : 'none';
+  $('j-note').style.display = d.sandbox ? 'block' : 'none';
+  $('j-note').textContent = d.sandbox ? 'Sandbox: this draft came from a built-in planner, not the model. Set ANTHROPIC_API_KEY for real drafts.' : '';
+  $('jcard').style.display='block'; $('may').style.display='none';
+  lines();
+  $('j-sum').style.height='auto'; $('j-sum').style.height=$('j-sum').scrollHeight+'px';
+}
+$('may-rows').addEventListener('change',lines);
+(async function(){
+  let r=null;
+  try{ r=await (await fetch({{ url_for('keep_draft', rid=run.id)|tojson }},{method:'POST',headers:{'X-Requested-With':'fetch'}})).json(); }catch(_){ r={error:'Warden did not answer. Reload to try again.'}; }
+  $('thinking').style.display='none';
+  if(!r||r.error){ $('err').textContent=(r&&r.error)||'Something went wrong.'; return; }
+  DRAFT=r; render(r);
+})();
+</script>
+{% endblock %}

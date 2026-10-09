@@ -21,7 +21,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.29.0"
+WARDEN_VERSION = "0.30.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -426,7 +426,7 @@ def _retire_reference_tools():
         if (c_.get("catalog_id") or c_["id"].split("~")[0]) in dead and c_["transport"] != "builtin":
             _st.disable_connection(c_["id"]); conns.append(c_["id"])
     changed = {}
-    for ag in _st.list_agents(None):
+    for ag in _st.list_agents(None, include_scratch=True):
         skills = ag.get("skills") or []
         keep = [k for k in skills if k.split("__")[0].split("~")[0] not in dead]
         if len(keep) != len(skills):
@@ -450,7 +450,7 @@ def _retire_operator():
         return []
     import store as _st
     gone = []
-    for ag in _st.list_agents(None):
+    for ag in _st.list_agents(None, include_scratch=True):
         if (ag.get("owner") or "") in _RETIRED_OWNERS:
             _st.delete_agent(ag["id"]); gone.append(ag["name"])
     conns = []
@@ -475,7 +475,7 @@ def _migrate_shared_connections():
         owner = c_.get("connected_by") or (sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "local")
         new_key = _st.conn_key(cid, owner)
         _st.reown_connection(c_["id"], new_key, owner)
-        for ag in _st.list_agents(None):
+        for ag in _st.list_agents(None, include_scratch=True):
             skills = ag.get("skills") or []
             if not any(k.startswith(c_["id"] + "__") for k in skills):
                 continue
@@ -543,19 +543,48 @@ def home():
         return render_template("overview.html", studio=studio_totals, health=_admin_health(),
                                agents=_agent_rows(None, limit=12), n_agents=studio_totals["agents"],
                                days=store.runs_per_day(14))
-    rows = _agent_rows(_scope())
+    everything = _agent_rows(_scope(), include_scratch=True)       # quick chats count toward the totals
+    rows = [r for r in everything if not r.get("scratch")]          # but are not listed as agents
     return render_template("dashboard.html", agents=rows, days=store.runs_per_day(14, _scope()),
                            pending=_with_team_context(store.pending_approvals(_scope())), servers=[s for s in servers if _visible(s)],
                            tool_count=len(connected_tools()), personal=personal, google_on=_google_connectors_on(), google_verified=_google_verified(),
-                           spend7=round(sum(r["spend7"] for r in rows), 4), runs7=sum(r["runs7"] for r in rows))
+                           recent=_recent_conversations(_scope(), 8), chips=_chat_chips(),
+                           spend7=round(sum(r["spend7"] for r in everything), 4), runs7=sum(r["runs7"] for r in everything))
 
-def _agent_rows(owner=None, limit=None):
+def _recent_conversations(owner, n):
+    """The person's latest conversations across quick chats and agents, for the home page."""
+    out = []
+    names = {a["id"]: a for a in store.list_agents(owner, include_scratch=True)}
+    for r in store.list_runs(n, owner):
+        ag = names.get(r["agent_id"])
+        out.append({**r, "agent_name": "Quick chat" if (ag and ag.get("scratch")) else (ag["name"] if ag else "deleted agent"),
+                    "quick": bool(ag and ag.get("scratch"))})
+    return out
+
+def _chat_chips():
+    """Starting points under the chat box. The first two need nothing connected; the others
+    show what a connected account unlocks (Warden asks for it in the conversation if missing)."""
+    return ["Research the main competitors of Stripe and put the differences in a table",
+            "Read the file I attach and tell me what I need to decide",
+            "What in my inbox needs a reply today?",
+            "Prepare me for today's meetings"]
+
+def _assistant_id():
+    """The signed-in person's quick-chat assistant: a hidden agent holding every tool they have
+    connected right now. It reads on its own and asks before it changes anything (see
+    rt.decide), so giving it all of their tools is safe, and a connection made mid-chat is
+    available the next time they start one."""
+    me = current_owner()
+    skills = [t["key"] for t in connected_tools()]
+    return store.ensure_assistant(me, rt.ASSISTANT_NAME, rt.ASSISTANT_INSTRUCTIONS, rt.MODEL_DEFAULT, skills)
+
+def _agent_rows(owner=None, limit=None, include_scratch=False):
     """One row per agent with the numbers a dashboard needs: conversations (7 days and all
     time), active now, on hold, approved/denied, spend (7 days and all time), last activity,
     and the five latest conversations for drilling in. owner=None means the whole studio."""
     since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     week_prefix = None
-    agents = store.list_agents(owner)
+    agents = store.list_agents(owner, include_scratch=include_scratch)
     if not agents:
         return []
     ids = [a["id"] for a in agents]
@@ -587,7 +616,7 @@ def _recent_studio_runs(n):
     out = []
     for r in store.list_runs(n, None):
         ag = store.get_agent(r["agent_id"])
-        out.append({**r, "agent_name": ag["name"] if ag else "deleted agent", "owner": r.get("owner") or "unowned"})
+        out.append({**r, "agent_name": ("Quick chat" if ag.get("scratch") else ag["name"]) if ag else "deleted agent", "owner": r.get("owner") or "unowned"})
     return out
 
 def _credential_identity(cid, token):
@@ -992,6 +1021,12 @@ def create_agent_simple():
         st = f.get("stance__" + k)
         if st in ("own", "ask", "never"):
             stances[k] = st
+    src = None                                   # kept from a quick chat: remember where it came from
+    if (f.get("from_run") or "").strip():
+        src = _owned_run(f["from_run"].strip())
+        src_ag = store.get_agent(src["agent_id"])
+        if not src_ag or not src_ag.get("scratch"):
+            src = None
     aid = store.create_agent(name, instructions, rt.MODEL_DEFAULT, skills, owner=current_owner())
     for k, st in stances.items():
         tool = k.split("__")[-1]
@@ -1001,14 +1036,60 @@ def create_agent_simple():
         elif st == "ask" and risk != "HIGH":
             store.create_policy("%s: ask before %s" % (name, tool), "require_approval", agent_id=aid, tool=k, priority=20)
         # 'own' on a HIGH tool is not offered: the gate is not the user's to relax
-    store.audit(None, aid, "agent_created", detail={"by": current_owner(), "how": "simple", "tools": len(skills),
-                                                   "stances": {k.split("__")[-1]: v for k, v in stances.items()}})
+    store.audit(None, aid, "agent_created", detail={"by": current_owner(), "how": "kept_from_chat" if src else "simple", "tools": len(skills),
+                                                   "stances": {k.split("__")[-1]: v for k, v in stances.items()},
+                                                   **({"from_run": src["id"]} if src else {})})
+    if src:                                      # the same task, ready to run again under the new agent
+        return redirect(url_for("agent", aid=aid, task=(src["input"] or "")[:1500]))
     first = (f.get("first") or "").strip()
     if first:
         rid = store.create_run(aid, first)
         _advance_bg(rid)
         return redirect(url_for("run_view", rid=rid))
     return redirect(url_for("agent", aid=aid))
+
+def _quick_chat_run(rid):
+    """An owned run that was a quick chat; anything else is not keepable."""
+    r = _owned_run(rid)
+    ag = store.get_agent(r["agent_id"])
+    if not ag or not ag.get("scratch"):
+        return None
+    return r
+
+def _tools_used_in(rid):
+    """The connected tools this conversation actually called (or asked to call), in order."""
+    by_key = {t["key"]: t for t in connected_tools()}
+    seen, out = set(), []
+    for e in store.audit_for_run(rid):
+        k = e.get("skill")
+        if e["kind"] in ("tool_result", "tool_result_gated", "approval_request") and k in by_key and k not in seen:
+            seen.add(k); out.append(by_key[k])
+    return out
+
+@app.route("/run/<rid>/keep")
+def keep_view(rid):
+    r = _quick_chat_run(rid)
+    if not r:
+        return redirect(url_for("run_view", rid=rid))
+    return render_template("keep.html", run=r)
+
+@app.route("/run/<rid>/keep/draft", methods=["POST"])
+def keep_draft(rid):
+    """Draft a reusable agent from a quick chat: the tools it used are the tools it keeps, the
+    model writes the name and a generalized set of instructions from the conversation."""
+    r = _quick_chat_run(rid)
+    if not r:
+        return {"error": "Only a quick chat can be kept as an agent."}, 400
+    used = _tools_used_in(rid)
+    digest, _ = rt.conversation_digest(r["transcript"])
+    try:
+        d = rt.draft_agent_from_run(r["input"], digest, used)
+    except Exception as ex:
+        return {"error": "Could not draft that right now: " + rt._friendly_error(ex)[:200]}, 502
+    return {"name": d["name"], "summary": d["summary"], "instructions": d["instructions"], "sandbox": d.get("sandbox", False),
+            "web": [w_["tool"] for w_ in rt.web_tool_rows()],
+            "tools": [{"key": t["key"], "tool": t["tool"], "server": t["server_name"], "risk": t["risk"], "gate": t["gate"],
+                       "description": t["description"]} for t in used]}
 
 @app.route("/agent/<aid>/edit")
 def edit_agent(aid):
@@ -1110,7 +1191,7 @@ def agent(aid):
     rules = [{"text": policy.describe(p), "effect": p["effect"], "mine": p["agent_id"] == aid}
              for p in store.list_policies(enabled_only=True) if p["agent_id"] in ("*", "", None, aid)]
     rules.sort(key=lambda x: not x["mine"])
-    return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
+    return render_template("agent.html", agent=ag, task=(request.args.get("task") or "")[:1500], freely=freely, asks=asks, withheld=withheld,
                            counts=counts, missing=missing, runs=runs, team=team, leads=leads,
                            stats=stats, rules=rules, model=rt.model_for(ag),
                            est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"), readonly=readonly)
@@ -1144,10 +1225,8 @@ def _user_message(text):
     parts = [{"type": "text", "text": (text + ("\n\n" + note if note else "")).strip()}] + blocks
     return parts, names, errors, text
 
-@app.route("/run", methods=["POST"])
-def run():
-    aid = request.form.get("agent_id")
-    _owned_agent(aid)
+def _start_run(aid):
+    """Start a conversation with this agent from the posted message and files."""
     content, names, errors, user_input = _user_message(request.form.get("input", ""))
     if not user_input and not names: abort(400)
     rid = store.create_run(aid, user_input or "(files could not be read)")
@@ -1156,6 +1235,17 @@ def run():
         store.audit(rid, aid, "run_started", detail={"input": user_input, "mode": rt.mode(), "files": names, "file_errors": errors})
     _advance_bg(rid)
     return redirect(url_for("run_view", rid=rid))
+
+@app.route("/run", methods=["POST"])
+def run():
+    aid = request.form.get("agent_id")
+    _owned_agent(aid)
+    return _start_run(aid)
+
+@app.route("/chat/start", methods=["POST"])
+def chat_start():
+    """Say what you need; no agent first. Runs on the person's own quick-chat assistant."""
+    return _start_run(_assistant_id())
 
 @app.route("/run/<rid>")
 def run_view(rid):
@@ -1360,7 +1450,7 @@ def _with_team_context(pending):
         ap = dict(ap)
         r = store.get_run(ap["run_id"])
         ag = store.get_agent(ap["agent_id"])
-        ap["agent_name"] = ag["name"] if ag else ""
+        ap["agent_name"] = ("Quick chat" if ag.get("scratch") else ag["name"]) if ag else ""
         ap["agent_icon"] = (ag or {}).get("icon") or ""
         ap["run_input"] = (r or {}).get("input") or ""
         ap["lead_name"] = None; ap["lead_run"] = None
@@ -1405,7 +1495,7 @@ def policies():
     agents = store.list_agents()
     pols = store.list_policies()
     for p in pols:
-        p["sentence"] = rt.describe_rule(p, agents)
+        p["sentence"] = rt.describe_rule(p, store.list_agents(include_scratch=True))
     return render_template("policies.html", policies=pols, agents=agents, ops=policy.OPS, tool_names=_policy_tool_names())
 
 @app.route("/policies/draft", methods=["POST"])
@@ -1452,7 +1542,7 @@ def observability():
     sc = None if admin_view() else _scope()
     events = store.audit_for_owner(sc, 4000) if sc else store.audit_all(4000)
     runs = store.list_runs(500, sc)
-    agents = {a["id"]: a["name"] for a in store.list_agents(sc)}
+    agents = {a["id"]: ("Quick chat" if a.get("scratch") else a["name"]) for a in store.list_agents(sc, include_scratch=True)}
 
     model_calls = [e for e in events if e["kind"] == "model_call"]
     tool_calls = [e for e in events if e["kind"] in ("tool_result", "tool_result_gated")]
@@ -1743,7 +1833,7 @@ def _studio_summary():
         if c_.get("owner"):
             personal_by_owner[c_["owner"]] = personal_by_owner.get(c_["owner"], 0) + 1
     people = {}
-    for ag in store.list_agents(None):
+    for ag in store.list_agents(None, include_scratch=True):
         own = ag.get("owner") or "unowned"
         p = people.setdefault(own, {"email": own, "agents": [], "runs": 0, "active": 0, "spend": 0.0, "today": 0.0,
                                     "pending": 0, "last": None, "requests": req_by_owner.get(own, []),
@@ -1752,7 +1842,8 @@ def _studio_summary():
         row = {**ag, "runs": r_["runs"], "active": r_["active"], "last": r_["last"],
                "spend": spend_all.get(ag["id"], 0.0), "pending": pend_by_agent.get(ag["id"], 0),
                "team": bool(ag.get("members"))}
-        p["agents"].append(row)
+        if not ag.get("scratch"):
+            p["agents"].append(row)
         p["runs"] += row["runs"]; p["active"] += row["active"]; p["spend"] += row["spend"]
         p["today"] += spend_today.get(ag["id"], 0.0); p["pending"] += row["pending"]
         if row["last"] and (not p["last"] or row["last"] > p["last"]):
