@@ -33,22 +33,88 @@
 .teamsum b.g{color:var(--high)}
 .leadchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);border:1px solid var(--line2);border-radius:20px;padding:3px 10px;text-decoration:none}
 .leadchip:hover{border-color:var(--brass-dim);color:var(--txt)}
+.ah{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.ah h1{display:flex;align-items:center;gap:12px;margin:0}
+.ah .acts{display:flex;gap:8px;align-items:center}
+.ah .acts form{margin:0}
+.ameta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--dim);margin:6px 0 20px 50px}
+.ameta b{color:var(--mut);font-weight:500}
+.ameta .mono{font-family:var(--mono);font-size:11.5px}
+.ro{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--mut);border:1px solid var(--line2);border-radius:20px;padding:3px 10px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-bottom:22px}
+.stats>div{padding:12px 16px;border-left:1px solid var(--line)}
+.stats>div:first-child{border-left:none}
+.stats .v{font-family:var(--disp);font-size:20px;font-weight:var(--dweight);line-height:1.2}
+.stats .l{font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-top:2px}
+.stats .v.warn{color:var(--med)}
+.stats .v .ok{color:var(--low)}.stats .v .no{color:var(--high)}.stats .v .sl{color:var(--dim);font-weight:400}
+.agrid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
+@media(max-width:1050px){.agrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.stats>div:nth-child(3){border-left:none}.stats>div:nth-child(n+3){border-top:1px solid var(--line)}.ameta{margin-left:0}}
+.blk-h{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 10px}
+.blk-h .lbl{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.blk-h .hint{font-size:12px;color:var(--dim)}
+.blk-h a.hint{color:var(--brass);text-decoration:none}
+.convs{border:1px solid var(--line);border-radius:12px;background:var(--ink2);overflow:hidden}
+.convs .cv{display:grid;grid-template-columns:minmax(0,1fr) auto 64px 92px;gap:12px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);color:inherit;text-decoration:none;font-size:13.5px}
+.convs .cv:first-child{border-top:none}
+.convs .cv:hover{background:color-mix(in srgb,var(--brass) 4%,transparent)}
+.convs .cv .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.convs .cv .c,.convs .cv .w{font-family:var(--mono);font-size:11.5px;color:var(--dim);text-align:right}
+.convs .more{display:none}
+.convs.all .more{display:grid}
+.convs .tog{display:block;width:100%;padding:9px 16px;border:none;border-top:1px solid var(--line);background:var(--ink);color:var(--brass);font-size:12.5px;text-align:left;cursor:pointer}
+.side{display:flex;flex-direction:column;gap:16px}
+.pane{border:1px solid var(--line);border-radius:12px;background:var(--ink2);padding:14px 16px}
+.pane .ph{display:flex;align-items:baseline;justify-content:space-between;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+.pane .ph a{letter-spacing:0;text-transform:none;font-weight:500;font-size:12px;color:var(--brass);text-decoration:none}
+.instr{font-size:13px;color:var(--mut);line-height:1.6;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
+.instr.open{display:block}
+.linkbtn{background:none;border:none;padding:0;margin-top:6px;color:var(--brass);font-size:12px;cursor:pointer}
+.tl{display:flex;flex-direction:column}
+.tl .tr{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.tl .tr:first-child{border-top:none}
+.tl .tn{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl .ts{font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl .gl{font-size:11px;color:var(--dim);white-space:nowrap}
+.tl .gl.ask{color:var(--high)}
+.wh{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.wh>summary{list-style:none;cursor:pointer;font-size:12px;color:var(--dim)}
+.wh>summary::-webkit-details-marker{display:none}
+.wh .tr{opacity:.7}
+.rl{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--mut)}
+.rl .r{display:flex;gap:8px;align-items:baseline}
+.rl .r .edot{margin-top:5px}
+.rl .r .all{font-size:10.5px;color:var(--dim);margin-left:auto;white-space:nowrap}
+.none{color:var(--dim);font-size:12.5px}
 </style>
 
-<div class="page-h" style="margin-bottom:20px">
-  <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between">
-    <span>Agent{% if readonly %} <span style="color:var(--dim);letter-spacing:0;text-transform:none;font-weight:500">&middot; owned by {{ agent.owner }} &middot; you are viewing as admin, read-only</span>{% endif %}</span>
-    {% if not readonly %}<form method="post" action="{{ url_for('delete_agent', aid=agent.id) }}" onsubmit="return confirm('Delete {{ agent.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}">
-      <button class="btn ghost sm" style="color:var(--high);letter-spacing:0;text-transform:none">Delete agent</button>
-    </form>{% endif %}
+<div class="ah">
+  <h1><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}{% if team and team.members %}<span class="pill" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent)">team lead</span>{% endif %}</h1>
+  <div class="acts">
+    {% if readonly %}<span class="ro" title="Admins can see every agent but cannot run, edit, or approve for it">&#128065; Admin view, read-only</span>
+    {% else %}
+    <a class="btn ghost sm" href="{{ url_for('edit_agent', aid=agent.id) }}">Edit</a>
+    <form method="post" action="{{ url_for('delete_agent', aid=agent.id) }}" onsubmit="return confirm('Delete {{ agent.name|e }}? Its conversations, pending approvals, and eval suites are removed. The audit trail of what it did is kept.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="btn ghost sm" style="color:var(--high)">Delete</button></form>
+    {% endif %}
   </div>
-  <h1 style="display:flex;align-items:center;gap:12px"><span class="aico" style="width:38px;height:38px">{{ agent_icon(agent.icon, seed=agent.id)|safe }}</span>{{ agent.name }}{% if team and team.members %}<span class="pill" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent)">team lead</span>{% endif %}</h1>
-  <p class="sub">{{ agent.instructions }}</p>
-  {% if leads %}<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;font-size:12px;color:var(--dim)">Member of {% for l in leads %}<a class="leadchip" href="{{ url_for('agent', aid=l.id) }}"><span class="aico" style="width:16px;height:16px">{{ agent_icon(l.icon, seed=l.id)|safe }}</span>{{ l.name }}</a>{% endfor %}</div>{% endif %}
-  {% if agent.budget_usd %}<div style="font-family:var(--mono);font-size:12px;color:var(--mut);margin-top:6px">&#9209; run budget: <b style="color:var(--txt)">${{ '%.2f'|format(agent.budget_usd) }}</b> per run{% if team and team.members %}, covering every member&rsquo;s work{% endif %} &middot; stops before the next model call if reached</div>{% endif %}
+</div>
+<div class="ameta">
+  {% if readonly %}<span>Owner <b>{{ agent.owner }}</b></span>{% endif %}
+  <span>Model <b class="mono">{{ model }}</b></span>
+  {% if agent.budget_usd %}<span>Budget <b>${{ '%.2f'|format(agent.budget_usd) }}</b> per run{% if team and team.members %}, whole team{% endif %}</span>{% endif %}
+  {% if agent.created_at %}<span>Created <b>{{ agent.created_at[:10] }}</b></span>{% endif %}
+  {% if leads %}<span>Member of {% for l in leads %}<a class="leadchip" href="{{ url_for('agent', aid=l.id) }}"><span class="aico" style="width:14px;height:14px">{{ agent_icon(l.icon, seed=l.id)|safe }}</span>{{ l.name }}</a> {% endfor %}</span>{% endif %}
 </div>
 
-<!-- primary action: talk to the agent -->
+<div class="stats">
+  <div><div class="v">{{ stats.runs }}</div><div class="l">Conversations</div></div>
+  <div><div class="v">${{ '%.2f'|format(stats.spend) }}</div><div class="l">Spend, all time</div></div>
+  <div><div class="v">{% if stats.approved or stats.denied %}<span class="ok">{{ stats.approved }}</span> <span class="sl">/</span> <span class="no">{{ stats.denied }}</span>{% else %}<span class="sl">none yet</span>{% endif %}</div><div class="l">Approved / denied</div></div>
+  <div><div class="v {{ 'warn' if stats.pending }}">{{ stats.pending }}</div><div class="l">{{ 'On hold for owner' if readonly else 'Waiting on you' }}</div></div>
+</div>
+
+<div class="agrid">
+<div>
 {% if not readonly %}
 <div class="starter">
   <div class="lab">Start a conversation</div>
@@ -57,8 +123,8 @@
     <textarea name="input" id="runmsg" placeholder="Ask the agent to do something…" required autofocus></textarea>
     <div id="estline" style="color:var(--dim);font-size:11.5px;margin-top:8px"></div>
     <div class="go">
-      <button class="btn brass" type="submit">Run agent &rarr;</button>
-      <span class="hint">The agent works in a conversation, reply to it, and approve anything it wants to run.</span>
+      <button class="btn brass" type="submit" style="white-space:nowrap">Run agent &rarr;</button>
+      <span class="hint">You can reply as it works, and approve anything that asks first.</span>
     </div>
   </form>
   <script>
@@ -78,21 +144,24 @@
 </div>
 {% endif %}
 
+<div class="blk-h" style="{{ 'margin-top:22px' if not readonly }}"><span class="lbl">Conversations</span>{% if stats.last %}<span class="hint">last {{ stats.last[:16].replace('T',' ') }}</span>{% endif %}</div>
 {% if runs %}
-<div class="section-h"><span class="lbl">Conversations</span></div>
-<div class="list">
+<div class="convs" id="convs">
   {% for r in runs %}
-  <a class="row" href="{{ url_for('run_view', rid=r.id) }}">
-    <div class="r-main"><div class="r-title">{{ r.input[:90] }}{{ '…' if r.input|length>90 }}</div>
-    <div class="r-meta">{{ r.created_at[:16].replace('T',' ') }}</div></div>
+  <a class="cv {{ 'more' if loop.index > 8 }}" href="{{ url_for('run_view', rid=r.id) }}">
+    <span class="t">{{ r.input }}</span>
     <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
+    <span class="c">{% if r.cost is defined and r.cost %}${{ '%.3f'|format(r.cost) }}{% else %}&nbsp;{% endif %}</span>
+    <span class="w">{{ r.created_at[5:16].replace('T',' ') }}</span>
   </a>
   {% endfor %}
+  {% if runs|length > 8 %}<button class="tog" type="button" onclick="const c=document.getElementById('convs');c.classList.toggle('all');this.textContent=c.classList.contains('all')?'Show fewer':'Show all {{ runs|length }}'">Show all {{ runs|length }}</button>{% endif %}
 </div>
+{% else %}
+<div class="pane none">No conversations yet.{% if not readonly %} Start one above.{% endif %}</div>
 {% endif %}
-
 {% if team and team.members %}
-<div class="section-h"><span class="lbl">The team</span><span style="font-size:12px;color:var(--dim)">{{ team.members|length }} member{{ '' if team.members|length==1 else 's' }}</span></div>
+<div class="blk-h" style="margin-top:26px"><span class="lbl">The team</span><span style="font-size:12px;color:var(--dim)">{{ team.members|length }} member{{ '' if team.members|length==1 else 's' }}</span></div>
 <div class="card">
   <div style="color:var(--mut);font-size:13px;margin-bottom:12px">This agent leads a team. It hands tasks to members with one tool, <span style="font-family:var(--mono)">delegate</span> <span class="stamp {{ team.delegate_risk }}">{{ team.delegate_risk }}</span>{{ ', held for approval on every hand-off' if team.delegate_gate=='approval' else ', logged on every hand-off' }}. Each member works under its own grants; the lead never gets a member&rsquo;s tools, and a member&rsquo;s approval pauses the whole team.</div>
   <div class="roster">
@@ -113,48 +182,37 @@
   </div>
 </div>
 {% endif %}
+</div>
 
-<!-- reference: what it's allowed to touch (collapsed) -->
-<div class="section-h"><span class="lbl">What this agent can do</span>{% if not readonly %}<a class="btn ghost sm" href="{{ url_for('edit_agent', aid=agent.id) }}">Edit agent &amp; tools</a>{% endif %}</div>
-<div class="card">
-  <div class="ebar" title="runs freely / asks first / withheld">
-    {% if counts.freely %}<span class="eseg a" style="flex:{{ counts.freely }}"></span>{% endif %}
-    {% if counts.asks %}<span class="eseg g" style="flex:{{ counts.asks }}"></span>{% endif %}
-    {% if counts.withheld %}<span class="eseg o" style="flex:{{ counts.withheld }}"></span>{% endif %}
-  </div>
-  <div class="esum">
-    <span><b class="a">{{ counts.freely }}</b> run on their own</span>
-    <span><b class="g">{{ counts.asks }}</b> ask first</span>
-    {% if counts.withheld %}<span><b class="o">{{ counts.withheld }}</b> not granted</span>{% endif %}
+<aside class="side">
+  <div class="pane">
+    <div class="ph">Instructions{% if not readonly %}<a href="{{ url_for('edit_agent', aid=agent.id) }}">Edit</a>{% endif %}</div>
+    <div class="instr" id="instr">{{ agent.instructions or 'No instructions.' }}</div>
+    {% if (agent.instructions or '')|length > 260 %}<button class="linkbtn" type="button" onclick="const i=document.getElementById('instr');i.classList.toggle('open');this.textContent=i.classList.contains('open')?'Show less':'Show all'">Show all</button>{% endif %}
   </div>
 
-  <div class="etier first">
-    <div class="eh"><span class="edot a"></span>Runs freely<span class="etc">{{ freely|length }}</span><span class="etd">reads and reversible actions, no gate</span></div>
-    <div class="echips">
-      {% for t in freely %}<span class="echip" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>
-      {% else %}<span class="enone">nothing runs without a gate</span>{% endfor %}
+  <div class="pane">
+    <div class="ph">Tools <span style="letter-spacing:0;text-transform:none;font-weight:500;color:var(--dim)"><span style="color:var(--low)">{{ counts.freely }}</span> on its own &middot; <span style="color:var(--high)">{{ counts.asks }}</span> ask first</span></div>
+    {% if freely or asks %}
+    <div class="tl">
+      {% for t in asks %}<div class="tr" title="{{ t.description }}"><span class="edot g"></span><span style="min-width:0"><div class="tn">{{ t.tool }}</div><div class="ts">{{ t.server_name }}</div></span><span class="gl ask">asks first</span></div>{% endfor %}
+      {% for t in freely %}<div class="tr" title="{{ t.description }}"><span class="edot a"></span><span style="min-width:0"><div class="tn">{{ t.tool }}</div><div class="ts">{{ t.server_name }}</div></span><span class="gl">on its own</span></div>{% endfor %}
     </div>
+    {% else %}<div class="none">No tools granted. It can only talk.</div>{% endif %}
+    {% if withheld %}
+    <details class="wh"><summary>&#9656; {{ withheld|length }} more on the same server{{ 's' if (withheld|map(attribute='server_name')|unique|list|length)>1 }}, not granted</summary>
+      <div class="tl" style="margin-top:6px">{% for t in withheld %}<div class="tr" title="{{ t.description }}"><span class="edot o"></span><span style="min-width:0"><div class="tn">{{ t.tool }}</div><div class="ts">{{ t.server_name }}</div></span><span class="gl">not granted</span></div>{% endfor %}</div>
+    </details>
+    {% endif %}
+    {% if missing %}<div class="none" style="margin-top:10px">{{ missing|length }} granted tool{{ '' if missing|length==1 else 's' }} from a server that is not connected right now.{% if not readonly %} <a href="{{ url_for('connections') }}" style="color:var(--brass)">Reconnect</a>{% endif %}</div>{% endif %}
   </div>
 
-  <div class="etier">
-    <div class="eh"><span class="edot g"></span>Asks first<span class="etc">{{ asks|length }}</span><span class="etd">held for your approval before it runs</span></div>
-    <div class="echips">
-      {% for t in asks %}<span class="echip g" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>
-      {% else %}<span class="enone">nothing high-risk is granted</span>{% endfor %}
-    </div>
+  <div class="pane">
+    <div class="ph">Rules that apply{% if readonly %}<a href="{{ url_for('policies') }}">Policies</a>{% endif %}</div>
+    {% if rules %}
+    <div class="rl">{% for r in rules %}<div class="r"><span class="edot {{ 'g' if r.effect=='deny' else ('o' if r.effect=='allow' else 'a') }}" style="{{ 'background:var(--med)' if r.effect=='require_approval' }}"></span><span>{{ r.text }}</span>{% if not r.mine %}<span class="all">all agents</span>{% endif %}</div>{% endfor %}</div>
+    {% else %}<div class="none">No extra rules. Risk tiers decide what asks first.</div>{% endif %}
   </div>
-
-  {% if withheld %}
-  <div class="etier">
-    <div class="eh"><span class="edot o"></span>Not granted<span class="etc">{{ withheld|length }}</span><span class="etd">available on these servers, but this agent can&rsquo;t use them</span></div>
-    <div class="echips">
-      {% for t in withheld %}<span class="echip o" title="{{ t.description }}">{{ t.tool }}<span class="esrc">{{ t.server_name }}</span></span>{% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if missing %}
-  <div style="color:var(--mut);font-size:12px;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">{{ missing|length }} granted tool{{ '' if missing|length==1 else 's' }} come from a server that isn't connected right now. Reconnect on <a href="{{ url_for('connections') }}" style="color:var(--brass)">Connections</a>.</div>
-  {% endif %}
+</aside>
 </div>
 {% endblock %}

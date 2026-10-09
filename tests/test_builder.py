@@ -52,3 +52,17 @@ def test_team_template_creates_members(client, warden):
     assert len(ag.get("members") or []) == 2
     for mid in ag["members"]:
         assert store.get_agent(mid)["owner"] == "team@x.com"
+
+
+def test_agent_page_owner_and_admin_views(client, warden):
+    from conftest import login, ADMIN
+    store, rt = warden["store"], warden["rt"]
+    aid = store.create_agent("Page Check", "Read things and answer.", "", [], owner="pc@x.com")
+    rid = store.create_run(aid, "first question"); store.update_run(rid, status="done")
+    login(client, "pc@x.com")
+    h = client.get("/agent/%s" % aid).get_data(as_text=True)
+    assert "Start a conversation" in h and "Delete" in h and "Waiting on you" in h and "first question" in h
+    login(client, ADMIN, hat="admin")
+    h = client.get("/agent/%s" % aid).get_data(as_text=True)
+    assert "Admin view, read-only" in h and "Start a conversation" not in h and "pc@x.com" in h
+    assert 'action="/agent/%s/delete"' % aid not in h

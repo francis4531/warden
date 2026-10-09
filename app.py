@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.25.0"
+WARDEN_VERSION = "0.25.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1004,8 +1004,19 @@ def agent(aid):
     leads = store.leads_of(aid)
     est_rate = rt.rate_for(ag["model"])
     est_base = max(200, len(ag["instructions"] or "") // 4 + len(granted) * 80 + 350)
+    for r in runs[:25]:
+        r["cost"] = rt._run_cost(r["id"])
+    st = store.approval_stats_by_agent([aid]).get(aid, {})
+    stats = {"runs": len(runs), "spend": store.cost_by_agent().get(aid, 0.0),
+             "approved": st.get("approved", 0), "denied": st.get("denied", 0),
+             "pending": sum(1 for a in store.pending_approvals(ag.get("owner")) if a["agent_id"] == aid),
+             "last": runs[0]["created_at"] if runs else None}
+    rules = [{"text": policy.describe(p), "effect": p["effect"], "mine": p["agent_id"] == aid}
+             for p in store.list_policies(enabled_only=True) if p["agent_id"] in ("*", "", None, aid)]
+    rules.sort(key=lambda x: not x["mine"])
     return render_template("agent.html", agent=ag, freely=freely, asks=asks, withheld=withheld,
                            counts=counts, missing=missing, runs=runs, team=team, leads=leads,
+                           stats=stats, rules=rules, model=rt.model_for(ag),
                            est_in_rate=est_rate[0], est_base=est_base, live=(rt.mode() == "live"), readonly=readonly)
 
 def _advance_bg(rid):
