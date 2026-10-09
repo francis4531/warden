@@ -7,11 +7,11 @@ def test_builder_renders_for_user_and_admin(client, warden):
     login(client, BOB)
     html = client.get("/new/advanced").data.decode()
     assert "What it can touch" in html and 'name="skills"' in html and "Start from" in html
-    assert "mcp-server-fetch" not in html, "stdio servers are not offered to users"
+    assert "@playwright/mcp" not in html, "stdio servers are not offered to users"
     assert "Search the MCP Registry" not in html
     login(client, ADMIN, hat="agents")
     html = client.get("/new/advanced").data.decode()
-    assert "Search the MCP Registry" in html and "mcp-server-fetch" in html
+    assert "Search the MCP Registry" in html and "@playwright/mcp" in html
 
 
 def test_connlist_is_per_user(client, warden):
@@ -66,3 +66,40 @@ def test_agent_page_owner_and_admin_views(client, warden):
     h = client.get("/agent/%s" % aid).get_data(as_text=True)
     assert "Admin view, read-only" in h and "Start a conversation" not in h and "pc@x.com" in h
     assert 'action="/agent/%s/delete"' % aid not in h
+
+
+def test_reference_servers_are_gone_and_sample_is_sandbox_only(warden, monkeypatch):
+    import catalog
+    ids = {c["id"] for c in catalog.CATALOG}
+    assert not ids & {"fetch", "filesystem", "git", "memory"}
+    assert catalog.sample_on()                               # tests run in sandbox
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert not catalog.sample_on()                           # live: no sample server
+    monkeypatch.setenv("WARDEN_SAMPLE_TOOLS", "1")
+    assert catalog.sample_on()                               # unless asked for
+
+
+def test_live_templates_are_real_systems(client, warden, monkeypatch):
+    import catalog
+    A = warden["app"]
+    login(client, "tpl@x.com")
+    monkeypatch.setattr(catalog, "sample_on", lambda: False)
+    html = client.get("/new/advanced").data.decode()
+    assert "Billing Resolver (Stripe)" in html and "Ticket Triage (Linear)" in html
+    assert "Refund Auditor (read-only)" not in html          # sample-only template hidden
+    for t in A.AGENT_TEMPLATES:
+        if not t.get("sample"):
+            assert "builtin_enterprise" not in t["servers"] and "fetch" not in t["servers"]
+
+
+def test_retire_reference_tools_strips_grants(warden, monkeypatch):
+    import catalog
+    A, store, rt = warden["app"], warden["store"], warden["rt"]
+    aid = store.create_agent("Mixed", "x", rt.MODEL_DEFAULT,
+                             [K("lookup_customer"), "fetch~abcd1234__fetch", "deepwiki__ask_question"], owner="mix@x.com")
+    monkeypatch.setattr(catalog, "sample_on", lambda: False)
+    changed = A._retire_reference_tools()
+    assert changed.get("Mixed") == 2
+    assert store.get_agent(aid)["skills"] == ["deepwiki__ask_question"]
+    assert any(e["kind"] == "reference_tools_retired" for e in store.audit_all(20))
+    assert store.verify_audit()["ok"]

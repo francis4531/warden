@@ -22,7 +22,7 @@ import catalog as catalog_mod
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILTINS = {
     "builtin_enterprise": [sys.executable, os.path.join(HERE, "mcp_server.py")],
-}
+} if catalog_mod.sample_on() else {}
 
 class _LoopThread:
     def __init__(self):

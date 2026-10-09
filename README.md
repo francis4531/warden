@@ -9,8 +9,9 @@ the model, but the governance around letting an agent act.
 
 ## What's real here
 
-- **Real MCP, multiple servers.** Warden ships one working local MCP server (sample
-  enterprise tools) and connects to external ones from a catalog of common enterprise
+- **Real MCP, multiple servers.** Warden connects to the vendors' own MCP servers from a
+  catalog of common enterprise systems (a sample server with fake data exists only in sandbox
+  mode, for trying Warden without a model key) and to others
   MCP servers, over stdio or remote HTTP. It discovers
   each server's tools over the protocol and routes calls back to the right server.
 - **Real governance, including for tools you didn't write.** Built-in tools have a
@@ -145,8 +146,12 @@ encrypted under their name, only their agents can be granted it, nobody else can
 or disconnect it, and an agent that needs a source it lacks asks its owner, never an admin.
 Servers that run as a process on the Warden host (stdio) can only be enabled by an admin,
 and even then only for the admin's own agents. The one thing every user gets without
-connecting anything is the built-in sample server (fake customers, a knowledge base,
-tickets, refunds), so a first agent works in one click.
+connecting anything, in sandbox mode only, is the built-in sample server (fake customers,
+a knowledge base, tickets, refunds), so a first agent works in one click. A live studio
+(ANTHROPIC_API_KEY set) does not offer it; set WARDEN_SAMPLE_TOOLS=1 to keep it alongside
+real systems. The Anthropic reference servers (fetch, filesystem, git, memory) were removed
+from the catalog in v0.27; agents that held their tools lose those grants on first boot,
+recorded in the audit log.
 
 What the admin does decide, on the Catalog page, is which servers are on offer (the curated
 catalog plus anything added from the MCP Registry, each of which can be hidden from users), how each tool is risk-classified for
@@ -160,7 +165,7 @@ Linear, Notion, Stripe, Sentry, Slack, Postgres, Supabase, Playwright, the Anthr
 reference servers, Google Workspace, and more). Each entry shows who maintains it and how
 it connects, and the card matches the credential the server actually needs:
 
-- Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): always connected for everyone, no setup.
+- Built in (Enterprise Tools, a sample with fake customers, a knowledge base, tickets and refunds): sandbox mode only, always connected there, no setup.
 - Personal (Gmail, Drive, Calendar, Docs, Sheets): each user clicks "Connect your Google
   account" for themselves. The token is stored encrypted under that user, only their
   agents can be granted it, and they can disconnect any time. Read-only scopes by default;
