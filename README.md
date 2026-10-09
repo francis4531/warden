@@ -252,6 +252,24 @@ settings); if it is not, a run fails with a message that says so. Two limits to 
 studio's own gate does not sit between the agent and the page (the switches, domain lists
 and audit log are the controls), and sandbox mode has no model, so web access is live only.
 
+## The release archive
+
+Each release is one file, `warden_v<version>_<timestamp>.tar.gz`, laid out as a single
+`warden/` directory (the code, exactly what `git archive` produces). The same archive also
+carries `warden/.warden-history.bundle`: a self-contained git bundle with the full
+commit-by-commit history of the `feature/v0.16-governance` branch (the governance work from
+v0.16 and everything built on it). The bundle file is listed in `.gitignore`, so copying the
+archive over a checkout and committing never commits it; it just sits there for a script to
+use. To publish the history from a checkout that has the archive's contents:
+
+```
+git fetch .warden-history.bundle feature/v0.16-governance
+git push origin FETCH_HEAD:refs/heads/feature/v0.16-governance
+```
+
+The push is fast-forward only, so it can never overwrite work on that branch, and running it
+twice is harmless. Nothing about the code or the deploy depends on the bundle.
+
 ## Deploy (Render)
 
 Python is pinned to 3.13 by `.python-version` (Render's native runtime defaults to the

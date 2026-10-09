@@ -21,7 +21,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.31.0"
+WARDEN_VERSION = "0.31.1"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT

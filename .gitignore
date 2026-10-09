@@ -7,3 +7,4 @@ data/
 warden.db
 _localdata/
 .pytest_cache/
+.warden-history.bundle
