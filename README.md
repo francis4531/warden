@@ -198,6 +198,17 @@ the whole governance flow works offline. For live model calls:
 
 `/privacy` is a public page that says what the studio collects, why, where it goes, how long it is kept, and how to remove it. It is written to satisfy Google's OAuth branding review: link it from your OAuth consent screen as the privacy policy URL, set the home page URL to the studio's base URL (the home page links to `/privacy`), and verify the domain in Google Search Console. `WARDEN_PRIVACY_CONTACT` sets the contact shown on the page; it defaults to the first admin email. Disconnecting a Google connection revokes the token at Google as well as deleting the studio's copy.
 
+## Files in a conversation
+
+Users can attach files when they start a conversation and in any reply: PDFs and images go
+to the model as they are; Word, Excel and PowerPoint files and text, CSV, JSON and similar
+files are read into text (Word, Excel and PowerPoint with the standard library only, with
+bounded reads, so no new dependency and no XML parser to abuse). Up to 5 files of 10 MB per
+message, 20 MB together, 150,000 characters of text each, 2,000 rows per sheet. A file that
+cannot be read is skipped and the agent is told, so it can say so. Every file's text is
+framed as data, not instructions. Files are stored with the conversation and removed with
+the agent; the audit log keeps file names, never contents.
+
 ## Web access without a connection
 
 Every agent can search the public web and read pages with nothing to connect. Both run on

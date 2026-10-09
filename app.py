@@ -15,12 +15,13 @@ import catalog as cat
 import telemetry
 import policy
 import registry
+import attachments
 import re
 import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.28.0"
+WARDEN_VERSION = "0.29.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -69,6 +70,7 @@ DEPLOYED_AT = datetime.datetime.now(_PT).strftime("%Y-%m-%d %H:%M:%S %Z")   # wh
 
 import vault
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024     # a little over the 20 MB of attachments one message may carry
 # The session signing key is derived from the studio secret (WARDEN_SECRET_KEY, or a random
 # key generated once into the data dir). There is no built-in default: a forgeable cookie
 # would make anyone an admin.
@@ -513,6 +515,7 @@ def arg_summary(inp):
     return _json.dumps(inp)[:110]
 
 app.jinja_env.globals["arg_summary"] = arg_summary
+app.jinja_env.globals["file_accept"] = attachments.ACCEPT
 
 @app.route("/")
 def landing():
@@ -1126,12 +1129,31 @@ def _advance_bg(rid):
                 pass
     threading.Thread(target=worker, daemon=True).start()
 
+def _user_message(text):
+    """The user's message from a form: text, plus any files they attached. Returns
+    (content, names, errors, text). content is a plain string when nothing was attached, else
+    a list of blocks; unreadable files are reported to the agent in the message itself, so it
+    can tell the user instead of silently working without them."""
+    text = (text or "").strip()
+    blocks, names, errors = attachments.process(request.files.getlist("files"))
+    if not blocks and not errors:
+        return text, [], [], text
+    if not text and names:
+        text = "Please look at the attached file%s." % ("" if len(names) == 1 else "s")
+    note = " ".join("[Warden: %s]" % e for e in errors)
+    parts = [{"type": "text", "text": (text + ("\n\n" + note if note else "")).strip()}] + blocks
+    return parts, names, errors, text
+
 @app.route("/run", methods=["POST"])
 def run():
-    aid = request.form.get("agent_id"); user_input = request.form.get("input", "").strip()
-    if not user_input: abort(400)
+    aid = request.form.get("agent_id")
     _owned_agent(aid)
-    rid = store.create_run(aid, user_input)
+    content, names, errors, user_input = _user_message(request.form.get("input", ""))
+    if not user_input and not names: abort(400)
+    rid = store.create_run(aid, user_input or "(files could not be read)")
+    if isinstance(content, list):
+        store.update_run(rid, transcript=[{"role": "user", "content": content}])
+        store.audit(rid, aid, "run_started", detail={"input": user_input, "mode": rt.mode(), "files": names, "file_errors": errors})
     _advance_bg(rid)
     return redirect(url_for("run_view", rid=rid))
 
@@ -1190,6 +1212,9 @@ def _fmt_event(e):
         out["text"] = " ".join(_json.dumps(d.get("input"), ensure_ascii=False).split())[:200]
     if kind == "budget_stop" and d.get("scope"):
         out["scope"] = d["scope"]
+    if kind in ("run_started", "user_message"):
+        out["files"] = d.get("files") or []
+        out["file_errors"] = d.get("file_errors") or []
     if kind in ("web_search", "web_fetch"):
         out["text"] = d.get("text") or ""
         out["sources"] = [r.get("url") for r in (d.get("results") or []) if r.get("url")][:6] or ([d["url"]] if d.get("url") else [])
@@ -1296,13 +1321,13 @@ def run_say(rid):
     r = _owned_run(rid)
     if r["status"] in ("running", "awaiting_approval"):
         return {"error": "busy"}, 409
-    text = request.form.get("input", "").strip()
-    if not text:
+    content, names, errors, text = _user_message(request.form.get("input", ""))
+    if not text and not names:
         return {"error": "empty"}, 400
     tr = r["transcript"]
-    tr.append({"role": "user", "content": text})
+    tr.append({"role": "user", "content": content})
     store.update_run(rid, status="running", transcript=tr)
-    store.audit(rid, r["agent_id"], "user_message", detail={"text": text})
+    store.audit(rid, r["agent_id"], "user_message", detail={"text": text, "files": names, "file_errors": errors})
     _advance_bg(rid)
     return {"ok": True}
 

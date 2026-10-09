@@ -342,11 +342,21 @@ MAX_CALLS_PER_RUN = int(os.environ.get("WARDEN_MAX_CALLS_PER_RUN", "60"))   # ac
 CONTEXT_TOKENS = int(os.environ.get("WARDEN_CONTEXT_TOKENS", "150000"))   # transcript budget, estimated
 
 def _est_tokens(obj):
-    """A cheap token estimate (about 4 characters per token) for trimming decisions."""
-    try:
-        return len(json.dumps(obj)) // 4
-    except Exception:
-        return len(str(obj)) // 4
+    """A cheap token estimate (about 4 characters per token) for trimming decisions. Base64
+    file payloads are not text: counting them by length would overstate a PDF tenfold, so
+    they are counted by decoded size instead (about 30 tokens per KB for a PDF, 1 per 750
+    bytes for an image)."""
+    if isinstance(obj, str):
+        return len(obj) // 4
+    if isinstance(obj, list):
+        return sum(_est_tokens(x) for x in obj)
+    if isinstance(obj, dict):
+        src = obj.get("source")
+        if isinstance(src, dict) and src.get("type") == "base64" and isinstance(src.get("data"), str):
+            raw = len(src["data"]) * 3 // 4
+            return raw * 30 // 1024 if obj.get("type") == "document" else raw // 750
+        return sum(_est_tokens(v) for v in obj.values()) + len(obj)
+    return len(str(obj)) // 4
 
 def _trim(messages, budget=None):
     """Keep the transcript inside the context window. The first user message (the task) is
@@ -524,8 +534,11 @@ def _sandbox_model(messages, tools):
     # so a completed refund doesn't spuriously trigger a file-write gate.
     user_text = ""; user_raw = ""
     for m in messages:
-        if m.get("role") == "user" and isinstance(m.get("content"), str):
-            user_raw = m["content"]; user_text = user_raw.lower(); break
+        c_ = m.get("content")
+        if m.get("role") == "user" and isinstance(c_, list):
+            c_ = next((b.get("text") for b in c_ if isinstance(b, dict) and b.get("type") == "text"), None)
+        if m.get("role") == "user" and isinstance(c_, str):
+            user_raw = c_; user_text = user_raw.lower(); break
     called = set()
     for m in messages:
         for blk in (m.get("content") or []) if isinstance(m.get("content"), list) else []:
