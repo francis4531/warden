@@ -65,8 +65,8 @@
   </div>
   <div class="eg" id="eg">
     <button type="button">Handle refund requests from customers who were charged twice</button>
-    <button type="button">Triage new support tickets and open one for anything that needs a human</button>
-    <button type="button">Answer questions about our public GitHub repositories</button>
+    <button type="button">Triage new Linear issues and suggest a priority for each</button>
+    <button type="button">Prepare me for today&rsquo;s meetings from my calendar and Drive</button>
     <button type="button">Go through my inbox each morning and tell me what needs a reply</button>
   </div>
   <div class="err" id="err"></div>
@@ -87,7 +87,7 @@
   <div class="jnote" id="j-note" style="display:none"></div>
   <div class="jact">
     <button class="btn brass" type="submit">Create and start</button>
-    <div class="first"><input type="text" name="first" id="j-first" placeholder="First task (optional): Customer AC-1001 says they were charged twice" autocomplete="off"></div>
+    <div class="first"><input type="text" name="first" id="j-first" placeholder="First task (optional): what should it do first?" autocomplete="off"></div>
     <button type="button" class="q" id="may-toggle">Change what it may do</button>
     <a class="q" id="j-adv" href="{{ url_for('new_agent_advanced') }}">Open in advanced setup</a>
   </div>

@@ -28,29 +28,15 @@ you override it.
 """
 
 CATALOG = [
-  # --- ships with Warden (always connectable) ---
+  # --- sandbox only: sample data for trying Warden without a model key or real systems ---
   {"id":"builtin_enterprise","name":"Enterprise Tools (Warden)","category":"Reference","sample":True,
-   "maintainer":"warden","transport":"builtin","auth":"none","status":"ready",
-   "desc":"Customer lookup, knowledge search, ticketing, and refunds. Warden's built-in server."},
+   "maintainer":"warden","transport":"builtin","auth":"none","status":"ready","sandbox_only":True,
+   "desc":"Fake customers, a knowledge base, tickets and refunds, for trying Warden without a model key. Present only in sandbox mode."},
 
   # --- live public remote server, no credentials, connect and go ---
   {"id":"deepwiki","name":"DeepWiki (GitHub repos)","category":"Dev","maintainer":"vendor",
    "transport":"http","run":"https://mcp.deepwiki.com/mcp","auth":"none","status":"ready",
    "desc":"Ask real questions about any public GitHub repository and read its docs, live. No token needed."},
-
-  # --- Anthropic official reference servers ---
-  {"id":"fetch","name":"Fetch","category":"Web","maintainer":"official","transport":"stdio_python",
-   "run":"uvx mcp-server-fetch","auth":"none","status":"needs_python",
-   "desc":"Fetch a URL and return its content as text for the agent to read."},
-  {"id":"filesystem","name":"Filesystem (official)","category":"Files & Docs","maintainer":"official",
-   "transport":"stdio_node","run":"npx -y @modelcontextprotocol/server-filesystem <path>",
-   "auth":"none","status":"needs_node","desc":"Reference filesystem server. Read and write within allowed paths."},
-  {"id":"git","name":"Git","category":"Dev","maintainer":"official","transport":"stdio_python",
-   "run":"uvx mcp-server-git --repository <path>","auth":"none","status":"needs_python",
-   "desc":"Read a repo: status, diff, log, branches, and commits."},
-  {"id":"memory","name":"Memory","category":"Reference","maintainer":"official","transport":"stdio_node",
-   "run":"npx -y @modelcontextprotocol/server-memory","auth":"none","status":"needs_node",
-   "desc":"A simple knowledge-graph memory the agent can write to and recall."},
 
   # --- vendor-maintained (the right pick for production) ---
   {"id":"github","provider":"mcp","token_url":"https://github.com/settings/tokens","token_label":"personal access token","env":"GITHUB_TOKEN","name":"GitHub","category":"Dev","maintainer":"vendor","transport":"http",
@@ -126,6 +112,17 @@ CATALOG = [
    "run":"npx -y @modelcontextprotocol/server-slack","auth":"bot_token","status":"archived",
    "desc":"Read channels and post messages. Original reference archived; community builds exist."},
 ]
+
+RETIRED = ("fetch", "filesystem", "git", "memory")   # v0.27: reference servers, not business systems
+
+def sample_on():
+    """The sample server exists to try Warden without a model key. A live studio offers only
+    real systems, unless WARDEN_SAMPLE_TOOLS=1 asks for the sample alongside them."""
+    import os
+    return (not os.environ.get("ANTHROPIC_API_KEY")) or os.environ.get("WARDEN_SAMPLE_TOOLS") == "1"
+
+if not sample_on():
+    CATALOG = [c for c in CATALOG if not c.get("sandbox_only")]
 
 BY_ID = {c["id"]: c for c in CATALOG}
 

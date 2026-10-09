@@ -19,7 +19,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.26.0"
+WARDEN_VERSION = "0.27.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -410,6 +410,32 @@ def connected_tools():
         out.append({**t, "risk": m["risk"], "gate": m["gate"], "override": ovr.get(mk), "model_key": mk})
     return out
 
+def _retire_reference_tools():
+    """v0.27: the sample server runs only in sandbox, and the host-run reference servers
+    (fetch, filesystem, git, memory) left the catalog. On a live studio, agents lose grants
+    to them, their connections are removed, and one audit event records what changed."""
+    import store as _st
+    dead = set(cat.RETIRED) | ({"builtin_enterprise"} if not cat.sample_on() else set())
+    if not dead:
+        return {}
+    conns = []
+    for c_ in _st.enabled_connections():
+        if (c_.get("catalog_id") or c_["id"].split("~")[0]) in dead and c_["transport"] != "builtin":
+            _st.disable_connection(c_["id"]); conns.append(c_["id"])
+    changed = {}
+    for ag in _st.list_agents(None):
+        skills = ag.get("skills") or []
+        keep = [k for k in skills if k.split("__")[0].split("~")[0] not in dead]
+        if len(keep) != len(skills):
+            _st.update_agent(ag["id"], ag["name"], ag["instructions"], ag["model"], keep)
+            changed[ag["name"]] = len(skills) - len(keep)
+    if conns or changed:
+        _st.audit(None, None, "reference_tools_retired", detail={"agents": changed, "connections": conns,
+                  "text": "sample and reference servers retired: %d grant%s removed from %d agent%s, %d connection%s removed" % (
+                      sum(changed.values()), "" if sum(changed.values()) == 1 else "s", len(changed),
+                      "" if len(changed) == 1 else "s", len(conns), "" if len(conns) == 1 else "s")})
+    return changed
+
 _RETIRED_OWNERS = ("", "operator")
 
 def _retire_operator():
@@ -796,13 +822,13 @@ def tools_json():
     return {"groups": list(groups.values())}
 
 AGENT_TEMPLATES = [
-    {"id": "billing", "name": "Billing Resolver",
+    {"id": "billing", "sample": True, "name": "Billing Resolver",
      "instructions": "You resolve billing issues for enterprise customers. Look up the account, check policy, and make the customer whole. Be concise and never guess at numbers.",
      "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge", "create_ticket", "issue_refund"]},
-    {"id": "triage", "name": "Support Triage",
+    {"id": "triage", "sample": True, "name": "Support Triage",
      "instructions": "You triage inbound support requests. Look up the customer, search the knowledge base for a known fix, and open a ticket with a clear summary when it needs a human. Do not promise resolutions you cannot verify.",
      "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge", "create_ticket"]},
-    {"id": "refund_audit", "name": "Refund Auditor (read-only)",
+    {"id": "refund_audit", "sample": True, "name": "Refund Auditor (read-only)",
      "instructions": "You investigate refund requests but cannot issue refunds yourself. Look up the account, verify the charge against policy, and write a clear recommendation for a human to approve. State the exact amount and the policy basis.",
      "servers": ["builtin_enterprise"], "tools": ["lookup_customer", "search_knowledge"]},
     {"id": "repo_qa", "name": "Codebase Explainer",
@@ -812,7 +838,7 @@ AGENT_TEMPLATES = [
      "instructions": "You help maintain a GitHub repository. Read issues, pull requests, and code to understand the request, then propose changes. Any write (a branch, a commit, a pull request) is held for review before it runs. Never merge without explicit approval.",
      "servers": ["github"], "tools": ["get_file_contents", "list_issues", "list_pull_requests", "search_code",
                "create_branch", "create_pull_request", "push_files", "merge_pull_request"]},
-    {"id": "kb", "name": "Knowledge Assistant",
+    {"id": "kb", "sample": True, "name": "Knowledge Assistant",
      "instructions": "You answer policy and product questions from the internal knowledge base and public repo docs. Cite the source you used. If the answer is not in the sources, say you do not know rather than guessing.",
      "servers": ["builtin_enterprise", "deepwiki"], "tools": ["search_knowledge", "ask_question", "read_wiki_contents"]},
     {"id": "incident", "name": "Incident Responder",
@@ -827,13 +853,32 @@ AGENT_TEMPLATES = [
     {"id": "inbox", "name": "Inbox Prioritizer (your Gmail)",
      "instructions": "You prioritize the user's Gmail inbox. Read recent threads, group them into needs a reply today, waiting on someone else, FYI, and noise, and write a short digest with the one next action for each item that needs one. Never send or delete mail; drafting is fine only if asked. Quote subject lines exactly.",
      "servers": ["google_gmail"], "tools": []},
-    {"id": "billing_desk", "name": "Billing Desk (team)", "team": True,
+    {"id": "billing_desk", "sample": True, "name": "Billing Desk (team)", "team": True,
      "instructions": "You run the billing desk. For each customer issue, have the Refund Auditor verify the account and the charge against policy first, then hand the verified facts and exact amount to the Billing Resolver to make it right. Never issue a refund yourself; report exactly what each member did.",
      "servers": ["builtin_enterprise"], "tools": ["lookup_customer"],
      "members": ["refund_audit", "billing"]},
     {"id": "research", "name": "Web Research Analyst",
      "instructions": "You research questions using the web and public documentation. Search, fetch, and read sources, then synthesize an answer with citations to the sources you used. If the sources do not support a claim, say so plainly. This agent is read-only by design and never needs to write anything.",
-     "servers": ["deepwiki", "firecrawl", "exa", "fetch"], "tools": ["ask_question", "read_wiki_contents", "search", "scrape", "fetch"]},
+     "servers": ["exa", "firecrawl", "deepwiki"], "tools": ["web_search_exa", "search", "scrape", "ask_question", "read_wiki_contents"]},
+    # real systems: what an enterprise user actually builds agents over
+    {"id": "stripe_audit", "name": "Refund Checker (Stripe, read-only)",
+     "instructions": "You investigate refund and billing requests in Stripe but never change anything. Find the customer, their payment intents, invoices and any disputes, check the charge in question, and write a recommendation for a human: refund or not, the exact amount, and why. Quote Stripe IDs.",
+     "servers": ["stripe"], "tools": ["list_customers", "list_payment_intents", "list_invoices", "list_disputes", "retrieve_balance", "search_documentation"]},
+    {"id": "stripe_billing", "name": "Billing Resolver (Stripe)",
+     "instructions": "You resolve billing issues in Stripe. Look up the customer and the charge, confirm what went wrong, and fix it. Reads run on their own; a refund, a subscription change, or anything else that moves money is held for a human to approve. State the exact amount and the Stripe IDs involved. Never guess at numbers.",
+     "servers": ["stripe"], "tools": ["list_customers", "list_payment_intents", "list_invoices", "create_refund", "update_subscription", "cancel_subscription"]},
+    {"id": "stripe_desk", "name": "Billing Desk (Stripe team)", "team": True,
+     "instructions": "You run the billing desk. For each customer issue, have the Refund Checker verify the account and the charge first, then hand the verified facts and exact amount to the Billing Resolver to make it right. Never move money yourself; report exactly what each member did.",
+     "servers": ["stripe"], "tools": [], "members": ["stripe_audit", "stripe_billing"]},
+    {"id": "linear_triage", "name": "Ticket Triage (Linear)",
+     "instructions": "You triage incoming work in Linear. Read new issues, find duplicates and related work, and propose a team, priority and a one-line summary for each. Comments are routine; changing status, priority or assignee is held for a human. Always cite the issue identifier.",
+     "servers": ["linear"], "tools": ["list_issues", "get_issue", "list_teams", "create_comment", "update_issue"]},
+    {"id": "notion_kb", "name": "Policy Q&A (Notion)",
+     "instructions": "You answer policy and process questions from the company's Notion workspace. Search, read the relevant pages, and answer with a link to every page you used. If the pages do not answer the question, say so rather than guessing. You never edit pages.",
+     "servers": ["notion"], "tools": ["search", "fetch"]},
+    {"id": "meeting_prep", "name": "Meeting Prep (your Calendar and Drive)",
+     "instructions": "Before each of the user's meetings today, read the calendar event, find related documents in Drive, and write a short brief: who is attending, what the meeting is for, the open questions from the documents, and one suggested outcome. Never accept, decline, or edit events or files.",
+     "servers": ["google_calendar", "google_drive"], "tools": []},
 ]
 
 def _builder_ctx(edit_agent=None):
@@ -844,8 +889,9 @@ def _builder_ctx(edit_agent=None):
                               "connected": store.conn_key(c["id"], current_owner()) in connected_ids or c["id"] in connected_ids}
                     for c in merged_catalog()}
     visible_servers = set(connected_ids)
+    sample = cat.sample_on()
     def tpl_ok(t):
-        return True
+        return sample or not t.get("sample")
     return dict(groups=groups, **_my_connlist_ctx(),
                 templates=[t for t in AGENT_TEMPLATES if tpl_ok(t)], catalog_meta=catalog_meta,
                 edit_agent=edit_agent,
@@ -2058,6 +2104,10 @@ try:
     _migrate_shared_connections()
 except Exception as _mx:
     print("shared-connection migration skipped:", _mx)
+try:
+    _retire_reference_tools()
+except Exception as _rr:
+    print("reference-tool cleanup skipped:", _rr)
 try:
     _retire_operator()
 except Exception as _rx:
