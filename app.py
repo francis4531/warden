@@ -15,11 +15,12 @@ import catalog as cat
 import telemetry
 import policy
 import registry
+import re
 import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.27.0"
+WARDEN_VERSION = "0.28.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -639,6 +640,7 @@ def catalog():
         abort(404)
     dq = (request.args.get("discover") or "").strip()
     discover = registry.search(dq) if dq else None
+    web = rt.web_settings()
     users_connected = {}
     for c_ in store.enabled_connections():
         if c_.get("owner"):
@@ -657,7 +659,8 @@ def catalog():
                       "server_name": entry.get("name") or t["server_name"]})
     return render_template("catalog.html", **_settings_ctx(), catalog=merged_catalog(), users_connected=users_connected, hidden=hidden_catalog(),
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL, tools=tools,
-                           discover=discover, discover_q=dq, google_on=_google_connectors_on(), google_verified=_google_verified())
+                           discover=discover, discover_q=dq, google_on=_google_connectors_on(), google_verified=_google_verified(),
+                           web=web, web_live=(rt.mode() == "live"))
 
 @app.route("/connections/enable", methods=["POST"])
 def enable_connection():
@@ -741,6 +744,31 @@ def user_catalog():
         return merged_catalog()
     hidden = hidden_catalog()
     return [e for e in merged_catalog() if e["id"] not in hidden]
+
+def _domains(raw):
+    out = []
+    for part in re.split(r"[\s,]+", raw or ""):
+        d = part.strip().lower().removeprefix("https://").removeprefix("http://").strip("/")
+        if d and re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}(/[^\s]*)?", d) and d not in out:
+            out.append(d)
+    return out[:50]
+
+@app.route("/catalog/web", methods=["POST"])
+def catalog_web():
+    """Admin: switch built-in web search and fetch on or off for the whole studio, and scope
+    them to or away from named domains."""
+    if not is_admin():
+        abort(403)
+    f = request.form
+    new = {"search": f.get("search") == "1", "fetch": f.get("fetch") == "1",
+           "allowed_domains": _domains(f.get("allowed")), "blocked_domains": _domains(f.get("blocked")),
+           "max_uses": f.get("max_uses") or 5}
+    store.set_setting("web_tools", _json.dumps(new))
+    store.audit(None, None, "web_settings_changed", detail={**rt.web_settings(), "by": current_owner(),
+                "text": "web access: search %s, fetch %s%s" % ("on" if new["search"] else "off", "on" if new["fetch"] else "off",
+                         (", only %d allowed domain%s" % (len(new["allowed_domains"]), "" if len(new["allowed_domains"]) == 1 else "s")) if new["allowed_domains"] else
+                         ((", %d blocked domain%s" % (len(new["blocked_domains"]), "" if len(new["blocked_domains"]) == 1 else "s")) if new["blocked_domains"] else ""))})
+    return redirect(url_for("catalog") + "#web")
 
 @app.route("/catalog/availability", methods=["POST"])
 def catalog_availability():
@@ -1054,7 +1082,9 @@ def agent(aid):
     withheld = sorted([t for t in all_tools
                        if t["server_id"] in agent_server_ids and t["key"] not in skills],
                       key=lambda t: (t["gate"] != "approval", t["tool"]))
-    counts = {"total": len(granted), "freely": len(freely), "asks": len(asks), "withheld": len(withheld)}
+    web_rows = rt.web_tool_rows()
+    freely = web_rows + freely
+    counts = {"total": len(granted) + len(web_rows), "freely": len(freely), "asks": len(asks), "withheld": len(withheld)}
     missing = [k for k in (ag["skills"] or []) if k not in idx]
     team = _team_view(ag) if ag.get("members") else None
     if team and team["members"]:
@@ -1160,6 +1190,9 @@ def _fmt_event(e):
         out["text"] = " ".join(_json.dumps(d.get("input"), ensure_ascii=False).split())[:200]
     if kind == "budget_stop" and d.get("scope"):
         out["scope"] = d["scope"]
+    if kind in ("web_search", "web_fetch"):
+        out["text"] = d.get("text") or ""
+        out["sources"] = [r.get("url") for r in (d.get("results") or []) if r.get("url")][:6] or ([d["url"]] if d.get("url") else [])
     return out
 
 _CODE_FIELDS = ("new_content", "content", "patch", "diff", "code", "source", "body", "text")

@@ -61,6 +61,31 @@
   <p class="sub">The studio provides no connections. Every user, admins included, connects the sources their own agents use. Here you decide which servers are on offer, how each tool is risk-classified for everyone, and the Google client that makes one-click Google connections possible.</p>
 </div>
 
+<style>
+.webc{border:1px solid var(--line);border-radius:12px;background:var(--ink2);padding:16px 18px;margin-bottom:26px}
+.webc .wr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:12px}
+@media(max-width:900px){.webc .wr{grid-template-columns:1fr}}
+.webc label.sw2{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ink);cursor:pointer}
+.webc label.sw2 b{display:block;font-size:13.5px}
+.webc label.sw2 span{font-size:12px;color:var(--dim)}
+.webc textarea{min-height:58px;font-family:var(--mono);font-size:12px}
+.webc .fl{font-size:11.5px;color:var(--mut);margin-bottom:4px}
+.webc .foot{display:flex;gap:14px;align-items:center;margin-top:14px;flex-wrap:wrap}
+</style>
+<div class="section-h" id="web"><span class="lbl">Web access</span><span style="font-size:12px;color:var(--dim)">built in &middot; no connection, no account &middot; every search and fetch is on the audit log</span></div>
+<form method="post" action="{{ url_for('catalog_web') }}" class="webc"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <div style="color:var(--mut);font-size:13px">Every agent can search the public web and read pages without the user connecting anything. These are reads, so they run without approval. They run on the model provider&rsquo;s side, so the studio&rsquo;s own gate does not sit between the agent and the page; the controls here are the on and off switches, the domain lists, and the audit log. A search costs $0.01 on top of model tokens.{% if not web_live %} <b>Sandbox mode has no model, so these take effect once a model key is set.</b>{% endif %}</div>
+  <div class="wr">
+    <label class="sw2"><input type="checkbox" name="search" value="1" {{ 'checked' if web.search }}><div><b>Web search</b><span>Find pages on the public web for a question.</span></div></label>
+    <label class="sw2"><input type="checkbox" name="fetch" value="1" {{ 'checked' if web.fetch }}><div><b>Read web pages</b><span>Open a page or PDF at a link that came up in the conversation.</span></div></label>
+  </div>
+  <div class="wr">
+    <div><div class="fl">Only these domains (optional, one per line or comma separated). Leave empty to allow the whole web.</div><textarea name="allowed" placeholder="docs.python.org, sec.gov">{{ web.allowed_domains|join(', ') }}</textarea></div>
+    <div><div class="fl">Never these domains (ignored when an allow list is set)</div><textarea name="blocked" placeholder="example.com">{{ web.blocked_domains|join(', ') }}</textarea></div>
+  </div>
+  <div class="foot"><label style="font-size:12.5px;color:var(--mut)">Most searches or fetches per model turn <input name="max_uses" type="number" min="1" max="20" value="{{ web.max_uses }}" style="width:64px;margin-left:6px"></label><button class="btn brass sm" type="submit">Save web access</button></div>
+</form>
+
 <div class="section-h"><span class="lbl">Catalog</span><span style="font-size:12px;color:var(--dim)">{{ catalog|length }} servers &middot; {{ hidden|length }} hidden from users &middot; host-run servers are admin-only</span></div>
 <div class="card" style="padding:0 0 4px;margin-bottom:12px;overflow-x:auto">
 <table class="ctab">
