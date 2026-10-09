@@ -48,7 +48,7 @@
 {% for p in users %}
 <details class="person">
   <summary>
-    <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}{% if p.email == 'operator' %}<span class="tag" title="Agents created through the password sign-in or before Google sign-in was enabled">password sign-in</span>{% endif %}</div>
+    <div class="who"><div class="em">{{ p.email }}{% if p.admin %}<span class="tag">admin</span>{% endif %}</div>
       <div class="sub">{% if p.last %}last activity {{ p.last[:16].replace('T',' ') }} UTC{% else %}no conversations yet{% endif %} &middot; {{ p.personal }} personal connection{{ '' if p.personal==1 else 's' }}</div></div>
     <div class="n">{{ p.agents|length }}<small>agents</small></div>
     <div class="n">{{ p.runs }}<small>conversations</small></div>

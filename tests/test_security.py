@@ -74,11 +74,34 @@ def test_login_next_cannot_leave_the_site(client, warden):
     assert A._safe_next("/evil.com") == "/evil.com"
     assert A._safe_next("https://evil.com") == ""
     assert A._safe_next("/\\evil.com") == ""
-    client.get("/login")
+
+
+# ---- no shared password, no anonymous operator ----
+def test_there_is_no_password_sign_in(client, monkeypatch):
+    monkeypatch.setenv("WARDEN_PASSWORD", "pw")
+    page = client.get("/login").get_data(as_text=True)
+    assert 'type="password"' not in page and "Sign in with Google" in page
+    r = client.post("/login", data={"password": "pw"}, headers={"X-Requested-With": "fetch"})
+    assert r.status_code in (302, 405) and "/login" in r.headers.get("Location", "/login")
     with client.session_transaction() as s:
-        tok = s.get("csrf")
-    r = client.post("/login", data={"password": "pw", "next": "//evil.com/x", "csrf": tok})
-    assert r.status_code == 302 and not r.headers["Location"].startswith("//")
+        assert not s.get("auth") and s.get("email") != "operator"
+    assert client.get("/app").status_code == 302          # still signed out
+
+
+def test_operator_agents_and_connections_are_retired(warden):
+    A, store, rt = warden["app"], warden["store"], warden["rt"]
+    keep = store.create_agent("Kept", "x", rt.MODEL_DEFAULT, [], owner="keep@x.com")
+    op = store.create_agent("Op agent", "x", rt.MODEL_DEFAULT, [], owner="operator")
+    nobody = store.create_agent("Ownerless", "x", rt.MODEL_DEFAULT, [], owner="")
+    rid = store.create_run(op, "old conversation")
+    gone = A._retire_operator()
+    assert set(gone) >= {"Op agent", "Ownerless"}
+    assert store.get_agent(op) is None and store.get_agent(nobody) is None and store.get_run(rid) is None
+    assert store.get_agent(keep) is not None
+    ev = [e for e in store.audit_all(50) if e["kind"] == "operator_retired"]
+    assert ev and "Op agent" in ev[0]["detail"]["agents"]
+    assert store.verify_audit()["ok"]
+    assert A._retire_operator() == []                      # idempotent
 
 
 # ---- 8. audit chain ----

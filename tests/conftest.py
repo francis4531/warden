@@ -18,7 +18,7 @@ def warden():
     """Import the app once against a scratch data dir. Module state (connection manager,
     sqlite path) is process-wide, so tests share one database and use distinct owners."""
     tmp = tempfile.mkdtemp(prefix="warden-test-")
-    os.environ.update(WARDEN_DATA_DIR=tmp, WARDEN_PASSWORD="pw", WARDEN_ADMIN_EMAILS=ADMIN,
+    os.environ.update(WARDEN_DATA_DIR=tmp, WARDEN_ADMIN_EMAILS=ADMIN,
                       WARDEN_SECRET_KEY="test-secret-not-for-production",
                       GOOGLE_CLIENT_ID="x", GOOGLE_CLIENT_SECRET="y")
     os.environ.pop("ANTHROPIC_API_KEY", None)

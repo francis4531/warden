@@ -121,12 +121,12 @@ def tool_index():
                          "catalog_id": t.get("catalog_id") or t["key"].split("__")[0],
                          "annotations": t.get("annotations") or {}}
     idx[DELEGATE_KEY] = {"tool": "delegate", "desc": "Hand a task to a team member agent.", "server": "Team"}
-    idx[REQUEST_KEY] = {"tool": "request_connection", "desc": "Ask the operator to connect a server this agent needs.", "server": "Warden"}
+    idx[REQUEST_KEY] = {"tool": "request_connection", "desc": "Ask the user to connect a server this agent needs.", "server": "Warden"}
     return idx
 
 REQUEST_TOOL = {
     "name": REQUEST_KEY,
-    "description": ("Ask the Warden operator to connect a capability you need but do not have (for example an "
+    "description": ("Ask the user to connect a capability you need but do not have (for example an "
                     "email inbox, a calendar, a CRM, a database, a ticketing system). Warden keeps a catalog of "
                     "official MCP servers and can connect one and grant you its tools. Call this instead of "
                     "telling the user to install software, edit configuration files, or use another product. "
@@ -482,7 +482,7 @@ def _sandbox_model(messages, tools):
     granted_since = any(m.get("role") == "user" and isinstance(m.get("content"), str) and "is now connected" in m["content"] for m in messages)
     if k_req and k_req in called and not granted_since:
         return {"stop_reason":"end_turn","content":[{"type":"text","text":
-                "[sandbox] I asked Warden to connect the capability this needs. Once the operator connects it and grants me its tools, this conversation resumes and I will do the work."}]}
+                "[sandbox] I asked Warden to connect the capability this needs. Once it is connected and grants me its tools, this conversation resumes and I will do the work."}]}
     # team lead: hand the request to each member in turn, then summarize what came back
     k_del = _find_key(tools, "delegate")
     if k_del:
@@ -946,9 +946,9 @@ def _execute_tool_turn(run_id, agent, assistant_msg, messages, idx):
                                 "outcome": "ok", "status": "open"})
             already = [m["name"] for m in matches if m["connected"]]
             rtext = json.dumps({"requested": True,
-                                "matches": [m["name"] for m in matches] or ["no catalog match; the operator was asked to search the MCP Registry"],
+                                "matches": [m["name"] for m in matches] or ["no catalog match; the user was asked to search the MCP Registry"],
                                 "already_connected_but_not_granted": already,
-                                "note": "The operator has been shown a one-click option to connect this and grant you its tools. "
+                                "note": "The user has been shown a one-click option to connect this and grant you its tools. "
                                         "Tell the user what you asked for and what you will do once it is connected, then stop."})
         elif b["name"] == DELEGATE_KEY and not (gated and in_eval):
             if b["id"] in deleg_err:
