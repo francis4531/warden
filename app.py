@@ -21,7 +21,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.30.0"
+WARDEN_VERSION = "0.31.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -729,7 +729,7 @@ def enable_connection():
     if granted and resume:
         return redirect(url_for("run_view", rid=resume))
     if (st or {}).get("status") != "connected":
-        return redirect(url_for("connections", oauth_error="%s did not connect: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown")) + "#" + cid)
+        return _connect_failed("%s did not connect: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown"), cid, resume)
     return redirect(url_for("connections", connected=cid) + "#" + cid)
 
 @app.route("/connections/disable", methods=["POST"])
@@ -1261,7 +1261,15 @@ def run_view(rid):
                            is_team=bool(ag and ag.get("members")),
                            annotations=store.annotations_for_run(rid),
                            suites=store.list_suites(_scope(), agent_id=r["agent_id"]),
-                           eval_run=ev, categories=_categories(), readonly=readonly)
+                           eval_run=ev, categories=_categories(), readonly=readonly,
+                           connect_error=(request.args.get("connect_error") or "")[:300])
+
+def _inline_connect_html(entry, agent_id, rid):
+    """The connect controls for one source (sign in, paste a key, or one click), rendered for the
+    card inside a conversation: connecting grants the tools to this agent and resumes this run."""
+    return render_template("_connact.html", e=entry, enabled=set(), keyed={entry["id"]: store.conn_key(entry["id"], current_owner())},
+                           oauth_status={}, cred={}, grant_to=agent_id, resume=rid, personal_mode=True,
+                           google_on=_google_connectors_on(), google_verified=_google_verified())
 
 def _fmt_event(e):
     d = e.get("detail") or {}
@@ -1400,6 +1408,14 @@ def run_events(rid):
                              "approve": url_for("approval", apid=a["id"]), "member": m["name"]})
     waiting_on = [dg["member"] for dg in delegations if dg["status"] in ("running", "awaiting_approval")]
     requests_ = _open_requests(rid, r["agent_id"])
+    if not _ro:                       # the owner connects right here: the same controls Connections uses
+        for q in requests_:
+            if q["fulfilled"]:
+                continue
+            for m in q["matches"]:
+                entry = cat_by_id(m["id"]) if m.get("id") else None
+                if entry and not m["connected"]:
+                    m["card"] = _inline_connect_html(entry, r["agent_id"], rid)
     return {"status": r["status"], "events": [_fmt_event(e) for e in audit],
             "pending": pend, "back": url_for("run_view", rid=rid), "delegations": delegations,
             "waiting_on": waiting_on, "team": len(delegations) > 0, "requests": requests_, "admin": is_admin(), "readonly": _ro,
@@ -1754,7 +1770,7 @@ def _grant_and_resume(sid, agent_id, rid):
     name = next((s_["name"] for s_ in cm().connected_servers() if s_["id"] == sid), sid)
     r = store.get_run(rid) if rid else None
     if r and r["agent_id"] == agent_id and r["status"] not in ("running", "awaiting_approval"):
-        text = "%s is now connected and its %d tool%s are granted to you. Continue the task." % (name, len(new_keys), "" if len(new_keys) == 1 else "s")
+        text = "%s is now connected and its %d tool%s %s granted to you. Continue the task." % (name, len(new_keys), "" if len(new_keys) == 1 else "s", "is" if len(new_keys) == 1 else "are")
         store.audit(rid, agent_id, "connection_granted", detail={"server": sid, "text": text, "tools": len(new_keys)})
         tr = r["transcript"]; tr.append({"role": "user", "content": text})
         store.update_run(rid, status="running", transcript=tr)
@@ -1901,6 +1917,14 @@ def _oauth_redirect(kind):
     base = os.environ.get("WARDEN_BASE_URL", "").rstrip("/")
     return (base + "/connections/oauth/mcp/callback") if base else url_for("oauth_mcp_callback", _external=True)
 
+def _connect_failed(msg, cid=None, resume=None):
+    """A connection attempt did not work. If it started from a conversation, go back there with
+    the reason on the card; otherwise to Connections, as before."""
+    r = store.get_run(resume) if resume else None
+    if r and (not AUTH_ON or (r.get("owner") or "") == current_owner()):
+        return redirect(url_for("run_view", rid=resume, connect_error=(msg or "")[:300]))
+    return redirect(url_for("connections", oauth_error=msg) + (("#" + cid) if cid else ""))
+
 def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=False):
     """Store the OAuth token, connect, and (if this came from a request) grant and resume.
     Personal connectors are stored under the signed-in person."""
@@ -1912,8 +1936,8 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=Fal
     missing = oauth.missing_scopes(token_json)
     if missing:
         short = entry["name"].split(" (")[0]
-        return redirect(url_for("connections", oauth_error="Google signed you in but did not grant %s access (%s was left unticked on the consent page). Connect again and tick the %s box."
-                                % (short, ", ".join(m.split("/")[-1] for m in missing), short)) + "#" + cid)
+        return _connect_failed("Google signed you in but did not grant %s access (%s was left unticked on the consent page). Connect again and tick the %s box."
+                               % (short, ", ".join(m.split("/")[-1] for m in missing), short), cid, resume)
     key = store.enable_connection(cid, "http", url=url, token=token_json, owner=owner,
                                   connected_by=owner, credential="signin", identity="")
     st = cm().connect_spec({"id": key, "transport": "http", "url": url, "token": token_json,
@@ -1925,7 +1949,7 @@ def _finish_connection(cid, token_json, grant_to=None, resume=None, personal=Fal
     if (st or {}).get("status") != "connected":
         # do not leave a half-connected personal source behind; the person can retry cleanly
         store.disable_connection(key); cm().disconnect(key)
-        return redirect(url_for("connections", oauth_error="Signed in, but %s's MCP server refused the session: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown")) + "#" + cid)
+        return _connect_failed("Signed in, but %s's MCP server refused the session: %s" % (entry["name"].split(" (")[0], (st or {}).get("error") or "unknown"), cid, resume)
     return redirect(url_for("connections", connected=cid) + "#" + cid)
 
 @app.route("/connections/oauth/start", methods=["POST"])
@@ -1941,7 +1965,7 @@ def oauth_start():
     if entry["provider"] == "google":
         gcid, gsec = _google_client()
         if not (gcid and gsec):
-            return redirect(url_for("connections", oauth_error="Google connectors are not set up yet. An admin configures the Google client under Settings.") + "#" + cid)
+            return _connect_failed("Google connectors are not set up yet. An admin configures the Google client under Catalog in the Admin console.", cid, ctx["resume"])
         level = "write" if request.form.get("scope") == "write" else "read"
         scopes = (entry.get("scopes") or {}).get(level) or []
         ctx["scopes"] = scopes
@@ -1952,7 +1976,7 @@ def oauth_start():
         meta = oauth.mcp_discover(entry["run"])
         client_id, client_secret = oauth.mcp_register(meta, _oauth_redirect("mcp"))
     except Exception as ex:
-        return redirect(url_for("connections", oauth_error="%s: %s" % (entry["name"], str(ex)[:200])) + "#" + cid)
+        return _connect_failed("%s: %s" % (entry["name"], str(ex)[:200]), cid, ctx["resume"])
     verifier, challenge = oauth.pkce()
     ctx.update({"meta": {k: meta.get(k) for k in ("authorization_endpoint", "token_endpoint", "scopes_supported")},
                 "client_id": client_id, "client_secret": client_secret, "verifier": verifier, "resource": entry["run"]})
@@ -1971,12 +1995,12 @@ def oauth_google_callback():
     if not ctx:
         return redirect(url_for("connections", oauth_error="The Google sign-in expired or did not match. Try again."))
     if request.args.get("error") or not request.args.get("code"):
-        return redirect(url_for("connections", oauth_error="Google did not grant access: %s" % (request.args.get("error") or "cancelled")) + "#" + ctx["cid"])
+        return _connect_failed("Google did not grant access: %s" % (request.args.get("error") or "cancelled"), ctx["cid"], ctx.get("resume"))
     try:
         gcid, gsec = _google_client()
         tok = oauth.google_exchange(gcid, gsec, _oauth_redirect("google"), request.args["code"], ctx.get("scopes") or [])
     except Exception as ex:
-        return redirect(url_for("connections", oauth_error="Could not exchange the Google code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
+        return _connect_failed("Could not exchange the Google code: %s" % str(ex)[:160], ctx["cid"], ctx.get("resume"))
     return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"), personal=ctx.get("personal"))
 
 @app.route("/connections/oauth/mcp/callback")
@@ -1985,12 +2009,12 @@ def oauth_mcp_callback():
     if not ctx:
         return redirect(url_for("connections", oauth_error="The sign-in expired or did not match. Try again."))
     if request.args.get("error") or not request.args.get("code"):
-        return redirect(url_for("connections", oauth_error="The provider did not grant access: %s" % (request.args.get("error") or "cancelled")) + "#" + ctx["cid"])
+        return _connect_failed("The provider did not grant access: %s" % (request.args.get("error") or "cancelled"), ctx["cid"], ctx.get("resume"))
     try:
         tok = oauth.mcp_exchange(ctx["meta"], ctx["client_id"], ctx.get("client_secret"), _oauth_redirect("mcp"),
                                  request.args["code"], ctx["verifier"], ctx["meta"].get("scopes_supported") or [], resource=ctx.get("resource"))
     except Exception as ex:
-        return redirect(url_for("connections", oauth_error="Could not exchange the authorization code: %s" % str(ex)[:160]) + "#" + ctx["cid"])
+        return _connect_failed("Could not exchange the authorization code: %s" % str(ex)[:160], ctx["cid"], ctx.get("resume"))
     return _finish_connection(ctx["cid"], tok, ctx.get("grant_to"), ctx.get("resume"), personal=ctx.get("personal"))
 
 @app.route("/connections/grant", methods=["POST"])

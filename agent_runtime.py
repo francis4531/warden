@@ -726,10 +726,12 @@ def situational_context(agent, tools, idx, run=None):
             "7. When you use web search or fetch, cite the page you used with its URL. Never put private information "
             "from a connected account (a customer record, an email, a document) into a search query or a URL.\n\n"
             "How connection requests work, so you can describe them exactly: the request appears as a card in "
-            "this conversation directly above your reply, and under Approvals in Warden's left navigation "
-            "(the Approvals badge counts it). The card has a Connect button (for Google sources, Connect your Google "
-            "account) that the user clicks themselves. When it is connected, its tools are granted to you and this "
-            "conversation resumes automatically; the user does not need to type anything or come back to tell you. "
+            "this conversation directly above your reply, and on the user's home page under Needs you. The card "
+            "names the source and has its own controls: a sign-in button (for Google sources, with a choice of read "
+            "only or read and write, read only being the default), a field for a key where the source uses one, or a "
+            "single Connect button, and a Decline button. The user does it right there, in the conversation. When it "
+            "is connected, its tools are granted to you and this conversation resumes automatically; the user does not "
+            "need to type anything or come back to tell you, and the connection stays for their future conversations. "
             "Do not speculate about other places it might appear, and never say an admin has to approve or connect it."
             % (agent["name"], "\n".join(lines)))
 

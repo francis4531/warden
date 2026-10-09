@@ -28,19 +28,8 @@
 .gsec[open]>summary .chev{transform:rotate(90deg)}
 .gsec .ledger{border:none;border-radius:0;border-top:1px solid var(--line)}
 .gsec .ev:last-child{border-bottom:none}
-.oauthform{display:flex;flex-direction:column;gap:8px;flex:1}
-.scopes{display:flex;gap:14px;font-size:12.5px;color:var(--mut)}
-.scopes label{display:flex;align-items:center;gap:5px;margin:0;font-weight:500;text-transform:none;letter-spacing:0}
-.scopes input{margin:0}
-.setup{flex-basis:100%;font-size:12px;color:var(--mut);margin-top:4px}
-.setup summary{cursor:pointer;color:var(--brass);list-style:none}
-.setup summary::-webkit-details-marker{display:none}
-.setup>div{margin-top:6px;line-height:1.55}
-.setup code{font-family:var(--mono);font-size:11px;background:var(--ink3);padding:1px 5px;border-radius:4px;word-break:break-all}
-.oauthst{font-size:12px;color:var(--low);flex:1}
-.act .hint{font-size:11.5px;color:var(--dim)}
-.act .hint a{color:var(--brass)}
 </style>
+{% include "_connact_css.html" %}
 
 <div class="page-h">
   <div class="eyebrow">Connections</div>
@@ -67,7 +56,7 @@
     <span class="aico" style="width:26px;height:26px;margin-right:12px">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
     <div class="r-main" style="flex:1">
       <div class="r-title">{{ q.agent.name }} needs: {{ q.need }}</div>
-      <div class="r-meta">{% for m in q.matches %}<a href="{{ m.url }}" style="color:var(--brass)">{{ m.name }}</a>{{ ' &middot; '|safe if not loop.last }}{% else %}no catalog match, try the registry search above with &ldquo;{{ q.keywords }}&rdquo;{% endfor %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}" style="color:var(--dim)">open conversation</a></div>
+      <div class="r-meta">{% for m in q.matches %}{{ m.name }}{{ ' &middot; '|safe if not loop.last }}{% else %}no catalog match, try the registry search above with &ldquo;{{ q.keywords }}&rdquo;{% endfor %} &middot; <a href="{{ url_for('run_view', rid=q.run_id) }}" style="color:var(--brass)">connect it in the conversation &rarr;</a></div>
     </div>
     <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request? The agent will be told and will continue with the tools it already has.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('connections') }}"><button class="btn ghost sm" style="color:var(--high)">Decline</button></form>
   </div>

@@ -95,10 +95,19 @@ server, and forbids the usual chatbot failure modes: claiming abilities it lacks
 abilities Warden can add, or telling the user to edit configuration files. When a task needs
 a capability the agent does not have, it calls `request_connection(need, keywords)`. Warden
 matches the request against the catalog (and the MCP Registry as a fallback), records it on
-the audit trail, and shows a card in the conversation. An admin connects the server from that
-card; its tools are granted to the requesting agent and the conversation resumes on its own.
-Open requests are listed on the Connections page. Requesting is a LOW-risk governed action,
-so a policy can gate or deny agents asking for capabilities.
+the audit trail, and shows a card in the conversation. The person whose agent asked connects
+right there, in the conversation, with the same controls the Connections page uses for that
+source: sign in (Google with a read-only or read-and-write choice, read-only by default; or
+the vendor's own sign-in), paste a key with a link to where it comes from, or one click for a
+source that needs nothing. Their own account, never an admin's: an admin looking in sees the
+card read-only. Connecting grants the tools to that agent and the conversation resumes on its
+own, in place; the connection stays for every later chat. If it fails (a refused sign-in, a
+bad key) the person lands back in the same conversation with the reason on the card, and can
+retry or decline right there ("No thanks, carry on without it": the agent is told, does what
+it can, and does not ask again). Open requests also show under Needs you on the home page and
+link to the conversation; the Connections page is for managing what is already connected.
+Requesting is a LOW-risk governed action, so a policy can gate or deny agents asking for
+capabilities.
 
 ## Teams
 
@@ -281,8 +290,8 @@ plaintext) and reused after every redeploy. No per-token environment variables.
   once and stored on the disk beside the data, and the admin Overview says so. Set it in
   production: a lost key means lost connections and a broken audit chain.
 - No account tokens in the environment, ever. GitHub, Gmail, Notion and the rest are
-  connected by each user, with their own account or key, from the Connections page or
-  from the card an agent raises when it needs something. Warden has no code path that
+  connected by each user, with their own account or key, in the conversation that needs it
+  (or from the Connections page). Warden has no code path that
   reads a service token from an environment variable.
 
 Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,
