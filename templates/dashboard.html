@@ -1,12 +1,46 @@
 {% extends "base.html" %}
 {% set active='home' %}
-{% block title %}My agents · Warden{% endblock %}
+{% block title %}Home · Warden{% endblock %}
 {% block body %}
 <style>
-.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
-.top h1{margin:0}
-.top .sub{margin:4px 0 0}
-.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.6fr);gap:12px;margin-bottom:22px}
+.hero{max-width:780px;margin:6px auto 30px;text-align:center}
+.hero h1{margin:0 0 8px}
+.hero .sub{margin:0 auto 20px;max-width:620px}
+.ask{text-align:left;border:1px solid var(--line2);border-radius:18px;background:var(--ink2);padding:14px 14px 10px;box-shadow:0 1px 0 color-mix(in srgb,var(--brass) 8%,transparent)}
+.ask:focus-within{border-color:var(--brass)}
+.ask textarea{display:block;width:100%;min-height:76px;max-height:260px;border:none;background:transparent;color:var(--txt);font-family:var(--body);font-size:16px;line-height:1.55;resize:none;padding:4px 6px;outline:none}
+.ask .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.ask .attach{font-size:12.5px;color:var(--mut);cursor:pointer;border:1px dashed var(--line2);border-radius:9px;padding:6px 11px;white-space:nowrap}
+.ask .attach:hover{color:var(--txt);border-color:var(--brass)}
+.ask .attach input{display:none}
+.ask .hint{font-size:12px;color:var(--dim);flex:1;min-width:160px}
+.ask .go{padding:10px 20px;font-size:14.5px;border-radius:11px;white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+.chips button{background:var(--ink2);border:1px solid var(--line);border-radius:20px;color:var(--mut);font-size:12.5px;padding:6px 13px;cursor:pointer}
+.chips button:hover{border-color:var(--brass);color:var(--txt)}
+.ctx{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--dim)}
+.ctx a{color:var(--mut)}
+.need{border:1px solid color-mix(in srgb,var(--med) 45%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--med) 5%,var(--ink2));margin-bottom:22px;overflow:hidden}
+.need .nh{padding:10px 16px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--med);border-bottom:1px solid var(--line)}
+.need .nr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 16px;border-top:1px solid var(--line)}
+.need .nr:first-of-type{border-top:none}
+.need .nr .aico{width:24px;height:24px}
+.need .nr .t{font-size:13.5px;font-weight:600}
+.need .nr .m{font-size:12px;color:var(--mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sec{display:flex;align-items:center;justify-content:space-between;margin:26px 0 10px}
+.sec .lbl{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.sec .hint,.sec a{font-size:12px;color:var(--dim)}
+.sec a.btn{color:inherit}
+.recent{border:1px solid var(--line);border-radius:12px;background:var(--ink2);overflow:hidden}
+.recent .rc{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:10px 16px;border-top:1px solid var(--line);font-size:13.5px}
+.recent .rc:first-child{border-top:none}
+.recent .rc a{color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent .rc a:hover{color:var(--brass)}
+.recent .rc .who{font-size:11.5px;color:var(--mut)}
+.recent .rc .when{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.empty{border:1px dashed var(--line2);border-radius:12px;padding:18px 20px;color:var(--mut);font-size:13.5px;line-height:1.6}
+.empty b{color:var(--txt);font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.6fr);gap:12px;margin-top:8px}
 @media (max-width:1000px){.tiles{grid-template-columns:1fr 1fr}}
 .tile{display:flex;flex-direction:column;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);text-decoration:none;color:inherit;min-height:92px}
 .tile .v{font-family:var(--disp);font-size:26px;font-weight:var(--dweight);line-height:1.1}
@@ -15,42 +49,40 @@
 .tile.warn .v{color:var(--med)}
 a.tile:hover{border-color:var(--brass)}
 .strip{display:flex;flex-direction:column;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
-.strip .sl{display:flex;justify-content:space-between;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.strip .sl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
 .strip .bars{display:flex;align-items:flex-end;gap:3px;height:42px;margin-top:8px}
 .strip .bar{flex:1;background:var(--brass);border-radius:3px 3px 0 0;min-width:4px}
 .strip .sx{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
-.need{border:1px solid color-mix(in srgb,var(--med) 45%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--med) 5%,var(--ink2));margin-bottom:22px;overflow:hidden}
-.need .nh{padding:10px 16px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--med);border-bottom:1px solid var(--line)}
-.need .nr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 16px;border-top:1px solid var(--line)}
-.need .nr:first-of-type{border-top:none}
-.need .nr .aico{width:24px;height:24px}
-.need .nr .t{font-size:13.5px;font-weight:600}
-.need .nr .m{font-size:12px;color:var(--mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sec{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
-.sec .lbl{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
-.sec .hint{font-size:12px;color:var(--dim)}
 </style>
 
-<div class="top">
-  <div><div class="eyebrow">My agents</div><h1>Your agents, and what they need from you.</h1><p class="sub">Open a row for its latest conversations; open a conversation for every step it took.</p></div>
-  <a class="btn brass" href="{{ url_for('new_agent') }}">+ New agent</a>
+<div class="hero">
+  <div class="eyebrow">Home</div>
+  <h1>What do you need done?</h1>
+  <p class="sub">Say it the way you would to a colleague. Warden researches the web, reads the files you attach, and uses the accounts you have connected. If it needs one you have not, it asks in the conversation. Anything that changes something waits for your approval.</p>
+  <form class="ask" id="ask" method="post" action="{{ url_for('chat_start') }}" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <textarea name="input" id="askmsg" placeholder="Summarize the contract I attach, or: what changed in the EU AI Act this month?" autofocus></textarea>
+    <div class="bar">
+      <label class="attach" title="PDF, Word, Excel, PowerPoint, images, text and CSV. Up to 5 files, 10 MB each."><input type="file" name="files" id="askfiles" multiple accept="{{ file_accept }}"><span id="asklab">Attach files</span></label>
+      <span class="hint" id="askhint">Enter to send &middot; Shift+Enter for a new line</span>
+      <button class="btn brass go" type="submit" id="askgo">Go &rarr;</button>
+    </div>
+  </form>
+  <div class="chips" id="chips">{% for c in chips %}<button type="button">{{ c }}</button>{% endfor %}</div>
+  <div class="ctx">
+    <span>{{ tool_count }} tool{{ '' if tool_count==1 else 's' }} from your connections</span>
+    <a href="{{ url_for('connections') }}">Connections</a>
+    <a href="{{ url_for('new_agent') }}">Build an agent for a job that repeats</a>
+  </div>
 </div>
 
 {% set nwait = pending|length + open_requests|length %}
-<div class="tiles">
-  <a class="tile {{ 'warn' if nwait }}" href="{{ url_for('approvals') }}"><span class="v">{{ nwait }}</span><span class="l">Needs you</span><span class="d">{{ pending|length }} on hold &middot; {{ open_requests|length }} connection{{ '' if open_requests|length==1 else 's' }} to make</span></a>
-  <div class="tile"><span class="v">{{ runs7 }}</span><span class="l">Conversations, 7 days</span><span class="d">across {{ agents|length }} agent{{ '' if agents|length==1 else 's' }}</span></div>
-  <div class="tile"><span class="v">${{ '%.2f'|format(spend7) }}</span><span class="l">Spend, 7 days</span><span class="d">{{ 'sandbox: nothing billed' if mode=='sandbox' else 'model usage at list price' }}</span></div>
-  {% with label='Activity' %}{% include '_daystrip.html' %}{% endwith %}
-</div>
-
 {% if nwait %}
 <div class="need">
   <div class="nh">Needs you</div>
   {% for q in open_requests %}
   <div class="nr"><span class="aico">{{ agent_icon(q.agent.icon, seed=q.agent.id)|safe }}</span>
-    <div style="min-width:0"><div class="t">{{ q.agent.name }} needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} connected</div><div class="m">{{ q.need }}</div></div>
-    <span style="display:flex;gap:6px"><a class="btn brass sm" href="{{ q.matches[0].url if q.matches else url_for('approvals') }}">Connect &rarr;</a>
+    <div style="min-width:0"><div class="t">{{ 'Your quick chat' if q.agent.scratch else q.agent.name }} needs {{ q.matches[0].name.split(' (')[0] if q.matches else q.keywords }} connected</div><div class="m">{{ q.need }}</div></div>
+    <span style="display:flex;gap:6px"><a class="btn brass sm" href="{{ url_for('run_view', rid=q.run_id) }}">Connect in the chat &rarr;</a>
     <form method="post" action="{{ url_for('decline_request') }}" style="margin:0" onsubmit="return confirm('Decline this request? The agent will be told and will continue with the tools it already has.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="run_id" value="{{ q.run_id }}"><input type="hidden" name="need" value="{{ q.need }}"><input type="hidden" name="back" value="{{ url_for('home') }}"><button class="btn ghost sm" style="color:var(--high)">Decline</button></form></span></div>
   {% endfor %}
   {% for ap in pending %}
@@ -61,58 +93,47 @@ a.tile:hover{border-color:var(--brass)}
 </div>
 {% endif %}
 
-{% if agents %}
-<div class="sec"><span class="lbl">Agents</span><span class="hint">sorted by what needs you, then last active</span></div>
-{% with show_owner=False, can_delete=True, auto_open=True %}{% include '_agent_table.html' %}{% endwith %}
-{% else %}
-<style>
-.guide{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-@media(max-width:900px){.guide{grid-template-columns:1fr}}
-.gstep{position:relative;border:1px solid var(--line);border-radius:14px;background:var(--ink2);padding:18px 18px 16px 18px}
-.gstep .n{width:26px;height:26px;border-radius:50%;background:var(--brass);color:var(--accent-ink);font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:10px}
-.gstep.done .n{background:var(--low)}
-.gstep h3{font-family:var(--disp);font-size:16px;font-weight:650;margin:0 0 6px}
-.gstep p{color:var(--mut);font-size:13px;line-height:1.55;margin:0 0 12px}
-.gstep .pc{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
-.gstep .pc form{margin:0}
-.gstep .row2{display:flex;align-items:center;gap:8px;font-size:13px}
-.gstep .row2 .ok{color:var(--low);font-weight:600}
-</style>
-<div class="card" style="padding:22px">
-  <div class="eyebrow" style="margin-bottom:6px">Start here</div>
-  <h2 style="font-family:var(--disp);font-size:20px;font-weight:650;margin:0 0 6px">Your first agent, in one sentence.</h2>
-  <p style="color:var(--mut);font-size:13.5px;margin:0 0 16px">Say what it should do. Warden drafts it, shows what it will ask you about first, and you start talking to it. Connect a source when it needs one.</p>
-  <div class="guide">
-    {% set anyp = personal|selectattr('connected')|list|length %}
-    <div class="gstep">
-      <div class="n">1</div>
-      <h3>Describe it</h3>
-      <p>"Handle refund requests from customers who were charged twice." That is enough to start.</p>
-      <a class="btn brass sm" href="{{ url_for('new_agent') }}">New agent &rarr;</a>
-    </div>
-    <div class="gstep {{ 'done' if anyp }}">
-      <div class="n">{{ '&#10003;'|safe if anyp else '2' }}</div>
-      <h3>Connect what it needs</h3>
-      <p>Every connection is yours: only your agents can use it, and you can disconnect any time.</p>
-      <div class="pc">
-        {% for p in personal[:3] %}
-        <div class="row2">
-          {% if p.connected %}<span class="ok">&#10003;</span> {{ p.entry.name.split(' (')[0] }} connected
-          {% elif google_on %}
-          <form method="post" action="{{ url_for('oauth_start') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="id" value="{{ p.entry.id }}"><input type="hidden" name="scope" value="read"><button class="btn sm">Connect {{ p.entry.name.split(' (')[0] }}</button></form>
-          {% else %}<span style="color:var(--dim)">{{ p.entry.name.split(' (')[0] }}: waiting for your admin to set up Google</span>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      <a href="{{ url_for('connections') }}" style="color:var(--brass);font-size:12.5px">All connections &rarr;</a>
-    </div>
-    <div class="gstep">
-      <div class="n">3</div>
-      <h3>Stay in control</h3>
-      <p>It works on its own for reads, pauses for your approval on anything that changes a system, and every step lands on the audit log.</p>
-      <a href="{{ url_for('architecture') }}" style="color:var(--brass);font-size:12.5px">How governance works &rarr;</a>
-    </div>
+{% if recent %}
+<div class="sec"><span class="lbl">Recent</span><span class="hint">quick chats and agent conversations</span></div>
+<div class="recent">
+  {% for r in recent %}
+  <div class="rc">
+    <a href="{{ url_for('run_view', rid=r.id) }}">{{ r.input[:120] }}{{ '…' if r.input|length>120 }}</a>
+    <span class="who">{{ r.agent_name }}</span>
+    <span class="pill {{ r.status }}">{{ r.status.replace('_',' ') }}</span>
+    <span class="when">{{ r.created_at[5:16].replace('T',' ') }}</span>
   </div>
+  {% endfor %}
 </div>
 {% endif %}
+
+<div class="sec"><span class="lbl">Your agents</span><a class="btn ghost sm" href="{{ url_for('new_agent') }}">+ New agent</a></div>
+{% if agents %}
+{% with show_owner=False, can_delete=True, auto_open=True %}{% include '_agent_table.html' %}{% endwith %}
+{% else %}
+<div class="empty"><b>No agents yet, and you do not need one to start.</b> Ask for something above. When a chat goes well and you want it done again, keep it as an agent: Warden writes the instructions from the conversation and keeps only the tools it used.</div>
+{% endif %}
+
+<div class="sec"><span class="lbl">This week</span></div>
+<div class="tiles">
+  <a class="tile {{ 'warn' if nwait }}" href="{{ url_for('approvals') }}"><span class="v">{{ nwait }}</span><span class="l">Needs you</span><span class="d">{{ pending|length }} on hold &middot; {{ open_requests|length }} connection{{ '' if open_requests|length==1 else 's' }} to make</span></a>
+  <div class="tile"><span class="v">{{ runs7 }}</span><span class="l">Conversations, 7 days</span><span class="d">quick chats and {{ agents|length }} agent{{ '' if agents|length==1 else 's' }}</span></div>
+  <div class="tile"><span class="v">${{ '%.2f'|format(spend7) }}</span><span class="l">Spend, 7 days</span><span class="d">{{ 'sandbox: nothing billed' if mode=='sandbox' else 'model usage at list price' }}</span></div>
+  {% with label='Activity' %}{% include '_daystrip.html' %}{% endwith %}
+</div>
+
+<script>
+(function(){
+  const form=document.getElementById('ask'), msg=document.getElementById('askmsg'), files=document.getElementById('askfiles'), lab=document.getElementById('asklab'), hint=document.getElementById('askhint');
+  document.getElementById('chips').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ msg.value=b.textContent; msg.focus(); grow(); } });
+  function grow(){ msg.style.height='auto'; msg.style.height=Math.min(260,Math.max(76,msg.scrollHeight))+'px'; }
+  msg.addEventListener('input',grow);
+  msg.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); form.requestSubmit(); } });
+  files.addEventListener('change',()=>{ lab.textContent=files.files.length?(files.files.length+' file'+(files.files.length>1?'s':'')+' attached'):'Attach files'; });
+  form.addEventListener('submit',e=>{
+    if(!msg.value.trim() && !files.files.length){ e.preventDefault(); hint.textContent='Say what you need, or attach a file.'; hint.style.color='var(--high)'; msg.focus(); return; }
+    document.getElementById('askgo').disabled=true;
+  });
+})();
+</script>
 {% endblock %}

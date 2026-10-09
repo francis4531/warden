@@ -37,6 +37,26 @@ the model, but the governance around letting an agent act.
   on the record), not separation of duties. Admins see pending actions and cannot act on
   them.
 
+## Chat first, agents second
+
+The home page opens on one box: "What do you need done?" Type it (and attach files if you
+like) and the conversation starts, with no agent to build and nothing to connect first. It
+runs on a hidden quick-chat assistant, one per person, that holds every tool the person has
+connected at that moment, plus built-in web search and fetch. In a quick chat Warden reads
+on its own and asks before it changes anything: any tool above LOW risk is held for
+approval (`rt.decide`, policy name "Quick chat: asks before changing anything"), on top of
+HIGH tools that always are, and a studio policy that explicitly allows or denies a tool
+still wins. The assistant is never listed with the person's agents, pickers or counts, but
+its conversations and spend appear in Recent and in the totals, and the admin's oversight
+(read-only, as ever) covers them.
+
+When a chat goes well, "Keep as an agent" turns it into one. Warden reads the conversation
+(file contents never included), drafts a name and generalized instructions, and keeps
+exactly the tools the chat used. Anything that changes something defaults to "ask me
+first", because in the chat each change was approved one at a time. The original task is
+waiting in the new agent's box so it can run again straight away. The audit log records
+how the agent came to be (`agent_created`, how `kept_from_chat`, with the source run).
+
 ## Two ways to build an agent
 
 The default (Build an agent) is one sentence: "Handle refund requests from customers who
@@ -75,10 +95,19 @@ server, and forbids the usual chatbot failure modes: claiming abilities it lacks
 abilities Warden can add, or telling the user to edit configuration files. When a task needs
 a capability the agent does not have, it calls `request_connection(need, keywords)`. Warden
 matches the request against the catalog (and the MCP Registry as a fallback), records it on
-the audit trail, and shows a card in the conversation. An admin connects the server from that
-card; its tools are granted to the requesting agent and the conversation resumes on its own.
-Open requests are listed on the Connections page. Requesting is a LOW-risk governed action,
-so a policy can gate or deny agents asking for capabilities.
+the audit trail, and shows a card in the conversation. The person whose agent asked connects
+right there, in the conversation, with the same controls the Connections page uses for that
+source: sign in (Google with a read-only or read-and-write choice, read-only by default; or
+the vendor's own sign-in), paste a key with a link to where it comes from, or one click for a
+source that needs nothing. Their own account, never an admin's: an admin looking in sees the
+card read-only. Connecting grants the tools to that agent and the conversation resumes on its
+own, in place; the connection stays for every later chat. If it fails (a refused sign-in, a
+bad key) the person lands back in the same conversation with the reason on the card, and can
+retry or decline right there ("No thanks, carry on without it": the agent is told, does what
+it can, and does not ask again). Open requests also show under Needs you on the home page and
+link to the conversation; the Connections page is for managing what is already connected.
+Requesting is a LOW-risk governed action, so a policy can gate or deny agents asking for
+capabilities.
 
 ## Teams
 
@@ -123,7 +152,7 @@ category, and any conversation becomes a case with one click.
 
 An admin has two jobs, so Warden gives them two places. A switch at the top of the sidebar
 picks between the Admin console (Overview, Users, Catalog, Policies, Approvals, Audit log,
-Observability, Architecture: the studio as a whole) and My agents (Dashboard, Build an
+Observability, Architecture: the studio as a whole) and My agents (Home, Build an
 agent, Connections, Approvals, Evals: exactly what every user gets, scoped to the admin's
 own agents and accounts). Permissions never depend on the switch; only what a page shows.
 Users never see it.
@@ -198,6 +227,17 @@ the whole governance flow works offline. For live model calls:
 
 `/privacy` is a public page that says what the studio collects, why, where it goes, how long it is kept, and how to remove it. It is written to satisfy Google's OAuth branding review: link it from your OAuth consent screen as the privacy policy URL, set the home page URL to the studio's base URL (the home page links to `/privacy`), and verify the domain in Google Search Console. `WARDEN_PRIVACY_CONTACT` sets the contact shown on the page; it defaults to the first admin email. Disconnecting a Google connection revokes the token at Google as well as deleting the studio's copy.
 
+## Files in a conversation
+
+Users can attach files when they start a conversation and in any reply: PDFs and images go
+to the model as they are; Word, Excel and PowerPoint files and text, CSV, JSON and similar
+files are read into text (Word, Excel and PowerPoint with the standard library only, with
+bounded reads, so no new dependency and no XML parser to abuse). Up to 5 files of 10 MB per
+message, 20 MB together, 150,000 characters of text each, 2,000 rows per sheet. A file that
+cannot be read is skipped and the agent is told, so it can say so. Every file's text is
+framed as data, not instructions. Files are stored with the conversation and removed with
+the agent; the audit log keeps file names, never contents.
+
 ## Web access without a connection
 
 Every agent can search the public web and read pages with nothing to connect. Both run on
@@ -250,8 +290,8 @@ plaintext) and reused after every redeploy. No per-token environment variables.
   once and stored on the disk beside the data, and the admin Overview says so. Set it in
   production: a lost key means lost connections and a broken audit chain.
 - No account tokens in the environment, ever. GitHub, Gmail, Notion and the rest are
-  connected by each user, with their own account or key, from the Connections page or
-  from the card an agent raises when it needs something. Warden has no code path that
+  connected by each user, with their own account or key, in the conversation that needs it
+  (or from the Connections page). Warden has no code path that
   reads a service token from an environment variable.
 
 Example env for the disk setup: `ANTHROPIC_API_KEY=...`, `WARDEN_MODEL=claude-sonnet-4-6`,

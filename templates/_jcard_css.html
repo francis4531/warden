@@ -1,0 +1,35 @@
+<style>
+/* the card */
+.jcard{display:none;max-width:760px;margin:22px auto 0;border:1px solid var(--line);border-radius:16px;background:var(--ink2);overflow:hidden}
+.jcard .jh{display:flex;align-items:center;gap:14px;padding:20px 22px 14px}
+.jcard .jh .aico{width:44px;height:44px;flex:none}
+.jcard .jh .nm{font-family:var(--disp);font-size:20px;font-weight:700;border:none;background:transparent;color:var(--txt);width:100%;padding:2px 4px;border-radius:6px}
+.jcard .jh .nm:focus,.jcard .sum:focus{outline:none;background:var(--ink);box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 35%,transparent)}
+.jcard .sum{display:block;width:100%;border:none;background:transparent;color:var(--mut);font-size:14px;line-height:1.5;padding:2px 4px;border-radius:6px;resize:none;min-height:24px;font-family:var(--body)}
+.jcard .jl{padding:0 22px}
+.jrow{display:grid;grid-template-columns:130px 1fr;gap:14px;padding:13px 0;border-top:1px solid var(--line);font-size:13.5px}
+.jrow .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding-top:3px}
+.jrow .k.a{color:var(--low)}.jrow .k.g{color:var(--high)}
+.jrow .v{color:var(--txt);line-height:1.6}
+.jrow .v .t{display:inline-block;padding:1px 0;margin-right:10px;white-space:nowrap}
+.jrow .v .t small{color:var(--dim)}
+.jrow .src{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jrow .src .ok{color:var(--low)}
+.may{display:none;padding:4px 22px 6px;border-top:1px solid var(--line)}
+.may .mrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.may .mrow:first-of-type{border-top:none}
+.may .mrow .mn{font-size:13.5px}
+.may .mrow .mn small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg label{padding:6px 11px;font-size:12px;cursor:pointer;color:var(--mut);border-left:1px solid var(--line2);display:flex;align-items:center;gap:0}
+.seg label:first-child{border-left:none}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg label:has(input:checked){background:var(--brass);color:var(--accent-ink,#fff)}
+.seg label.never:has(input:checked){background:var(--high);color:#fff}
+.jact{display:flex;gap:10px;align-items:center;padding:16px 22px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
+.jact .first{flex:1;min-width:240px}
+.jact .first input{font-size:13.5px}
+.jact .q{color:var(--brass);font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
+.jact .q:hover{text-decoration:underline}
+.jnote{padding:10px 22px;background:color-mix(in srgb,var(--med) 8%,var(--ink2));color:var(--mut);font-size:12.5px;border-top:1px solid var(--line)}
+</style>
