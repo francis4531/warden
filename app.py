@@ -21,7 +21,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.31.1"
+WARDEN_VERSION = "0.32.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -1785,7 +1785,37 @@ def studio():
     by_owner = {}
     for a in _agent_rows(None):
         by_owner.setdefault(a["owner"], []).append(a)
-    return render_template("studio.html", users=rows, totals=totals, by_owner=by_owner)
+    return render_template("studio.html", users=rows, totals=totals, by_owner=by_owner,
+                           domains=_domain_summary(rows))
+
+# Mail providers anyone can sign up for: shown as "personal email" in the domain view, because
+# a gmail.com address says nothing about which company the user works for.
+_FREE_MAIL = {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com",
+              "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me",
+              "protonmail.com", "pm.me", "gmx.com", "zoho.com", "fastmail.com", "hey.com"}
+
+def _domain_summary(rows):
+    """Group the studio's users by the domain of their email address: how many users, agents and
+    conversations each domain accounts for, and when it was last active. Built from the same rows
+    as the Users page, so it covers exactly the users Warden knows about (anyone who has created an
+    agent, chatted, or connected a source). Visitors who only open a page are not recorded."""
+    by = {}
+    for p in rows:
+        em = (p.get("email") or "").strip().lower()
+        if "@" not in em:
+            continue                                  # "unowned" / "local" are not people to count
+        dom = em.rsplit("@", 1)[1]
+        d = by.setdefault(dom, {"domain": dom, "users": [], "agents": 0, "runs": 0, "last": None,
+                                "personal": dom in _FREE_MAIL, "admins": 0})
+        d["users"].append(em)
+        d["agents"] += len(p["agents"]); d["runs"] += p["runs"]
+        d["admins"] += 1 if p.get("admin") else 0
+        if p["last"] and (not d["last"] or p["last"] > d["last"]):
+            d["last"] = p["last"]
+    out = sorted(by.values(), key=lambda d: (len(d["users"]), d["last"] or ""), reverse=True)
+    for d in out:
+        d["users"].sort()
+    return out
 
 def _admin_health():
     """The admin's checklist: what is set up, what is broken, what needs them."""

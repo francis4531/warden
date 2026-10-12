@@ -43,6 +43,38 @@
   <div class="card k"><span class="kv">${{ '%.2f'|format(totals.today) }}</span><span class="kl">Spend today</span><span class="kd">{% if totals.daily_cap %}of a ${{ '%.2f'|format(totals.daily_cap) }} daily cap &middot; {% endif %}${{ '%.2f'|format(totals.spend) }} all time</span></div>
 </div>
 
+{% if domains %}
+<div class="card" style="margin-bottom:22px;padding:16px 18px" id="domains">
+  <div class="eyebrow" style="margin-bottom:4px">By email domain</div>
+  <div style="font-size:12.5px;color:var(--mut);margin-bottom:10px">Where your users come from, by the domain of the address they sign in with. It counts users who have created an agent, chatted, or connected a source. Anyone who only opens a page is not recorded.</div>
+  <table class="dom">
+    <thead><tr><th>domain</th><th class="r">users</th><th class="r hide-sm">agents</th><th class="r hide-sm">conversations</th><th>last activity</th></tr></thead>
+    <tbody>
+    {% for d in domains %}
+    <tr>
+      <td><b>{{ d.domain }}</b>{% if d.personal %}<span class="tag">personal email</span>{% endif %}
+        <div class="who2">{{ d.users|join(', ') }}</div></td>
+      <td class="r n">{{ d.users|length }}</td>
+      <td class="r n hide-sm">{{ d.agents }}</td>
+      <td class="r n hide-sm">{{ d.runs }}</td>
+      <td class="n">{% if d.last %}{{ d.last[:10] }}{% else %}none yet{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<style>
+table.dom{width:100%;border-collapse:collapse;font-size:13px}
+table.dom th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:500;text-align:left;padding:0 8px 8px 0}
+table.dom td{padding:9px 8px 9px 0;border-top:1px solid var(--line);vertical-align:top}
+table.dom .r{text-align:right;padding-right:16px}
+table.dom .n{font-family:var(--mono);font-size:12.5px}
+table.dom .who2{font-size:11.5px;color:var(--dim);margin-top:3px;overflow-wrap:anywhere}
+table.dom td:first-child{overflow-wrap:anywhere}
+@media (max-width:600px){table.dom .hide-sm{display:none}table.dom .r{padding-right:10px}}
+</style>
+{% endif %}
+
 {% if users %}
 <div class="hdr"><span>user</span><span>agents</span><span>conversations</span><span>active</span><span>on hold</span><span>spend</span><span></span></div>
 {% for p in users %}
