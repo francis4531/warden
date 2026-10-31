@@ -167,6 +167,14 @@ event to that run's audit trail, visible to the owner. The console's Approvals p
 read-only too: what is waiting on users, and which high-risk actions their owners have yet
 to decide.
 
+The top of the Users page has a "By email domain" table: which domains your users sign in
+from (a company's domain, or a personal provider such as gmail.com, which is labelled), with
+users, agents, conversations and last activity for each. It counts the users Warden knows
+about, meaning anyone who has created an agent, chatted, or connected a source. Warden does
+not track page visits, so a visitor who only opens a page leaves no record. For where
+visitors to your sites come from, add a web analytics script (Cloudflare Web Analytics or
+Plausible) to each site.
+
 ## Every connection is someone's own
 
 The studio provides no connections. Every connection, admins included, belongs to the user
