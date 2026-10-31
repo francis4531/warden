@@ -1,6 +1,6 @@
 """Model selection and cost, loop limits, telemetry scrubbing, sandbox labelling."""
 import json, sqlite3
-from conftest import login, K
+from conftest import login, K, ADMIN
 
 
 # ---- 17. model and cost ----
@@ -80,13 +80,14 @@ def test_max_tokens_is_continued_not_final(warden, monkeypatch):
     assert [e for e in ev if e["kind"] == "final"][-1]["detail"]["text"] == "second half"
 
 
-def test_orphaned_runs_are_failed_at_boot(warden):
+def test_interrupted_eval_runs_are_failed_at_boot(warden):
+    """Evaluation runs are not resumed (their suite runner is gone); see test_resume.py."""
     store, rt = warden["store"], warden["rt"]
     aid = store.create_agent("O", "x", rt.MODEL_DEFAULT, [], owner="o@x.com")
-    rid = store.create_run(aid, "hang")
+    rid = store.create_run(aid, "hang", eval_run_id="ev_x")
     store.update_run(rid, status="running")
-    ids = store.fail_orphaned_runs()
-    assert rid in ids and store.get_run(rid)["status"] == "error"
+    resumed, failed = rt.recover_interrupted(background=False)
+    assert rid in failed and rid not in resumed and store.get_run(rid)["status"] == "error"
     assert any(e["kind"] == "error" and "restarted" in e["detail"]["text"] for e in store.audit_for_run(rid))
 
 
@@ -260,3 +261,67 @@ def test_refusal_is_reported_and_the_conversation_can_continue(warden, monkeypat
     store.update_run(rid, status="running", transcript=tr)
     r = rt.advance(rid)
     assert r["status"] == "done" and [e for e in store.audit_for_run(rid) if e["kind"] == "final"][-1]["detail"]["text"] == "happy to help"
+
+
+# ---- web tools refused by the provider ----
+def _web_client(monkeypatch, rt, refuse=True):
+    """A fake client that refuses any request carrying the built-in web tools."""
+    import anthropic, types
+    sent = []
+    def create(**kw):
+        names = [t.get("name") for t in kw.get("tools") or []]
+        sent.append({"web": "web_search" in names, "system": " ".join(b["text"] for b in kw["system"])})
+        if refuse and "web_search" in names:
+            raise _Busy(400).with_message("web_search is not enabled for this organization")
+        u = types.SimpleNamespace(input_tokens=1, output_tokens=1, server_tool_use=None,
+                                  cache_creation_input_tokens=0, cache_read_input_tokens=0)
+        return types.SimpleNamespace(stop_reason="end_turn", stop_details=None, usage=u,
+                                     content=[types.SimpleNamespace(type="text", text="answered", citations=None)])
+    class Fake:
+        def __init__(self, **kw): self.messages = types.SimpleNamespace(create=create)
+    monkeypatch.setattr(rt, "SANDBOX", False)
+    monkeypatch.setattr(anthropic, "Anthropic", Fake)
+    monkeypatch.setattr(rt.time, "sleep", lambda s: None)
+    return sent
+
+def _with_message(self, msg):
+    self.args = (msg,); return self
+_Busy.with_message = _with_message
+
+
+def test_web_refusal_reruns_the_step_without_web_and_flags_the_admin(warden, monkeypatch, client):
+    store, rt = warden["store"], warden["rt"]
+    store.set_setting("web_refused", None)
+    sent = _web_client(monkeypatch, rt)
+    aid = store.create_agent("W", "x", rt.MODEL_DEFAULT, [], owner="w@x.com")
+    rid = store.create_run(aid, "what is new on the web")
+    r = rt.advance(rid)
+    ev = store.audit_for_run(rid)
+    assert r["status"] == "done" and [e for e in ev if e["kind"] == "final"][-1]["detail"]["text"] == "answered"
+    assert [x["web"] for x in sent] == [True, False], "refused once, then the same step ran without web tools"
+    assert "unavailable for this step" in sent[1]["system"]
+    assert [e["kind"] for e in ev].count("web_unavailable") == 1
+    flag = rt.web_refusal()
+    assert flag and "not enabled" in flag["message"]
+    # later steps skip the web tools for a while instead of failing first every time
+    tr = r["transcript"]; tr.append({"role": "user", "content": "and again"})
+    store.update_run(rid, status="running", transcript=tr); rt.advance(rid)
+    assert [x["web"] for x in sent] == [True, False, False]
+    assert [e["kind"] for e in store.audit_for_run(rid)].count("web_unavailable") == 1, "flagged once per conversation"
+    # the admin sees it on the Overview
+    login(client, ADMIN, hat="admin")
+    page = client.get("/app").get_data(as_text=True)
+    assert "Model provider refused the web tools" in page and "not enabled" in page
+    # once the recheck window passes and the provider takes them, the flag clears itself
+    sent2 = _web_client(monkeypatch, rt, refuse=False)
+    monkeypatch.setattr(rt, "WEB_REFUSAL_RECHECK_SECONDS", 0)
+    rt._call_model("s", [{"role": "user", "content": "hi"}], [])
+    assert sent2[0]["web"] and rt.web_refusal() is None
+
+
+def test_admin_saving_web_access_clears_the_refusal_flag(warden, client):
+    store, rt = warden["store"], warden["rt"]
+    store.set_setting("web_refused", json.dumps({"ts": 1, "at": "2026-10-31T10:00", "message": "no"}))
+    login(client, ADMIN, hat="admin")
+    client.post("/catalog/web", data={"search": "1", "fetch": "1", "max_uses": "5"})
+    assert rt.web_refusal() is None
