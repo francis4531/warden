@@ -65,7 +65,7 @@ def facts(run_id):
                 f["cost"] += d.get("cost", 0) or 0
             elif k == "delegation_result":
                 f["pool"].append(d.get("result") or "")
-            if rid == run_id and k in ("final", "error", "budget_stop"):
+            if rid == run_id and k in ("final", "error", "budget_stop", "refused"):
                 f["ended"] = k
                 if k == "final": f["final"] = d.get("text", "")
     f["cost"] = round(f["cost"], 6)

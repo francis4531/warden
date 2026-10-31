@@ -256,7 +256,12 @@ run's cost, and a run's budget and call ceiling still apply. Under Catalog, an a
 switches search and page reading on or off for the whole studio, may allow only named
 domains or block named domains, and sets the most searches per model turn. Web search must
 be enabled for the organization that owns `ANTHROPIC_API_KEY` (Anthropic Console, privacy
-settings); if it is not, a run fails with a message that says so. Two limits to know: the
+settings). If the provider refuses the web tools, the step is run again without them (the
+agent is told web access is unavailable, and the conversation shows it once), and the admin
+Overview and the Catalog web section flag it with the provider's message. Later steps leave
+the web tools out and try them again every `WARDEN_WEB_REFUSAL_RECHECK_SECONDS` (default
+900); the flag clears on the first step the provider accepts them, or when an admin saves
+web access. Two limits to know: the
 studio's own gate does not sit between the agent and the page (the switches, domain lists
 and audit log are the controls), and sandbox mode has no model, so web access is live only.
 
@@ -360,11 +365,29 @@ change.
 
 A conversation may make at most 12 model calls per turn and `WARDEN_MAX_CALLS_PER_RUN`
 (default 60) across all of its turns and resumes. A model call times out after
-`WARDEN_MODEL_TIMEOUT` seconds (default 120). When the transcript grows past
+`WARDEN_MODEL_TIMEOUT` seconds (default 120). An overloaded (529), rate-limited (429),
+timed-out or 5xx model call is retried with growing waits (about 2s up to 16s, or the
+server's `retry-after`) for up to `WARDEN_MODEL_RETRY_SECONDS` of waiting in total
+(default 60); each wait shows in the conversation. Other 4xx errors are not retried.
+When the transcript grows past
 `WARDEN_CONTEXT_TOKENS` (default 150,000, estimated), the oldest exchanges are dropped
 in pairs and the first message says so. A reply cut off at the output limit is asked to
-continue rather than shown as final. Runs still marked running when Warden restarts are
-marked interrupted at boot and can be continued with a message.
+continue rather than shown as final. If it was cut off while writing a tool call, no tool
+in that reply runs and the agent is asked to make the call again with a shorter input;
+after `MAX_CUT_CALLS` (2) such retries in a row the run stops with an error. When the
+model declines a request (stop reason `refusal`), the conversation shows that it declined
+and the category, the refused turn is left out of the transcript, and the user can
+rephrase and carry on.
+
+Conversations a restart or deploy left running are picked up again at boot where their
+transcript stopped. A tool call that was in progress runs again only if it is a read (or a
+hand-off, which finds its member run already at work); any other call is never repeated:
+if the audit log shows it finished, its recorded result is handed back, otherwise the agent
+is told it was interrupted and may or may not have happened. A team member is resumed by
+its lead's turn. Evaluation runs, and a conversation already resumed `MAX_RESUMES` (2)
+times since the user last spoke, are marked interrupted instead and can be continued with
+a message. This assumes one Warden process per data disk, which is how Render runs a
+service with a persistent disk (the old instance stops before the new one starts).
 
 ## Audit chain
 

@@ -283,6 +283,8 @@ function renderChat(events){
       flush(); html+=`<div class="msg agent"><div class="who">${'{{ agent.name }}'}</div><div class="md">${md(e.text)}</div></div>`;
     } else if(e.kind==='error'){
       flush(); html+=`<div class="msg agent err"><div class="who">error</div>${esc(e.text)}</div>`;
+    } else if(e.kind==='refused'){
+      flush(); html+=`<div class="msg agent err"><div class="who">declined</div>${esc(e.text)}</div>`;
     } else if(e.kind==='budget_stop'){
       flush(); html+=`<div class="msg budget"><div class="who">&#9209; ${e.scope==='team'?'team budget reached':'budget reached'}</div>${esc(e.text)}</div>`;
     } else if(e.kind==='tool_result' || e.kind==='tool_result_gated'){
@@ -300,7 +302,7 @@ function renderChat(events){
       chips+=`<span class="chip" style="border-color:color-mix(in srgb,var(--high) 45%,var(--line))">${esc(e.tool)} ${stamp(e.risk)} <span style="color:var(--high)">not run: arguments changed after approval</span></span>`;
     } else if(e.kind==='web_search' || e.kind==='web_fetch'){
       chips+=`<span class="chip" title="${esc((e.sources||[]).join('\n'))}"><b style="color:var(--txt)">web</b> <span class="r">${esc(e.text)}</span></span>`;
-    } else if(e.kind==='context_trimmed' || e.kind==='continued'){
+    } else if(e.kind==='context_trimmed' || e.kind==='continued' || e.kind==='model_retry' || e.kind==='web_unavailable' || e.kind==='resumed'){
       chips+=`<span class="chip" style="color:var(--dim)">${esc(e.text)}</span>`;
     } else if(e.kind==='admin_view'){
       chips+=`<span class="chip" style="color:var(--dim)">&#128065; ${esc(e.text)}</span>`;

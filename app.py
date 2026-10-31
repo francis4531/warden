@@ -21,7 +21,7 @@ import icons
 import evals
 import oauth
 
-WARDEN_VERSION = "0.32.0"
+WARDEN_VERSION = "0.33.0"
 
 def _build_info():
     """Increment a build number on each new deploy. Identity comes from RENDER_GIT_COMMIT
@@ -79,9 +79,10 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SECURE=os.environ.get("WARDEN_INSECURE_COOKIES", "") != "1" and bool(os.environ.get("RENDER") or os.environ.get("WARDEN_HTTPS", "")),
                   PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=14))
 store.init()
-_orphans = store.fail_orphaned_runs()
-if _orphans:
-    logging.getLogger("warden").warning("%d run(s) were still 'running' at boot and were marked as interrupted", len(_orphans))
+_resumed, _orphans = rt.recover_interrupted()
+if _resumed or _orphans:
+    logging.getLogger("warden").warning("at boot: %d interrupted conversation(s) resumed, %d marked interrupted",
+                                        len(_resumed), len(_orphans))
 if not vault.from_env():
     logging.getLogger("warden").warning("WARDEN_SECRET_KEY is not set; using a generated key in the data dir. "
                                         "Set it in production so sessions and secrets survive a disk change.")
@@ -692,7 +693,7 @@ def catalog():
     return render_template("catalog.html", **_settings_ctx(), catalog=merged_catalog(), users_connected=users_connected, hidden=hidden_catalog(),
                            mlabel=cat.MAINTAINER_LABEL, slabel=cat.STATUS_LABEL, tools=tools,
                            discover=discover, discover_q=dq, google_on=_google_connectors_on(), google_verified=_google_verified(),
-                           web=web, web_live=(rt.mode() == "live"))
+                           web=web, web_live=(rt.mode() == "live"), web_refused=rt.web_refusal() if rt.web_tools_param() else None)
 
 @app.route("/connections/enable", methods=["POST"])
 def enable_connection():
@@ -796,6 +797,7 @@ def catalog_web():
            "allowed_domains": _domains(f.get("allowed")), "blocked_domains": _domains(f.get("blocked")),
            "max_uses": f.get("max_uses") or 5}
     store.set_setting("web_tools", _json.dumps(new))
+    store.set_setting("web_refused", None)      # the next step tries the web tools again
     store.audit(None, None, "web_settings_changed", detail={**rt.web_settings(), "by": current_owner(),
                 "text": "web access: search %s, fetch %s%s" % ("on" if new["search"] else "off", "on" if new["fetch"] else "off",
                          (", only %d allowed domain%s" % (len(new["allowed_domains"]), "" if len(new["allowed_domains"]) == 1 else "s")) if new["allowed_domains"] else
@@ -1276,7 +1278,7 @@ def _fmt_event(e):
     kind = e["kind"]
     if kind in ("run_started", "user_message"):
         text = d.get("input") or d.get("text") or ""
-    elif kind in ("final", "thought", "error", "budget_stop"):
+    elif kind in ("final", "thought", "error", "budget_stop", "refused", "model_retry", "web_unavailable", "resumed"):
         text = d.get("text", "")
     elif kind in ("delegation", "delegation_result"):
         text = d.get("task") or d.get("result") or ""
@@ -1850,6 +1852,13 @@ def _admin_health():
         checks.append({"state": "bad", "title": "Audit chain broken", "text": "at %s. Investigate before trusting the log." % (integ.get("broken_at") or "unknown"), "href": url_for("audit"), "cta": "Audit log"})
     else:
         checks.append({"state": "ok", "title": "Audit chain", "text": "%d events verified" % (integ.get("total") or 0), "href": url_for("audit"), "cta": "Audit log"})
+    wr = rt.web_refusal() if rt.web_tools_param() else None
+    if wr:
+        checks.append({"state": "bad", "title": "Model provider refused the web tools",
+                       "text": "Since %s UTC, steps run without web search and page reading. Provider said: %s Enable web search "
+                               "for the organization that owns ANTHROPIC_API_KEY (Anthropic Console, privacy settings), or "
+                               "switch web access off." % ((wr.get("at") or "")[:16].replace("T", " "), (wr.get("message") or "")[:200]),
+                       "href": url_for("catalog") + "#web", "cta": "Web access"})
     if not h["policies"]:
         checks.append({"state": "todo", "title": "No policies yet", "text": "Only the risk tiers apply. Add spend caps, rate limits, time windows or per-agent rules.", "href": url_for("policies"), "cta": "Add a policy"})
     else:

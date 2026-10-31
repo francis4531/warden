@@ -244,18 +244,10 @@ def root_run(run):
         run = p
     return run
 
-def fail_orphaned_runs():
-    """At boot, any run still marked running belonged to a process that is gone (restart,
-    deploy, crash). Mark it so it does not sit as 'running' forever. Returns the run ids."""
-    c = _conn()
-    rows = c.execute("SELECT id, agent_id FROM runs WHERE status='running'").fetchall()
-    c.execute("UPDATE runs SET status='error' WHERE status='running'")
-    c.commit(); c.close()
-    ids = [r["id"] for r in rows]
-    for r in rows:
-        audit(r["id"], r["agent_id"], "error", detail={"text": "Warden restarted while this conversation was running. "
-                                                      "Send a message to continue it."})
-    return ids
+def runs_with_status(status):
+    """Runs in one status, oldest first (a lead before the members it started)."""
+    c = _conn(); rows = c.execute("SELECT id FROM runs WHERE status=? ORDER BY created_at", (status,)).fetchall(); c.close()
+    return [get_run(r["id"]) for r in rows]
 
 def update_run(rid, status=None, transcript=None):
     c = _conn()
