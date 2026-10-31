@@ -65,7 +65,7 @@ def test_web_calls_are_audited_priced_and_pause_turn_continues(warden, monkeypat
     second = {"stop_reason": "end_turn", "model": "claude-sonnet-4-6", "latency_ms": 1,
               "usage": {"input_tokens": 0, "output_tokens": 0},
               "content": [{"type": "text", "text": "Here is the comparison, per https://a.example/f"}]}
-    def fake(system, messages, tools, model=None):
+    def fake(system, messages, tools, model=None, **kw):
         calls.append([m["role"] for m in messages])
         return first if len(calls) == 1 else second
     monkeypatch.setattr(rt, "_call_model", fake)

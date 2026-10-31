@@ -1276,7 +1276,7 @@ def _fmt_event(e):
     kind = e["kind"]
     if kind in ("run_started", "user_message"):
         text = d.get("input") or d.get("text") or ""
-    elif kind in ("final", "thought", "error", "budget_stop"):
+    elif kind in ("final", "thought", "error", "budget_stop", "refused", "model_retry"):
         text = d.get("text", "")
     elif kind in ("delegation", "delegation_result"):
         text = d.get("task") or d.get("result") or ""

@@ -6,7 +6,7 @@ connection manager. Governance is enforced here: each tool's risk is resolved
 for human approval. Live model calls when ANTHROPIC_API_KEY is set; otherwise a
 deterministic sandbox planner drives the same flow offline.
 """
-import os, json, re, time
+import os, json, random, re, time
 import connection_manager as cmod
 import governance as gov
 import policy
@@ -433,16 +433,37 @@ def _repair(messages):
 _TRANSIENT = ("rate", "overloaded", "timeout", "timedout", "internal", "unavailable", "connection")
 def _is_transient(ex):
     code = getattr(ex, "status_code", None)
-    if code in (408, 409, 429, 500, 502, 503, 504, 529):
-        return True
+    if code is not None:
+        # an HTTP answer says for itself whether it is worth retrying; matching words in the
+        # message would retry a 400 whose text happens to contain "rate" or "internal"
+        return code in (408, 409, 429, 500, 502, 503, 504, 529)
     return any(w in (type(ex).__name__ + " " + str(ex)).lower() for w in _TRANSIENT)
+
+# Overloaded (529) and rate-limited (429) spells usually last tens of seconds, so a run waits
+# up to this long in total between attempts before it gives up and reports the error.
+MODEL_RETRY_SECONDS = float(os.environ.get("WARDEN_MODEL_RETRY_SECONDS", "60"))
+
+def _retry_delay(ex, attempt):
+    """Seconds to wait before the next attempt: the server's retry-after when it sends one,
+    else exponential backoff (2, 4, 8, 16, 16 ...) with jitter so parallel runs spread out."""
+    try:
+        ra = float(ex.response.headers.get("retry-after"))
+        if ra >= 0:
+            return min(ra, 30.0)
+    except Exception:
+        pass
+    return min(2.0 * 2 ** attempt, 16.0) * random.uniform(0.8, 1.2)
 
 def _friendly_error(ex):
     code = getattr(ex, "status_code", None)
     if code == 401 or "authentication" in str(ex).lower():
         return "The model rejected the API key. Check ANTHROPIC_API_KEY."
     if code == 429 or "rate" in str(ex).lower():
-        return "The model is rate-limited right now. Try again in a moment."
+        return ("The model is rate-limited right now. Warden kept retrying for about a minute without success. "
+                "Try again in a few minutes.")
+    if code == 529 or "overloaded" in str(ex).lower():
+        return ("The model is overloaded right now. Warden kept retrying for about a minute without success. "
+                "Try again in a few minutes.")
     if code and 500 <= code < 600:
         return "The model service had a temporary error. Try again in a moment."
     if code == 400:
@@ -461,7 +482,9 @@ def _friendly_error(ex):
 
 MODEL_TIMEOUT = float(os.environ.get("WARDEN_MODEL_TIMEOUT", "120"))   # seconds per model call
 
-def _call_model(system, messages, tools, model=None):
+def _call_model(system, messages, tools, model=None, on_retry=None):
+    """One model turn. Transient failures are retried for up to MODEL_RETRY_SECONDS of waiting;
+    on_retry(attempt, wait_seconds, ex) is told before each wait."""
     t0 = time.time()
     model = model or MODEL_DEFAULT
     if SANDBOX:
@@ -482,8 +505,8 @@ def _call_model(system, messages, tools, model=None):
         wire_tools[-1] = {**wire_tools[-1], "cache_control": {"type": "ephemeral"}}
     wire_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
     wire_msgs = _wire_messages(messages)
-    last = None
-    for attempt in range(3):
+    waited, attempt = 0.0, 0
+    while True:
         try:
             resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
                                           system=wire_system, messages=wire_msgs, tools=wire_tools)
@@ -493,7 +516,10 @@ def _call_model(system, messages, tools, model=None):
                     b["name"] = back.get(b["name"], b["name"])
             u = resp.usage
             stu = getattr(u, "server_tool_use", None)
+            sd = getattr(resp, "stop_details", None)
             return {"stop_reason": resp.stop_reason, "content": content,
+                    "stop_details": ({"category": getattr(sd, "category", None),
+                                      "explanation": getattr(sd, "explanation", None)} if sd else None),
                     "usage": {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                               "web_searches": (getattr(stu, "web_search_requests", 0) or 0) if stu else 0,
                               "web_fetches": (getattr(stu, "web_fetch_requests", 0) or 0) if stu else 0,
@@ -501,10 +527,19 @@ def _call_model(system, messages, tools, model=None):
                               "cache_read_tokens": getattr(u, "cache_read_input_tokens", 0) or 0},
                     "model": model, "latency_ms": int((time.time() - t0) * 1000)}
         except Exception as ex:
-            last = ex
-            if _is_transient(ex) and attempt < 2:
-                time.sleep(1.5 * (attempt + 1)); continue
-            raise last
+            wait = _retry_delay(ex, attempt)
+            # stop when the waiting budget is spent, or when slow attempts (timeouts) have
+            # already held the run for longer than the budget plus one full call
+            if (not _is_transient(ex) or waited + wait > MODEL_RETRY_SECONDS
+                    or time.time() - t0 + wait > MODEL_RETRY_SECONDS + MODEL_TIMEOUT):
+                raise
+            attempt += 1
+            if on_retry:
+                try:
+                    on_retry(attempt, wait, ex)
+                except Exception:
+                    pass
+            time.sleep(wait); waited += wait
 
 _WIRE_BAD = re.compile(r"[^a-zA-Z0-9_-]")
 def _wire_name(key):
@@ -779,6 +814,7 @@ def _advance_once(run_id):
     root_budget = float(root_agent.get("budget_usd") or 0) if root_agent else 0.0
     daily_cap = float(os.environ.get("WARDEN_DAILY_BUDGET", "0") or 0)
     calls_so_far = sum(1 for e in store.audit_for_run(run_id) if e["kind"] == "model_call")
+    cutoffs = 0   # consecutive replies whose tool call was cut off at the output limit
     for _ in range(MAX_CALLS_PER_ADVANCE):
         if calls_so_far >= MAX_CALLS_PER_RUN:
             store.audit(run_id, agent["id"], "budget_stop",
@@ -828,8 +864,11 @@ def _advance_once(run_id):
         if dropped:
             store.audit(run_id, agent["id"], "context_trimmed", detail={"dropped": dropped,
                         "text": "%d earlier turns dropped to fit the context window" % dropped})
+        def _retrying(attempt, wait, ex, _rid=run_id, _aid=agent["id"]):
+            store.audit(_rid, _aid, "model_retry", detail={"attempt": attempt, "wait": round(wait, 1),
+                        "text": "the model is busy (%s); retrying in %ds" % (_busy_reason(ex), max(1, round(wait)))})
         try:
-            resp = _call_model(system, messages, tools, model=model_for(agent))
+            resp = _call_model(system, messages, tools, model=model_for(agent), on_retry=_retrying)
         except Exception as ex:
             store.audit(run_id, agent["id"], "error", detail={"text": _friendly_error(ex)})
             store.update_run(run_id, status="error", transcript=messages)
@@ -845,12 +884,42 @@ def _advance_once(run_id):
                                           u.get("cache_write_tokens", 0), u.get("cache_read_tokens", 0),
                                           u.get("web_searches", 0))})
         calls_so_far += 1
-        messages.append({"role":"assistant","content":resp["content"]})
+        if resp["stop_reason"] == "refusal":
+            # The model declined this step. Whatever it wrote before declining is not kept: the
+            # refused turn is left out of the transcript so the user can rephrase and carry on.
+            sd = resp.get("stop_details") or {}
+            text = ("The model declined to continue with this request%s. Nothing further ran. You can rephrase "
+                    "and send a new message." % ((" (category: %s)" % sd["category"]) if sd.get("category") else ""))
+            store.audit(run_id, agent["id"], "refused", detail={"text": text, "category": sd.get("category"),
+                                                                 "explanation": sd.get("explanation")})
+            store.update_run(run_id, status="done", transcript=messages)
+            return store.get_run(run_id)
+        cut_calls = []
+        if resp["stop_reason"] == "max_tokens":
+            # A tool call cut off at the output limit has incomplete arguments: never run it.
+            resp["content"], cut_calls = _drop_cut_calls(resp["content"])
+        messages.append({"role":"assistant","content":resp["content"] or [{"type": "text", "text": "(reply cut off)"}]})
         _audit_web(run_id, agent["id"], resp["content"])
         for blk in resp["content"]:
             if blk.get("type")=="text" and blk.get("text"):
                 store.audit(run_id, agent["id"], "thought", detail={"text":blk["text"]})
-        if resp["stop_reason"] == "max_tokens" and not _has_tool_use(messages[-1]):
+        if cut_calls:
+            cutoffs += 1
+            if cutoffs > MAX_CUT_CALLS:
+                store.audit(run_id, agent["id"], "error", detail={"text":
+                    "The agent's tool call to %s was cut off at the output limit %d times in a row, so the run stopped. "
+                    "The call's input is too large for one reply; ask for the work in smaller pieces."
+                    % (", ".join(cut_calls), cutoffs)})
+                store.update_run(run_id, status="error", transcript=messages)
+                return store.get_run(run_id)
+            store.audit(run_id, agent["id"], "continued", detail={"text": "reply hit the output limit while calling %s; "
+                        "the call was not run and the agent was asked to retry it" % ", ".join(cut_calls)})
+            messages.append({"role":"user","content":"[Warden: your reply hit the output limit while you were writing a call "
+                             "to %s, so its input was incomplete and no tool in that reply was run. Make the call again "
+                             "with a shorter input, or split the work into several smaller calls.]" % ", ".join(cut_calls)})
+            store.update_run(run_id, transcript=messages)
+            continue
+        if resp["stop_reason"] == "max_tokens":
             # the reply hit the output limit mid-sentence: ask for the rest instead of
             # presenting a cut-off answer as final
             store.audit(run_id, agent["id"], "continued", detail={"text": "reply hit the output limit; asked to continue"})
@@ -891,6 +960,27 @@ def _audit_web(run_id, agent_id, content):
             store.audit(run_id, agent_id, "web_fetch", skill="web_fetch", risk="low",
                         detail={"url": inp.get("url"), "text": "read %s%s" % (inp.get("url"), (" (failed: %s)" % err) if err else "")})
 
+MAX_CUT_CALLS = 2   # retries allowed after a tool call is cut off at the output limit
+
+def _drop_cut_calls(content):
+    """A reply that stopped at max_tokens, minus its tool calls: the last one is cut off and
+    the API does not say which earlier ones are whole, so none of them runs. A web search or
+    fetch left without its result is dropped too, since the API rejects one sent back alone.
+    Returns (kept blocks, names of the dropped calls)."""
+    answered = {b.get("tool_use_id") for b in content if isinstance(b, dict) and b.get("type", "").endswith("_tool_result")}
+    keep, cut = [], []
+    for b in content:
+        t = b.get("type") if isinstance(b, dict) else None
+        if t == "tool_use" or (t == "server_tool_use" and b.get("id") not in answered):
+            cut.append(b.get("name") or "a tool")
+        else:
+            keep.append(b)
+    return keep, list(dict.fromkeys(cut))
+
+def _busy_reason(ex):
+    code = getattr(ex, "status_code", None)
+    return {429: "rate limited", 529: "overloaded"}.get(code) or ("error %s" % code if code else "connection problem")
+
 def _has_tool_use(msg):
     return any(isinstance(b,dict) and b.get("type")=="tool_use" for b in msg["content"])
 
@@ -904,7 +994,7 @@ def _final_text(child):
     for e in reversed(store.audit_for_run(child["id"])):
         if e["kind"] == "final" and isinstance(e["detail"], dict):
             return e["detail"].get("text", "")
-        if e["kind"] in ("error", "budget_stop") and isinstance(e["detail"], dict):
+        if e["kind"] in ("error", "budget_stop", "refused") and isinstance(e["detail"], dict):
             return "[" + e["kind"].replace("_", " ") + "] " + e["detail"].get("text", "")
     return ""
 

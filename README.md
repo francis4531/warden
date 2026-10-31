@@ -360,10 +360,19 @@ change.
 
 A conversation may make at most 12 model calls per turn and `WARDEN_MAX_CALLS_PER_RUN`
 (default 60) across all of its turns and resumes. A model call times out after
-`WARDEN_MODEL_TIMEOUT` seconds (default 120). When the transcript grows past
+`WARDEN_MODEL_TIMEOUT` seconds (default 120). An overloaded (529), rate-limited (429),
+timed-out or 5xx model call is retried with growing waits (about 2s up to 16s, or the
+server's `retry-after`) for up to `WARDEN_MODEL_RETRY_SECONDS` of waiting in total
+(default 60); each wait shows in the conversation. Other 4xx errors are not retried.
+When the transcript grows past
 `WARDEN_CONTEXT_TOKENS` (default 150,000, estimated), the oldest exchanges are dropped
 in pairs and the first message says so. A reply cut off at the output limit is asked to
-continue rather than shown as final. Runs still marked running when Warden restarts are
+continue rather than shown as final. If it was cut off while writing a tool call, no tool
+in that reply runs and the agent is asked to make the call again with a shorter input;
+after `MAX_CUT_CALLS` (2) such retries in a row the run stops with an error. When the
+model declines a request (stop reason `refusal`), the conversation shows that it declined
+and the category, the refused turn is left out of the transcript, and the user can
+rephrase and carry on. Runs still marked running when Warden restarts are
 marked interrupted at boot and can be continued with a message.
 
 ## Audit chain
